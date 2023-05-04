@@ -1,0 +1,160 @@
+cabal-version: 3.0
+
+name:                onchain
+version:             0.1.0.0
+synopsis:            contracts for Sundae swap application
+description:         Plutus contracts to run Sundae swap application on Cardano blockchain
+license-file:        ../LICENSE
+author:              sundae
+maintainer:          anton@mlabs.gmail edmund@sundaeswap.finance
+build-type:          Simple
+
+common ghc-config
+  ghc-options:
+    -Wall -Wno-missing-signatures -Wmissing-exported-signatures -Wno-partial-type-signatures
+  default-language: Haskell2010
+  default-extensions: BangPatterns
+                      BlockArguments
+                      ConstraintKinds
+                      DataKinds
+                      DeriveAnyClass
+                      DeriveFoldable
+                      DeriveFunctor
+                      DeriveGeneric
+                      DeriveLift
+                      DeriveTraversable
+                      DerivingStrategies
+                      DerivingVia
+                      ExplicitForAll
+                      FunctionalDependencies
+                      FlexibleContexts
+                      FlexibleInstances
+                      GeneralizedNewtypeDeriving
+                      ImportQualifiedPost
+                      LambdaCase
+                      MonoLocalBinds
+                      MultiParamTypeClasses
+                      NamedFieldPuns
+                      NumericUnderscores
+                      OverloadedStrings
+                      PartialTypeSignatures
+                      PatternGuards
+                      QuasiQuotes
+                      RankNTypes
+                      RecordWildCards
+                      ScopedTypeVariables
+                      StandaloneDeriving
+                      TemplateHaskell
+                      TupleSections
+                      TypeApplications
+                      TypeFamilies
+                      TypeOperators
+                      TypeSynonymInstances
+                      ViewPatterns
+
+library
+  import: ghc-config
+  -- Some of these are necessary for plutus to work in GHCi
+  ghc-options:
+    -fobject-code
+    -fno-omit-interface-pragmas
+    -fno-ignore-interface-pragmas
+    -fno-specialise
+  build-depends: base ^>= 4.14
+               , aeson
+               , aeson-pretty
+               , base16
+               , base-compat
+               , bytestring
+               , containers
+               , cardano-api
+               , cardano-ledger-alonzo
+               , cardano-ledger-core
+               , data-default
+               , deepseq
+               , extra
+               , insert-ordered-containers
+               , lens
+               , mtl
+               , plutus-core
+               , plutus-script-utils
+               -- , plutus-contract
+               , plutus-ledger
+               , plutus-ledger-api
+               , plutus-tx
+               , plutus-tx-plugin
+               , prettyprinter
+               , pretty-show
+               , random
+               , splitmix
+               , th-compat
+               , directory
+               , serialise
+               , text
+               , time
+               , unbounded-delays
+               , unliftio-core
+               , yaml
+               , template-haskell
+               , ghc-prim
+
+  hs-source-dirs: .
+  exposed-modules:
+    Sundae.Compiled
+    Sundae.Compiled.Factory
+    Sundae.Compiled.Mints
+    Sundae.Compiled.Others
+    Sundae.Compiled.Pool
+    Sundae.Contracts
+    Sundae.Contracts.Common
+    Sundae.Contracts.Factory
+    Sundae.Contracts.Mints
+    Sundae.Contracts.Others
+    Sundae.Contracts.Pool
+    Sundae.Dummy.DummyScript
+    Sundae.GeneratePoisonPill
+    Sundae.PoisonPill
+    Sundae.ShallowData
+    Sundae.Utilities
+  default-extensions: NoImplicitPrelude
+
+test-suite sundae-contracts-tests
+  import: ghc-config
+  type:               exitcode-stdio-1.0
+  ghc-options:        -threaded -rtsopts
+  build-depends:      base              >=4.9 && <5
+                    , aeson
+                    , bytestring
+                    , data-default
+                    -- , freer-extras
+                    -- , freer-simple
+                    , lens
+                    , onchain
+                    , mtl
+                    , containers
+                    , cardano-api
+                    , cardano-ledger-core
+                    , cardano-ledger-alonzo
+                    , cardano-crypto-class
+                    , plutus-core
+                    -- , plutus-contract
+                    , plutus-ledger
+                    , plutus-tx
+                    , plutus-ledger-api
+                    , plutus-tx-plugin
+                    -- , plutus-contract
+                    , prettyprinter
+                    , pretty-show
+                    , record-hasfield
+                    , tasty
+                    , tasty-hunit
+                    , tasty-expected-failure
+                    , tasty-quickcheck
+                    , QuickCheck
+                    , text
+                    , serialise
+                    , time
+  hs-source-dirs:     test
+  main-is:            Main.hs
+  other-modules:
+    Test.Contracts.SundaeScooperCompat

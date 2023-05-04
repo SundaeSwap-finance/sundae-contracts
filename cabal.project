@@ -1,0 +1,8 @@
+packages:
+  onchain/onchain.cabal
+
+tests: true
+benchmarks: true
+test-show-details: direct
+
+write-ghc-environment-files: never
