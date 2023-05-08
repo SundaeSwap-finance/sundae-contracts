@@ -890,11 +890,11 @@
     "iohk-nix": {
       "flake": false,
       "locked": {
-        "lastModified": 1683264256,
-        "narHash": "sha256-5ddG5PDwSPFdrtyxhzBZFh/10YEAHRqeD8ts6NJamVg=",
+        "lastModified": 1641816326,
+        "narHash": "sha256-QDkAJPQR1du6lukHqb2vSJ3hVVGEZDs5x9GCbwSQyKU=",
         "owner": "input-output-hk",
         "repo": "iohk-nix",
-        "rev": "18d9bc9d09ab73df58efa13a3d470b211c92f2ee",
+        "rev": "734f87a23504f7d12c7fee1c574fc7d815139dea",
         "type": "github"
       },
       "original": {
@@ -1682,11 +1682,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1683582905,
-        "narHash": "sha256-f12GshgKI1809fP5KauC5vMGsSSx5YkSbZ/zV1GLBOk=",
+        "lastModified": 1683584195,
+        "narHash": "sha256-8oZ3PczP5oC8YwimWdRzNysnhbxVol9q+cjlNL+42cg=",
         "ref": "refs/heads/rrruko/chap",
-        "rev": "4c4899ced151d532ec5660346eb78ed8b34ff0fc",
-        "revCount": 26,
+        "rev": "fb20a5b742f9d033825d9b685474abeeca55d2b6",
+        "revCount": 28,
         "type": "git",
         "url": "file:///home/bukulon/lam/plutus-flake-utils"
       },
