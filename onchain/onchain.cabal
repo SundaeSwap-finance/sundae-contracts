@@ -135,7 +135,7 @@ test-suite sundae-contracts-tests
                     , cardano-api
                     , cardano-ledger-core
                     , cardano-ledger-alonzo
-                    , cardano-crypto-class
+                    , cardano-crypto-class ^>= 2.0.0.0.1
                     , plutus-core
                     -- , plutus-contract
                     , plutus-ledger
