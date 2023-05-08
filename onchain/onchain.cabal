@@ -79,7 +79,6 @@ library
                , plutus-core
                , plutus-script-utils
                -- , plutus-contract
-               , plutus-ledger
                , plutus-ledger-api
                , plutus-tx
                , plutus-tx-plugin
@@ -138,7 +137,6 @@ test-suite sundae-contracts-tests
                     , cardano-crypto-class ^>= 2.0.0.0.1
                     , plutus-core
                     -- , plutus-contract
-                    , plutus-ledger
                     , plutus-tx
                     , plutus-ledger-api
                     , plutus-tx-plugin
