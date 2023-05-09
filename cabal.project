@@ -35,3 +35,14 @@ source-repository-package
   location: https://github.com/ekmett/tagged
   tag: v0.8.7
   --sha256: 04r3sfavc1993xjqyfya9cpbr0z65fx78mknrbcryjgij04xjdsp
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/cardano-node/
+  tag: 7529a18536f402748004a291cc54a97f7d2259221
+  subdir: cardano-api
+  --sha256: 1v0bqkkam5d5lk9f7x9r63dmvjvbwhdldl7wijqq975rbp32h2bk
+
+constraints:
+  -- cardano-ledger-byron-0.1.0.0 needs
+  , cardano-binary <1.5.0.1
