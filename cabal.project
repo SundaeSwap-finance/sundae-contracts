@@ -82,19 +82,6 @@ constraints:
   -- i added this
   , cardano-slotting <0.1.1.0
 
--- The plugin will typically fail when producing Haddock documentation. However,
--- in this instance you can simply tell it to defer any errors to runtime (which
--- will never happen since you're building documentation).
---
--- So, any package using 'PlutusTx.compile' in the code for which you need to
--- generate haddock documentation should use the following 'haddock-options'.
-package plutus-ledger
-  haddock-options: "--optghc=-fplugin-opt PlutusTx.Plugin:defer-errors"
-package plutus-script-utils
-  haddock-options: "--optghc=-fplugin-opt PlutusTx.Plugin:defer-errors"
-package plutus-contract
-  haddock-options: "--optghc=-fplugin-opt PlutusTx.Plugin:defer-errors"
-
 --constraints:
 --  -- cardano-ledger-byron-0.1.0.0 needs
 --  , cardano-binary <1.5.0.1
