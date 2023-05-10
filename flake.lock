@@ -1684,15 +1684,16 @@
       "locked": {
         "lastModified": 1683736085,
         "narHash": "sha256-ZE3/UouyggZ8rH4RM2Y6Zye6hg/5FI22YQEU6nV8x4Q=",
-        "ref": "refs/heads/rrruko/chap",
+        "owner": "SundaeSwap-finance",
+        "repo": "plutus-flake-utils",
         "rev": "26e03ec0e26697c6457f7c073a5d3d8214d85dc5",
-        "revCount": 34,
-        "type": "git",
-        "url": "file:///home/bukulon/lam/plutus-flake-utils"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "file:///home/bukulon/lam/plutus-flake-utils"
+        "owner": "SundaeSwap-finance",
+        "ref": "rrruko/chap",
+        "repo": "plutus-flake-utils",
+        "type": "github"
       }
     },
     "root": {

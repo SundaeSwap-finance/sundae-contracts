@@ -11,7 +11,7 @@
     };
 
     plutus-flake-utils = {
-      url = "/home/bukulon/lam/plutus-flake-utils";
+      url = "github:SundaeSwap-finance/plutus-flake-utils/rrruko/chap";
     };
 
     flake-utils = {
