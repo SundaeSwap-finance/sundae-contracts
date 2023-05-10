@@ -67,7 +67,7 @@ library
                , base-compat
                , bytestring
                , containers
-               , cardano-api
+               , cardano-api >=1.35
                , cardano-ledger-alonzo
                , cardano-ledger-core
                , data-default
@@ -134,7 +134,7 @@ test-suite sundae-contracts-tests
                     , cardano-api
                     , cardano-ledger-core
                     , cardano-ledger-alonzo
-                    , cardano-crypto-class ^>= 2.0.0.0.1
+                    , cardano-crypto-class
                     , plutus-core
                     -- , plutus-contract
                     , plutus-tx
