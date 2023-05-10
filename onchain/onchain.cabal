@@ -79,6 +79,7 @@ library
                , plutus-core
                , plutus-script-utils
                -- , plutus-contract
+               , plutus-ledger
                , plutus-ledger-api
                , plutus-tx
                , plutus-tx-plugin
