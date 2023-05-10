@@ -1682,11 +1682,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1683677970,
-        "narHash": "sha256-SqaoKMYjNK07be8tVstiISNyS2pKfgvu4GnIjHhu7Ow=",
+        "lastModified": 1683734912,
+        "narHash": "sha256-12yLDEe/0D0NTcq2s/+wBm8HN4OZXkFYtuRkE63xv+A=",
         "ref": "refs/heads/rrruko/chap",
-        "rev": "40c916e7553621aa6b9159594c5bb1b11457ab0a",
-        "revCount": 32,
+        "rev": "b951f66e3746c97cc812e5f44e58e742b8d366d6",
+        "revCount": 33,
         "type": "git",
         "url": "file:///home/bukulon/lam/plutus-flake-utils"
       },
