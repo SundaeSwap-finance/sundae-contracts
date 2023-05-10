@@ -30,4 +30,5 @@ dummyScript =
     ($$(PlutusTx.compile [|| dummyContract ||]))
     $$(PlutusTx.compile [|| wrap ||])
   where
-  wrap = Scripts.mkUntypedValidator @(DatumType Dummy) @(RedeemerType Dummy)
+  wrap :: (() -> () -> ScriptContext -> Bool) -> Scripts.UntypedValidator
+  wrap = Scripts.mkUntypedValidator @ScriptContext @(DatumType Dummy) @(RedeemerType Dummy)
