@@ -45,9 +45,6 @@
         ];
         src = ./.;
         compiler-nix-name = "ghc8107";
-        extraSha256map = {
-          "https://github.com/input-output-hk/cardano-base.git"."07d40428a55b0a80ec49126f09d8e4d8191578b3" = "0g22xhvil88f1559rhayd3c76iyfx2c5l6pgy3wank22zp70ij2q";
-        };
       };
     in
     flake-utils.lib.eachSystem supportedSystems (system: rec {
