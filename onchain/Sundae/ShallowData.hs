@@ -9,13 +9,13 @@
 {-# language DefaultSignatures #-}
 module Sundae.ShallowData where
 
-import qualified Plutus.V1.Ledger.Address as Ledger
-import qualified Plutus.V1.Ledger.Credential as Ledger
-import qualified Plutus.V1.Ledger.Value as Ledger
-import qualified Plutus.V1.Ledger.Scripts as Ledger
-import qualified Plutus.V1.Ledger.Crypto as Ledger
-import qualified Plutus.V1.Ledger.Time as Ledger
-import qualified Plutus.V1.Ledger.DCert as Ledger
+import qualified PlutusLedgerApi.V1.Address as Ledger
+import qualified PlutusLedgerApi.V1.Credential as Ledger
+import qualified PlutusLedgerApi.V1.Value as Ledger
+import qualified PlutusLedgerApi.V1.Scripts as Ledger
+import qualified PlutusLedgerApi.V1.Crypto as Ledger
+import qualified PlutusLedgerApi.V1.Time as Ledger
+import qualified PlutusLedgerApi.V1.DCert as Ledger
 
 import PlutusTx
 import Data.Coerce

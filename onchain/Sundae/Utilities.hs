@@ -1,15 +1,18 @@
+{-# Language InstanceSigs #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Sundae.Utilities where
 
 import PlutusTx.Prelude
 import PlutusTx.Builtins
 import qualified PlutusTx
-import qualified Prelude
+import qualified Prelude hiding (foldMap)
 
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
+import PlutusLedgerApi.V1
+import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V1.Time
 
-import Ledger hiding (fee, singleton)
+import Data.Aeson qualified as Aeson
+
 import PlutusTx.AssocMap(Map)
 import qualified PlutusTx.AssocMap as Map
 
@@ -18,7 +21,16 @@ import Data.Aeson hiding (Value)
 import Data.Coerce
 import GHC.Generics
 
+import Data.Text.Encoding qualified as Encoding
+
 import qualified System.Random as Random
+
+-- These instances were dropped, so we now have to implement them
+-- but they won't be used in contracts
+instance ToJSON BuiltinByteString where
+  toJSON bs = toJSON (Encoding.decodeUtf8 (fromBuiltin bs))
+instance FromJSON BuiltinByteString where
+  parseJSON = withText "BuiltinByteString" $ \s -> Prelude.pure (Prelude.undefined s)
 
 {-# inlinable atLeastOne #-}
 atLeastOne :: (a -> Bool) -> [a] -> Bool
@@ -287,8 +299,8 @@ instance Functor AB where
   fmap f (AB a b) = AB (f a) (f b)
 
 instance Foldable AB where
-  {-# inlinable foldMap #-}
-  foldMap f (AB a b) = f a <> f b
+  {-# inlinable foldr #-}
+  foldr f nil (AB a b) = f a (f b nil)
 
 instance AdditiveSemigroup a => AdditiveSemigroup (AB a) where
   {-# inlinable (+) #-}
@@ -413,7 +425,7 @@ getScriptInput ((TxInInfo tref ot) : tl) o_ref
   | otherwise = getScriptInput tl o_ref
 
 {-# INLINEABLE isScriptAddress #-}
-isScriptAddress :: TxOut -> ValidatorHash -> Bool
+isScriptAddress :: TxOut -> ScriptHash -> Bool
 isScriptAddress (TxOut (Address (ScriptCredential h) _) _ _) sh = h == sh
 isScriptAddress _ _ = False
 
