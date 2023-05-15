@@ -44,7 +44,7 @@
           "onchain"
         ];
         src = ./.;
-        compiler-nix-name = "ghc8107";
+        compiler-nix-name = "ghc927";
       };
     in
     flake-utils.lib.eachSystem supportedSystems (system: rec {

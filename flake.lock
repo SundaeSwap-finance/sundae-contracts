@@ -199,11 +199,11 @@
     "chap": {
       "flake": false,
       "locked": {
-        "lastModified": 1683268896,
-        "narHash": "sha256-Bf2XIbQ3YCYPbkySLlPmmxRdEQeZMqTM1mA/VQvB9sc=",
+        "lastModified": 1684130544,
+        "narHash": "sha256-G9DAhJP+VUZQq4ltEsS/0AAlaXVkr45cCBrKghbbAhA=",
         "owner": "input-output-hk",
         "repo": "cardano-haskell-packages",
-        "rev": "b5da84a9711693e408ec94ad17fbb02883a3b87b",
+        "rev": "217bbeabb2f6c836187b1da935719b05737761ae",
         "type": "github"
       },
       "original": {
@@ -336,11 +336,11 @@
     "flake-compat": {
       "flake": false,
       "locked": {
-        "lastModified": 1641205782,
-        "narHash": "sha256-4jY7RCWUoZ9cKD8co0/4tFARpWB+57+r1bLLvXNJliY=",
+        "lastModified": 1673956053,
+        "narHash": "sha256-4gtG9iQuiKITOjNQQeQIpoIB6b16fm+504Ch3sNKLd8=",
         "owner": "edolstra",
         "repo": "flake-compat",
-        "rev": "b7547d3eed6f32d06102ead8991ec52ab0a4f1a7",
+        "rev": "35bb57c0c8d8b62bbfd284272c928ceb64ddbde9",
         "type": "github"
       },
       "original": {
@@ -416,12 +416,15 @@
       }
     },
     "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
       "locked": {
-        "lastModified": 1638122382,
-        "narHash": "sha256-sQzZzAbvKEqN9s0bzWuYmRaA03v40gaJ4+iL1LXjaeI=",
+        "lastModified": 1681202837,
+        "narHash": "sha256-H+Rh19JDwRtpVPAWp64F+rlEtxUWBAQW28eAi3SRSzg=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "74f7e4319258e287b0f9cb95426c9853b282730b",
+        "rev": "cfacdce06f30d2b68473a46042957675eebb3401",
         "type": "github"
       },
       "original": {
@@ -611,11 +614,11 @@
     "hackage": {
       "flake": false,
       "locked": {
-        "lastModified": 1683505446,
-        "narHash": "sha256-b/dJx79r8/u5iHqCy8m39zKCtByfnBmVKpaFCcRSLGM=",
+        "lastModified": 1683678346,
+        "narHash": "sha256-l8QnIGTy0VgFVZb94et0Ijurr5LBLOM+/0lca38+6rM=",
         "owner": "input-output-hk",
         "repo": "hackage.nix",
-        "rev": "836d7c9aa5b252003b5d418553a90c5bb81c640d",
+        "rev": "31d476914b213e74767c4567c017f98a535985c0",
         "type": "github"
       },
       "original": {
@@ -670,11 +673,11 @@
         "tullia": "tullia"
       },
       "locked": {
-        "lastModified": 1683536601,
-        "narHash": "sha256-v1phn5RRTBDN31CX4jSpZSMGg/1D2RGJQRD7363jiH0=",
+        "lastModified": 1683692410,
+        "narHash": "sha256-R1Ualn92aIps+Cx9xNcLP1ao8tci3ranc7MSXXkOjMQ=",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "a1921f5eabac34c958957c4471dd9e91d88aca91",
+        "rev": "a93ef349a0e47c7e1920d63113a0e5940072a589",
         "type": "github"
       },
       "original": {
@@ -1682,12 +1685,13 @@
         ]
       },
       "locked": {
-        "lastModified": 1683736085,
-        "narHash": "sha256-ZE3/UouyggZ8rH4RM2Y6Zye6hg/5FI22YQEU6nV8x4Q=",
-        "owner": "SundaeSwap-finance",
-        "repo": "plutus-flake-utils",
-        "rev": "26e03ec0e26697c6457f7c073a5d3d8214d85dc5",
-        "type": "github"
+        "lastModified": 1684175851,
+        "narHash": "sha256-UFC9PWUosjPUNYIaOgfW7Nb7SzOsxo/anbNEhvM8S4g=",
+        "ref": "refs/heads/rrruko/chap",
+        "rev": "d113b97af58805eea29a34545467b20669845765",
+        "revCount": 37,
+        "type": "git",
+        "url": "file:///home/bukulon/lam/plutus-flake-utils"
       },
       "original": {
         "owner": "SundaeSwap-finance",
@@ -1711,11 +1715,11 @@
     "stackage": {
       "flake": false,
       "locked": {
-        "lastModified": 1683504556,
-        "narHash": "sha256-ji00eTPYLVeX34PsFgENEMqsmzXHvwQ4LFk8VZFRoLU=",
+        "lastModified": 1683590971,
+        "narHash": "sha256-KW+E2gswnprs34AXRV9BQ8yrFlIUXmTeIO1o4ujm3/g=",
         "owner": "input-output-hk",
         "repo": "stackage.nix",
-        "rev": "90f764c05af6899745be9f79dcf2bdf4c729c018",
+        "rev": "078aac483345171f3d8c3165d9f1051827990ee3",
         "type": "github"
       },
       "original": {
@@ -1830,6 +1834,21 @@
       "original": {
         "owner": "divnix",
         "repo": "std",
+        "type": "github"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
         "type": "github"
       }
     },

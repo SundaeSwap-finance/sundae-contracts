@@ -60,16 +60,13 @@ library
     -fno-omit-interface-pragmas
     -fno-ignore-interface-pragmas
     -fno-specialise
-  build-depends: base ^>= 4.14
+  build-depends: base ^>= 4.16
                , aeson
                , aeson-pretty
                , base16
                , base-compat
                , bytestring
                , containers
-               , cardano-api >=1.35
-               , cardano-ledger-conway
-               , cardano-ledger-core
                , data-default
                , deepseq
                , extra
@@ -77,9 +74,7 @@ library
                , lens
                , mtl
                , plutus-core
-               , plutus-script-utils
                -- , plutus-contract
-               , plutus-ledger
                , plutus-ledger-api
                , plutus-tx
                , plutus-tx-plugin
@@ -111,7 +106,6 @@ library
     Sundae.Contracts.Mints
     Sundae.Contracts.Others
     Sundae.Contracts.Pool
-    Sundae.Dummy.DummyScript
     Sundae.GeneratePoisonPill
     Sundae.PoisonPill
     Sundae.ShallowData
@@ -132,9 +126,6 @@ test-suite sundae-contracts-tests
                     , onchain
                     , mtl
                     , containers
-                    , cardano-api
-                    , cardano-ledger-core
-                    , cardano-ledger-conway
                     , cardano-crypto-class
                     , plutus-core
                     -- , plutus-contract
