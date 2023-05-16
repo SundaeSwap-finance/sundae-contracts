@@ -3,10 +3,9 @@ module Sundae.Contracts.Others where
 import PlutusTx.Prelude
 import qualified PlutusTx.AssocMap as Map
 
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
-
-import Ledger hiding (mint, fee, singleton, inputs, validRange)
+import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V2.Contexts
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
@@ -57,7 +56,7 @@ treasuryContract
             | POSIXTime gap <- latest - proposalStart
             , let !newTreasuryOut = uniqueElement' [ o | o <- txInfoOutputs, txOutAddress o == scriptHashAddress proposedNewTreasury ]
             ->
-            DiffMilliSeconds gap >= upgradeTimeLockPeriod &&
+            gap >= upgradeTimeLockPeriod &&
             debug "didn't pay all treasury assets to new treasury script"
               (txOutValue newTreasuryOut == txOutValue (txInInfoResolved i)) &&
             debug "datum altered during treasury upgrade"
@@ -83,6 +82,19 @@ treasuryContract
   correctTokens (cs,tk,_) = elem (assetClass cs tk) knownAssetClasses
   Just i = findOwnInput ctx
   UpperBound (Finite latest) _ = ivTo txInfoValidRange
+
+{-# INLINABLE ownHashes #-}
+-- | Get the validator and datum hashes of the output that is curently being validated
+ownHashes :: ScriptContext -> (ScriptHash, DatumHash)
+ownHashes (findOwnInput -> Just TxInInfo{txInInfoResolved=o@TxOut{txOutAddress=Address (ScriptCredential s) _ }}) =
+  case txOutDatumHash o of
+    Just dh -> (s,dh)
+    Nothing -> traceError "Lg"
+
+{-# INLINABLE ownHash #-}
+-- | Get the hash of the validator script that is currently being validated.
+ownHash :: ScriptContext -> ScriptHash
+ownHash p = fst (ownHashes p)
 
 {-# inlinable toTreasuryNft #-}
 toTreasuryNft :: CurrencySymbol -> AssetClass
@@ -208,6 +220,9 @@ scooperFeeContract
     | o <- txInfoOutputs
     , txOutAddress o == scriptHashAddress gsh
     ]
+
+scriptHashAddress :: ScriptHash -> Address
+scriptHashAddress sh = Address (ScriptCredential sh) Nothing
 
 -- Dead Factory Contract
 --   Contract locking the factory NFT after it's upgraded, and brokering the upgrade of each liquidity pool.

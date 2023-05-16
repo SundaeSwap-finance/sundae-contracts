@@ -94,15 +94,23 @@ withoutLovelace v =
 {-# inlinable datumOf #-}
 -- | It only succeeds if there's a valid datum, or fails on a missing datum.
 -- If there's an invalid datum, you get a crash.
-datumOf :: TxInfo -> TxOut -> Maybe Datum
-datumOf txInfo txOut =
-  rawDatumOf txInfo txOut
+datumOf :: FromData a => TxInfo -> TxOut -> Maybe a
+datumOf txInfo txOut = do
+  d <- toData <$> rawDatumOf txInfo txOut
+  fromData d
 
 {-# inlinable rawDatumOf #-}
 rawDatumOf :: TxInfo -> TxOut -> Maybe Datum
-rawDatumOf txInfo txOut = do
+rawDatumOf txInfo txOut =
   case txOutDatum txOut of
     OutputDatumHash d -> Map.lookup d $ txInfoData txInfo
+    OutputDatum _ -> Nothing
+    NoOutputDatum -> Nothing
+
+txOutDatumHash :: TxOut -> Maybe DatumHash
+txOutDatumHash txOut =
+  case txOutDatum txOut of
+    OutputDatumHash d -> Just d
     OutputDatum _ -> Nothing
     NoOutputDatum -> Nothing
 
@@ -116,9 +124,9 @@ searchDatum dsh ((dsh', Datum d) : tl)
   | otherwise = searchDatum dsh tl
 
 {-# inlinable isDatumUnsafe #-}
-isDatumUnsafe :: TxInfo -> TxOut -> Datum -> Bool
+isDatumUnsafe :: ToData a => TxInfo -> TxOut -> a -> Bool
 isDatumUnsafe txInfo txOut expectedDat =
-  rawDatumOf txInfo txOut == Just expectedDat
+  rawDatumOf txInfo txOut == Just (Datum (toBuiltinData expectedDat))
 
 {-# INLINABLE getAddressOutputs #-}
 getAddressOutputs :: ScriptContext -> Address -> [TxOut]
