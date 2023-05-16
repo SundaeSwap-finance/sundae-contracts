@@ -5,14 +5,12 @@ module Sundae.Contracts.Common where
 import qualified Prelude
 import PlutusTx.Prelude
 import PlutusTx.Sqrt
-import Data.Aeson (FromJSON(..), ToJSON(..), withScientific)
+import Data.Aeson qualified as Aeson
+import Data.Aeson (FromJSON(..), ToJSON(..), withScientific, withObject, (.:), (.=))
 
-import qualified Ledger.Typed.Scripts as Scripts
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
-import Plutus.V1.Ledger.Time
+import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V3
 
-import Ledger hiding (mint, fee, singleton, inputs, validRange)
 import qualified PlutusTx
 import qualified PlutusTx.AssocMap as Map
 import PlutusTx.Ratio
@@ -48,6 +46,22 @@ data Proposal
 -- | Holds gifts to the treasury, before they've been approved
 data Gift
 
+instance FromJSON TxOutRef where
+  parseJSON = withObject "TxOutRef" $ \o -> do
+    txid <- o .: "txid"
+    txix <- o .: "txix"
+    Prelude.pure $ TxOutRef
+      { txOutRefId = TxId txid
+      , txOutRefIdx = txix
+      }
+
+instance ToJSON TxOutRef where
+  toJSON (TxOutRef { txOutRefId = TxId txid, txOutRefIdx = txix }) =
+    Aeson.object
+      [ "txid" .= txid
+      , "txix" .= txix
+      ]
+
 -- | A single UTXO that uniquely identifies / parameterizes the entire protocol
 -- | This ensures that anyone who runs our scripts with a different UTXO
 -- | ends up with different policy IDs / script hashes, and is a fundamentally different protocol
@@ -55,13 +69,13 @@ newtype ProtocolBootUTXO = ProtocolBootUTXO
   { unProtocolBootUTXO :: TxOutRef
   }
   deriving stock (Generic, Prelude.Show)
-  deriving newtype (FromJSON, ToJSON)
+  --deriving newtype (FromJSON, ToJSON)
 
 -- | Used to make the treasury token an NFT.
 newtype TreasuryBootSettings = TreasuryBootSettings
   { treasury'protocolBootUTXO :: ProtocolBootUTXO
   }
-  deriving newtype (FromJSON, ToJSON)
+  --deriving newtype (FromJSON, ToJSON)
 
 data FactoryBootSettings
   = BrandNewFactoryBootSettings
@@ -72,21 +86,21 @@ data FactoryBootSettings
   { oldFactoryBootCurrencySymbol :: OldFactoryBootCurrencySymbol
   }
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (FromJSON, ToJSON)
+  --deriving anyclass (FromJSON, ToJSON)
 
 data UpgradeSettings = UpgradeSettings
-  { upgradeTimeLockPeriod :: DiffMilliSeconds
+  { upgradeTimeLockPeriod :: Integer
   , upgradeAuthentication :: AssetClass
   }
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (FromJSON, ToJSON)
+  --deriving anyclass (FromJSON, ToJSON)
 
 -- | The destination for the results of an escrowed operation.
 -- Could be a user address, but could also be a script address + datum
 -- for composing with other protocols.
 data EscrowDestination = EscrowDestination !Address !(Maybe DatumHash)
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowDestination where
   {-# inlinable (==) #-}
@@ -98,7 +112,7 @@ instance Eq EscrowDestination where
 -- The second field can also supply auxiliary PubKeyHash which can be used to authenticate cancelling this order.
 data EscrowAddress = EscrowAddress !EscrowDestination !(Maybe PubKeyHash)
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowAddress where
   {-# inlinable (==) #-}
@@ -109,6 +123,11 @@ instance Eq EscrowAddress where
 escrowPubKeyHashes :: EscrowAddress -> [PubKeyHash]
 escrowPubKeyHashes (EscrowAddress (EscrowDestination addr _) mPubKey) =
   mapMaybe id [toPubKeyHash addr, mPubKey]
+  where
+  toPubKeyHash (Address cred stakingCred) =
+    case cred of
+      PubKeyCredential pkh -> Just pkh
+      _ -> Nothing
 
 {-# inlinable fromEscrowAddress #-}
 fromEscrowAddress :: EscrowAddress -> EscrowDestination
@@ -129,34 +148,34 @@ data UpgradeProposal
   = UpgradeScripts !ScriptUpgradeProposal
   | UpgradeScooperSet !ScooperUpgradeProposal
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  deriving anyclass (NFData)--, ToJSON, FromJSON)
 
 data ScriptUpgradeProposal
   = ScriptUpgradeProposal
-  { _scriptProposedOldFactory :: !ValidatorHash
-  , proposedNewFactory :: !ValidatorHash
+  { _scriptProposedOldFactory :: !ScriptHash
+  , proposedNewFactory :: !ScriptHash
   , proposedNewFactoryBoot :: !CurrencySymbol
-  , proposedNewPool :: !ValidatorHash
+  , proposedNewPool :: !ScriptHash
   , proposedNewPoolMint :: !CurrencySymbol
   , proposedOldToNewLiquidityRatio :: !Rational
-  , proposedOldTreasury :: !ValidatorHash
-  , proposedNewTreasury :: !ValidatorHash
+  , proposedOldTreasury :: !ScriptHash
+  , proposedNewTreasury :: !ScriptHash
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  deriving anyclass (NFData)--, ToJSON, FromJSON)
 
 data ScooperUpgradeProposal
   = ScooperUpgradeProposal
-  { _scoopProposedOldFactory :: !ValidatorHash
+  { _scoopProposedOldFactory :: !ScriptHash
   , proposedOldScooperIdent :: !Ident
   , proposedNewScooperSet :: ![PubKeyHash]
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  deriving anyclass (NFData)--, ToJSON, FromJSON)
 
 -- Plutus compiler doesn't like multiple record constructors
 {-# inlinable proposedOldFactory #-}
-proposedOldFactory :: UpgradeProposal -> ValidatorHash
+proposedOldFactory :: UpgradeProposal -> ScriptHash
 proposedOldFactory (UpgradeScripts p) = _scriptProposedOldFactory p
 proposedOldFactory (UpgradeScooperSet p) = _scoopProposedOldFactory p
 
@@ -187,6 +206,15 @@ instance Eq ScooperUpgradeProposal where
         oldScooperIdent == oldScooperIdent' &&
         newScooperSet == newScooperSet'
 
+instance ToJSON ScriptUpgradeProposal where
+instance FromJSON ScriptUpgradeProposal where
+instance ToJSON POSIXTime where
+instance FromJSON POSIXTime where
+instance ToJSON CurrencySymbol where
+instance FromJSON CurrencySymbol where
+instance ToJSON ScriptHash where
+instance FromJSON ScriptHash where
+
 data ProposalState
   = NoProposal
   | PendingProposal !POSIXTime !ScriptUpgradeProposal
@@ -208,7 +236,7 @@ data FactoryDatum = FactoryDatum
   , scooperSet :: ![PubKeyHash]
   }
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
@@ -223,7 +251,7 @@ data FactoryRedeemer
   | MakeProposal
   | UpgradeFactory
   | IssueScooperLicense PubKeyHash
-  deriving (Generic, ToJSON, FromJSON)
+  --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
@@ -238,18 +266,18 @@ data FactoryBootMintRedeemer
   | MakeScooperToken
 
 newtype DeadFactoryDatum = DeadFactoryDatum ScriptUpgradeProposal
-  deriving newtype (Prelude.Show, Eq, NFData, ToJSON, FromJSON)
+  --deriving newtype (Prelude.Show, Eq, NFData, ToJSON, FromJSON)
 
 newtype ProposalRedeemer = UpgradePool Ident
   deriving stock Generic
-  deriving newtype (ToJSON, FromJSON)
+  --deriving newtype (ToJSON, FromJSON)
 
 data TreasuryDatum = TreasuryDatum
   { issuedSundae :: Integer
   , treasuryProposalState :: ProposalState
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq TreasuryDatum where
   {-# inlinable (==) #-}
@@ -264,13 +292,13 @@ data TreasuryRedeemer
 data ScooperFeeSettings
   = ScooperFeeSettings
   { scooperRewardRedeemDelayWeeks :: Integer
-  } deriving (Generic, NFData, Prelude.Show, ToJSON, FromJSON)
+  } --deriving (Generic, NFData, Prelude.Show, ToJSON, FromJSON)
 
 data ScooperFeeDatum
   = ScooperFeeDatum
   { scooperLicensee :: !PubKeyHash
   , scooperLicenseIssued :: !Ident
-  } deriving (Generic, NFData, Prelude.Show, ToJSON, FromJSON)
+  } --deriving (Generic, NFData, Prelude.Show, ToJSON, FromJSON)
 
 data ScooperFeeRedeemer
   = ScooperCollectScooperFees
@@ -283,7 +311,7 @@ data PoolDatum
   , _pool'poolIdent :: !Ident -- ^ unique identifier of the pool.
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
-  } deriving (Generic, NFData, ToJSON, FromJSON, Prelude.Show)
+  } -- deriving (Generic, NFData, ToJSON, FromJSON, Prelude.Show)
 
 instance Eq PoolDatum where
   {-# inlinable (==) #-}
@@ -301,7 +329,7 @@ data DeadPoolDatum = DeadPoolDatum
   , deadPoolOldToNewRatio :: Rational
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq DeadPoolDatum where
   {-# inlinable (==) #-}
@@ -318,7 +346,7 @@ data EscrowDatum = EscrowDatum
   , _escrow'action :: EscrowAction
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowDatum where
   EscrowDatum pool ret fee act == EscrowDatum pool' ret' fee' act' =
@@ -327,7 +355,7 @@ instance Eq EscrowDatum where
 -- | Deposits take the form of single-asset and mixed-asset deposits.
 data Deposit = DepositSingle Coin Integer | DepositMixed (AB Integer)
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq Deposit where
   {-# inlinable (==) #-}
@@ -345,7 +373,7 @@ data EscrowAction
   -- | Make a deposit, in exchange for newly-minted liquidity tracking tokens.
   | EscrowDeposit Deposit
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
+  --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowAction where
   {-# inlinable (==) #-}
@@ -365,20 +393,20 @@ data EscrowRedeemer
   -- ^ user withdraws their escrow
   | EscrowCancel
 
-newtype FactoryScriptHash = FactoryScriptHash ValidatorHash
+newtype FactoryScriptHash = FactoryScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype DeadFactoryScriptHash = DeadFactoryScriptHash ValidatorHash
+newtype DeadFactoryScriptHash = DeadFactoryScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype TreasuryScriptHash = TreasuryScriptHash ValidatorHash
+newtype TreasuryScriptHash = TreasuryScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype GiftScriptHash = GiftScriptHash ValidatorHash
+newtype GiftScriptHash = GiftScriptHash ScriptHash
   deriving stock Prelude.Show
 
 newtype FactoryBootCurrencySymbol = FactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype OldFactoryBootCurrencySymbol = OldFactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
-  deriving newtype (FromJSON, ToJSON)
+  --deriving newtype (FromJSON, ToJSON)
 newtype TreasuryBootCurrencySymbol = TreasuryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype SundaeCurrencySymbol = SundaeCurrencySymbol CurrencySymbol
@@ -388,15 +416,15 @@ newtype OldPoolCurrencySymbol = OldPoolCurrencySymbol CurrencySymbol
 newtype PoolCurrencySymbol = PoolCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 
-newtype OldDeadPoolScriptHash = OldDeadPoolScriptHash ValidatorHash
+newtype OldDeadPoolScriptHash = OldDeadPoolScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype DeadPoolScriptHash = DeadPoolScriptHash ValidatorHash
+newtype DeadPoolScriptHash = DeadPoolScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype ScooperFeeHolderScriptHash = ScooperFeeHolderScriptHash ValidatorHash
+newtype ScooperFeeHolderScriptHash = ScooperFeeHolderScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype PoolScriptHash = PoolScriptHash ValidatorHash
+newtype PoolScriptHash = PoolScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype EscrowScriptHash = EscrowScriptHash ValidatorHash
+newtype EscrowScriptHash = EscrowScriptHash ScriptHash
   deriving stock Prelude.Show
 
 factoryToken :: TokenName
@@ -428,11 +456,11 @@ PlutusTx.makeLift ''TreasuryBootSettings
 PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
+PlutusTx.makeIsDataIndexed ''ScriptUpgradeProposal [('ScriptUpgradeProposal, 0)]
+PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
 -- the difference here gives us a bit more safety in the face of possible changes to FactoryDatum or DeadFactoryDatum.
 PlutusTx.makeIsDataIndexed ''DeadFactoryDatum [('DeadFactoryDatum, 20)]
-PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal, 1)]
-PlutusTx.makeIsDataIndexed ''ScriptUpgradeProposal [('ScriptUpgradeProposal, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperUpgradeProposal [('ScooperUpgradeProposal, 0)]
 PlutusTx.makeIsDataIndexed ''UpgradeProposal [('UpgradeScripts, 0), ('UpgradeScooperSet, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('MakeProposal, 1), ('UpgradeFactory, 2), ('UpgradeScooperSet, 3), ('IssueScooperLicense, 4)]
@@ -444,15 +472,15 @@ PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''DeadPoolDatum [('DeadPoolDatum, 0)]
-PlutusTx.makeIsDataIndexed ''EscrowAction [('EscrowSwap, 0), ('EscrowWithdraw, 1), ('EscrowDeposit, 2)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]
+PlutusTx.makeIsDataIndexed ''EscrowAction [('EscrowSwap, 0), ('EscrowWithdraw, 1), ('EscrowDeposit, 2)]
+PlutusTx.makeIsDataIndexed ''EscrowDestination [('EscrowDestination, 0)]
+PlutusTx.makeIsDataIndexed ''EscrowAddress [('EscrowAddress, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowDatum [('EscrowDatum, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 1)]
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
 PlutusTx.makeLift ''SundaeCurrencySymbol
-PlutusTx.makeIsDataIndexed ''EscrowDestination [('EscrowDestination, 0)]
-PlutusTx.makeIsDataIndexed ''EscrowAddress [('EscrowAddress, 0)]
 PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''DeadFactoryScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
@@ -464,41 +492,41 @@ PlutusTx.makeLift ''PoolCurrencySymbol
 PlutusTx.makeLift ''OldPoolCurrencySymbol
 PlutusTx.makeLift ''EscrowScriptHash
 
-instance Scripts.ValidatorTypes Factory where
-  type instance DatumType Factory = FactoryDatum
-  type instance RedeemerType Factory = FactoryRedeemer
-
-instance Scripts.ValidatorTypes DeadFactory where
-  type instance DatumType DeadFactory = DeadFactoryDatum
-  type instance RedeemerType DeadFactory = ProposalRedeemer
-
-instance Scripts.ValidatorTypes Escrow where
-  type instance DatumType Escrow = EscrowDatum
-  type instance RedeemerType Escrow = EscrowRedeemer
-
-instance Scripts.ValidatorTypes ScooperFeeHolder where
-  type instance DatumType ScooperFeeHolder = ScooperFeeDatum
-  type instance RedeemerType ScooperFeeHolder = ScooperFeeRedeemer
-
-instance Scripts.ValidatorTypes Pool where
-  type instance DatumType Pool = PoolDatum
-  type instance RedeemerType Pool = PoolRedeemer
-
-instance Scripts.ValidatorTypes DeadPool where
-  type instance DatumType DeadPool = DeadPoolDatum
-  type instance RedeemerType DeadPool = ()
-
-instance Scripts.ValidatorTypes Treasury where
-  type instance DatumType Treasury = TreasuryDatum
-  type instance RedeemerType Treasury = TreasuryRedeemer
-
-instance Scripts.ValidatorTypes Proposal where
-  type instance DatumType Proposal = UpgradeProposal
-  type instance RedeemerType Proposal = ()
-
-instance Scripts.ValidatorTypes Gift where
-  type instance DatumType Gift = ()
-  type instance RedeemerType Gift = ()
+--instance Scripts.ValidatorTypes Factory where
+--  type instance DatumType Factory = FactoryDatum
+--  type instance RedeemerType Factory = FactoryRedeemer
+--
+--instance Scripts.ValidatorTypes DeadFactory where
+--  type instance DatumType DeadFactory = DeadFactoryDatum
+--  type instance RedeemerType DeadFactory = ProposalRedeemer
+--
+--instance Scripts.ValidatorTypes Escrow where
+--  type instance DatumType Escrow = EscrowDatum
+--  type instance RedeemerType Escrow = EscrowRedeemer
+--
+--instance Scripts.ValidatorTypes ScooperFeeHolder where
+--  type instance DatumType ScooperFeeHolder = ScooperFeeDatum
+--  type instance RedeemerType ScooperFeeHolder = ScooperFeeRedeemer
+--
+--instance Scripts.ValidatorTypes Pool where
+--  type instance DatumType Pool = PoolDatum
+--  type instance RedeemerType Pool = PoolRedeemer
+--
+--instance Scripts.ValidatorTypes DeadPool where
+--  type instance DatumType DeadPool = DeadPoolDatum
+--  type instance RedeemerType DeadPool = ()
+--
+--instance Scripts.ValidatorTypes Treasury where
+--  type instance DatumType Treasury = TreasuryDatum
+--  type instance RedeemerType Treasury = TreasuryRedeemer
+--
+--instance Scripts.ValidatorTypes Proposal where
+--  type instance DatumType Proposal = UpgradeProposal
+--  type instance RedeemerType Proposal = ()
+--
+--instance Scripts.ValidatorTypes Gift where
+--  type instance DatumType Gift = ()
+--  type instance RedeemerType Gift = ()
 
 -- Here, instead of utilities, to avoid dependency cycle
 {-# inlinable mergeListByKey #-}
@@ -577,16 +605,16 @@ legalSwapFees = SwapFees <$> [1 % 2000, 3 % 1000, 1 % 100]
 -- so we need to bound the valid range, to ensure we have an approximate idea of the time of the transaction
 -- 1000 * 60 * 60 = 3_600_000
 {-# inlinable hourMillis #-}
-hourMillis :: DiffMilliSeconds
-hourMillis = DiffMilliSeconds $ 3_600_000
+hourMillis :: Integer
+hourMillis = 3_600_000
 
 -- We bound scooper license issuance transactions by four days so that licenses
 -- can be issued early enough before the week changes to avoid service
 -- interruptions.
 -- 1000 * 60 * 60 * 24 * 4 = 345_600_000
 {-# inlinable fourDaysMillis #-}
-fourDaysMillis :: DiffMilliSeconds
-fourDaysMillis = DiffMilliSeconds $ 345_600_000
+fourDaysMillis :: Integer
+fourDaysMillis = 345_600_000
 
 -- In order to allow governance to revoke access to a list of scoopers, we expire the tokens on regular intervals
 {-# inlinable scooperLicenseExpiryDelayWeeks #-}
@@ -606,9 +634,9 @@ computeInitialLiquidityTokens amtA amtB =
     Imaginary -> error ()
 
 {-# inlinable validRangeSize #-}
-validRangeSize :: Interval POSIXTime -> DiffMilliSeconds
+validRangeSize :: Interval POSIXTime -> Integer
 validRangeSize (Interval (LowerBound (Finite down) _) (UpperBound (Finite up) _)) =
-  DiffMilliSeconds (case up - down of POSIXTime t -> t)
+  case up - down of POSIXTime t -> t
 validRangeSize _ = error ()
 
 {-# inlinable toPoolNft #-}

@@ -7,7 +7,6 @@ import PlutusTx.Builtins
 import qualified PlutusTx
 import qualified Prelude hiding (foldMap)
 
-import PlutusLedgerApi.V1
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V1.Time
 
@@ -24,6 +23,8 @@ import GHC.Generics
 import Data.Text.Encoding qualified as Encoding
 
 import qualified System.Random as Random
+
+import PlutusLedgerApi.V3
 
 -- These instances were dropped, so we now have to implement them
 -- but they won't be used in contracts
@@ -93,15 +94,17 @@ withoutLovelace v =
 {-# inlinable datumOf #-}
 -- | It only succeeds if there's a valid datum, or fails on a missing datum.
 -- If there's an invalid datum, you get a crash.
-datumOf :: UnsafeFromData a => TxInfo -> TxOut -> Maybe a
+datumOf :: TxInfo -> TxOut -> Maybe Datum
 datumOf txInfo txOut =
-  unsafeFromBuiltinData <$> rawDatumOf txInfo txOut
+  rawDatumOf txInfo txOut
 
 {-# inlinable rawDatumOf #-}
-rawDatumOf :: TxInfo -> TxOut -> Maybe BuiltinData
+rawDatumOf :: TxInfo -> TxOut -> Maybe Datum
 rawDatumOf txInfo txOut = do
-  dh <- txOutDatumHash txOut
-  searchDatum dh $ txInfoData txInfo
+  case txOutDatum txOut of
+    OutputDatumHash d -> Map.lookup d $ txInfoData txInfo
+    OutputDatum _ -> Nothing
+    NoOutputDatum -> Nothing
 
 -- More efficient alternative to findDatum from Plutus V1. Consider changing
 -- back to findDatum if we upgrade to Plutus V2
@@ -113,9 +116,9 @@ searchDatum dsh ((dsh', Datum d) : tl)
   | otherwise = searchDatum dsh tl
 
 {-# inlinable isDatumUnsafe #-}
-isDatumUnsafe :: ToData a => TxInfo -> TxOut -> a -> Bool
+isDatumUnsafe :: TxInfo -> TxOut -> Datum -> Bool
 isDatumUnsafe txInfo txOut expectedDat =
-  rawDatumOf txInfo txOut == Just (toBuiltinData expectedDat)
+  rawDatumOf txInfo txOut == Just expectedDat
 
 {-# INLINABLE getAddressOutputs #-}
 getAddressOutputs :: ScriptContext -> Address -> [TxOut]
@@ -399,8 +402,8 @@ PlutusTx.makeLift ''Week
 PlutusTx.makeIsDataIndexed ''Coin [('CoinA, 0), ('CoinB, 1)]
 PlutusTx.makeIsDataIndexed ''AB [('AB, 0)]
 
-apCode :: _ => _
-apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCode arg
+--apCode :: _ => _
+--apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCode arg
 
 {-# inlinable onlyHas #-}
 onlyHas :: Value -> CurrencySymbol -> TokenName -> (Integer -> Bool) -> Bool
@@ -426,7 +429,7 @@ getScriptInput ((TxInInfo tref ot) : tl) o_ref
 
 {-# INLINEABLE isScriptAddress #-}
 isScriptAddress :: TxOut -> ScriptHash -> Bool
-isScriptAddress (TxOut (Address (ScriptCredential h) _) _ _) sh = h == sh
+isScriptAddress (TxOut (Address (ScriptCredential h) _) _ _ _) sh = h == sh
 isScriptAddress _ _ = False
 
 {-# INLINEABLE eqAddrCredential #-}
