@@ -5,10 +5,10 @@ import PlutusTx.Prelude
 import PlutusTx.Sqrt
 import PlutusTx.Numeric
 
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
+import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V2.Contexts (findOwnInput)
 
-import Ledger hiding (mint, fee, singleton, inputs, validRange)
 import qualified PlutusTx.AssocMap as Map
 import PlutusTx.Ratio
 
@@ -16,7 +16,6 @@ import Sundae.Contracts.Common
 import Sundae.Utilities
 import qualified Sundae.ShallowData as SD
 import Sundae.ShallowData (unwrap)
-import Sundae.PoisonPill (getPoisonPillDiffSum)
 
 -- Pool contract
 --  Holds community liquidity, brokers swaps via a market maker formula via aggregating many operations
@@ -61,7 +60,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
     debug "issued amount in new datum incorrect"
       (rawDatumOf txInfo poolOutput ==
-        Just (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP }))) &&
+        Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
@@ -72,8 +71,8 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
       (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
     debug "pool output does not include all expected liquidity"
-      (valueOfAC poolOutputValueSansRider coinA == (newAmtA + poisonPillDS) &&
-        valueOfAC poolOutputValueSansRider coinB == newAmtB + poisonPillDS) &&
+      (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
+        valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
     scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
     -- NOTE THE LESS THAN.
     -- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
@@ -87,7 +86,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     debug "scooper fees must be added"
       (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
     debug "scooper output datum must match"
-      (rawDatumOf txInfo scooperOutput == Just (toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
+      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
   where
   scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
   scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
@@ -96,7 +95,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     | otherwise = scooperNFTExists sym tn tl
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
   !ownInput = scriptInput ctx
-  poisonPillDS = getPoisonPillDiffSum (unCurrencySymbol fbcs) 10
   !poolOutput = uniqueElement'
     [ o
     | o <- txInfoOutputs txInfo
@@ -108,9 +106,9 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
   atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
   atLeastOneSpending _ _ _ _ [] = False
-  atLeastOneSpending addr dh val count ((TxOut{txOutAddress, txOutValue,txOutDatumHash}) : tl)
+  atLeastOneSpending addr dh val count ((o@TxOut{txOutAddress, txOutValue}) : tl)
     | eqAddrCredential txOutAddress addr
-    , txOutDatumHash == dh
+    , txOutDatumHash o == dh
       -- Since every escrow input has a rider, we require every output to have a rider as well
       -- By subtracting it off here, it ensures you're getting all the funds you're entitled to
       -- according to doEscrows
@@ -153,7 +151,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
   oldValue = txOutValue ownInput
   ownScriptHash =
     case ownInput of
-      (TxOut (Address (ScriptCredential h) _) _ _) -> h
+      (TxOut (Address (ScriptCredential h) _) _ _ _) -> h
       _ -> traceError "invalid pool script utxo"
   amountA = \case
     EscrowDeposit (DepositMixed (AB amtA _)) -> amtA
@@ -230,7 +228,7 @@ deadPoolContract
   debug "must only burn liquidity tokens"
     (onlyHas txInfoMint pcs liquidityTokenName (< 0)) &&
   debug "datum mismatch"
-    (rawDatumOf txInfo ownOutput == Just (toBuiltinData datum))
+    (rawDatumOf txInfo ownOutput == Just (Datum $ toBuiltinData datum))
   where
   Just ownInput = findOwnInput ctx
   !ownOutput = uniqueElement' $ getContinuingOutputs ctx
@@ -387,4 +385,3 @@ doEscrows (SwapFees swapFees) !initialState !escrows =
       inPool CoinB = b
       !withdrawn = noLiquidity $ memo \coin -> (givesLiquidity * inPool coin) `divide` liq
     in go (a - withdrawn $$ CoinA) (b - withdrawn $$ CoinB) (liq - givesLiquidity) ((ret, withdrawn) : cons) es
-

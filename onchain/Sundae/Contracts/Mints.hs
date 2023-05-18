@@ -3,13 +3,18 @@ module Sundae.Contracts.Mints where
 import PlutusTx.Prelude
 import PlutusTx.Builtins
 
-import Plutus.V1.Ledger.Api
+import PlutusLedgerApi.V3
 
-import Ledger hiding (mint, fee, singleton, inputs, validRange)
 import qualified PlutusTx.AssocMap as Map
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
+
+ownCurrencySymbol :: ScriptContext -> CurrencySymbol
+ownCurrencySymbol (ScriptContext _ purpose) =
+  case purpose of
+    Minting cs -> cs
+    Spending _ -> die "ownCurrencySymbol"
 
 -- Factory Boot Minting Contract
 --  Controls creation of tokens used for the factory script
@@ -67,7 +72,7 @@ treasuryBootMintingContract TreasuryBootSettings{..} () ctx =
   debug "not spending treasury token with correct datum"
     (atLeastOne (\output ->
       valueContains (txOutValue output) ocs treasuryToken &&
-      rawDatumOf txInfo output == Just (toBuiltinData (TreasuryDatum sundaeMaxSupply NoProposal))
+      rawDatumOf txInfo output == fromData (toData (TreasuryDatum sundaeMaxSupply NoProposal))
       ) outs)
   where
   ocs = ownCurrencySymbol ctx

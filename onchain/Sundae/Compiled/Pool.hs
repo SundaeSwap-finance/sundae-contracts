@@ -1,12 +1,10 @@
 module Sundae.Compiled.Pool where
 
+import Prelude qualified
 import PlutusTx.Prelude
-import Data.Coerce
 import qualified PlutusTx
-import Ledger
-import Ledger.Typed.Scripts (DatumType, RedeemerType, TypedValidator)
-import qualified Ledger.Typed.Scripts as Scripts
-import qualified Ledger.Scripts as UntypedScripts
+
+import PlutusLedgerApi.V3
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Pool
@@ -17,32 +15,45 @@ poolScript
   -> PoolCurrencySymbol
   -> ScooperFeeHolderScriptHash
   -> EscrowScriptHash
-  -> TypedValidator Pool
+  -> SerialisedScript
 poolScript fbcs pcs slsh esh =
-  coerce $ Scripts.unsafeMkTypedValidator $ mkValidatorScript
-    ($$(PlutusTx.compile [|| \fbcs' pcs' slsh' esh' datum redeemer ctx ->
-      check $ poolContract fbcs' pcs' slsh' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
-      `apCode` fbcs
-      `apCode` pcs
-      `apCode` slsh
-      `apCode` esh)
+  let
+    x =
+      pure $$(PlutusTx.compile [|| \fbcs' pcs' slsh' esh' datum redeemer ctx ->
+        check $ poolContract fbcs' pcs' slsh' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+        >>= flip apCode fbcs
+        >>= flip apCode pcs
+        >>= flip apCode slsh
+        >>= flip apCode esh
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile pool script"
 
 escrowScript
   :: PoolCurrencySymbol
-  -> TypedValidator Escrow
-escrowScript pcs = coerce $ Scripts.unsafeMkTypedValidator $ UntypedScripts.mkValidatorScript $
-  $$(PlutusTx.compile
-    [|| \pcs' d r p -> check $ escrowContract pcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData p) ||]) `PlutusTx.applyCode` PlutusTx.liftCode pcs
+  -> SerialisedScript
+escrowScript pcs =
+  let
+    x =
+      pure $$(PlutusTx.compile [|| \pcs' d r p -> check $ escrowContract pcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData p) ||])
+        >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile escrow script"
 
 deadPoolScript
   :: PoolCurrencySymbol
   -> EscrowScriptHash
-  -> TypedValidator DeadPool
+  -> SerialisedScript
 deadPoolScript pcs esh =
-  Scripts.mkTypedValidator @DeadPool
-    ($$(PlutusTx.compile [|| deadPoolContract ||])
-      `apCode` pcs
-      `apCode` esh)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType DeadPool) @(RedeemerType DeadPool)
+  let
+    x =
+      pure $$(PlutusTx.compile [|| deadPoolContract ||])
+        >>= flip apCode pcs
+        >>= flip apCode esh
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile dead pool script"

@@ -1,11 +1,10 @@
 module Sundae.Compiled.Others where
 
+import Prelude qualified
 import PlutusTx.Prelude
-import Data.Coerce
 import qualified PlutusTx
-import Ledger
-import Ledger.Typed.Scripts (DatumType, RedeemerType, TypedValidator)
-import qualified Ledger.Typed.Scripts as Scripts
+
+import PlutusLedgerApi.V3
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Others
@@ -16,64 +15,74 @@ treasuryScript
   -> TreasuryBootCurrencySymbol
   -> SundaeCurrencySymbol
   -> PoolCurrencySymbol
-  -> TypedValidator Treasury
+  -> SerialisedScript
 treasuryScript upgradeSettings tbcs tcs pcs =
-  Scripts.mkTypedValidator @Treasury
-    ($$(PlutusTx.compile [|| treasuryContract ||])
-      `apCode` upgradeSettings
-      `apCode` tbcs
-      `apCode` tcs
-      `apCode` pcs)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType Treasury) @(RedeemerType Treasury)
+  let
+    x =
+      pure $$(PlutusTx.compile [|| treasuryContract ||])
+        >>= flip apCode upgradeSettings
+        >>= flip apCode tbcs
+        >>= flip apCode tcs
+        >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile treasury script"
 
 deadFactoryScript
   :: FactoryBootCurrencySymbol
   -> PoolScriptHash
   -> DeadPoolScriptHash
   -> PoolCurrencySymbol
-  -> TypedValidator DeadFactory
+  -> SerialisedScript
 deadFactoryScript fbcs psh dpsh pcs =
-  coerce $ Scripts.unsafeMkTypedValidator $ mkValidatorScript $
-    ($$(PlutusTx.compile [|| \fbcs' psh' dpsh' pcs' datum redeemer ctx -> check $ deadFactoryContract fbcs' psh' dpsh' pcs' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
-      `apCode` fbcs
-      `apCode` psh
-      `apCode` dpsh
-      `apCode` pcs)
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType DeadFactory) @(RedeemerType DeadFactory)
+  let
+    x = pure $$(PlutusTx.compile [|| \fbcs' psh' dpsh' pcs' datum redeemer ctx -> check $ deadFactoryContract fbcs' psh' dpsh' pcs' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+      >>= flip apCode fbcs
+      >>= flip apCode psh
+      >>= flip apCode dpsh
+      >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile dead factory script"
 
 scooperFeeScript
   :: ScooperFeeSettings
   -> GiftScriptHash
   -> FactoryBootCurrencySymbol
-  -> TypedValidator ScooperFeeHolder
+  -> SerialisedScript
 scooperFeeScript sfs gsh fbcs =
-  coerce $ Scripts.unsafeMkTypedValidator $ mkValidatorScript
-    ($$(PlutusTx.compile [|| \sfs' gsh' fbcs' d r c -> check $ scooperFeeContract sfs' gsh' fbcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData c) ||])
-      `apCode` sfs
-      `apCode` gsh
-      `apCode` fbcs)
+  let
+    x = pure $$(PlutusTx.compile [|| \sfs' gsh' fbcs' d r c -> check $ scooperFeeContract sfs' gsh' fbcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData c) ||])
+      >>= flip apCode sfs
+      >>= flip apCode gsh
+      >>= flip apCode fbcs
+    in
+      case x of
+        Just x' -> serialiseCompiledCode x'
+        Nothing -> Prelude.error "Couldn't compile scooper fee script"
 
 proposalScript
   :: UpgradeSettings
-  -> TypedValidator Proposal
+  -> SerialisedScript
 proposalScript upgradeSettings =
-  Scripts.mkTypedValidator @Proposal
-    ($$(PlutusTx.compile [|| proposalContract ||])
-      `apCode` upgradeSettings)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType Proposal) @(RedeemerType Proposal)
+    let
+      x = pure $$(PlutusTx.compile [|| proposalContract ||])
+        >>= flip apCode upgradeSettings
+    in
+      case x of
+        Just x' -> serialiseCompiledCode x'
+        Nothing -> Prelude.error "Couldn't compile proposal script"
 
 giftScript
   :: TreasuryBootCurrencySymbol
-  -> TypedValidator Gift
+  -> SerialisedScript
 giftScript tbcs =
-  Scripts.mkTypedValidator @Gift
-    ($$(PlutusTx.compile [|| giftContract ||])
-      `apCode` tbcs)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType Gift) @(RedeemerType Gift)
+  let
+    x = pure $$(PlutusTx.compile [|| giftContract ||])
+      >>= flip apCode tbcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile gift script"

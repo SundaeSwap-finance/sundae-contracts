@@ -2,11 +2,9 @@ module Sundae.Contracts.Factory where
 
 import PlutusTx.Prelude
 
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
-import Plutus.V1.Ledger.Time
+import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
 
-import Ledger hiding (mint, fee, singleton, inputs, validRange)
 import qualified PlutusTx.AssocMap as Map
 
 import Sundae.Contracts.Common
@@ -150,7 +148,7 @@ factoryContract
           debug "continuing factory datum not updated correctly: should only set proposalState to adopted"
             (null continuingOutputs) &&
           debug "time-lock hasn't expired"
-            (DiffMilliSeconds gap >= upgradeTimeLockPeriod) &&
+            (gap >= upgradeTimeLockPeriod) &&
           debug "dead factory not paid into or initialized correctly"
             ( let !deadFactoryOutput = uniqueElement' $ getAddressOutputs ctx (scriptHashAddress deadFactorySh)
               in  isDatumUnsafe txInfo deadFactoryOutput (DeadFactoryDatum proposal) &&
@@ -166,7 +164,7 @@ factoryContract
       debug "signer is not a registered scooper"
         (elem pkh scooperSet) &&
       debug "datum altered"
-        (rawDatumOf txInfo ownOutput == Just (toBuiltinData datum)) &&
+        (rawDatumOf txInfo ownOutput == fromData (toData datum)) &&
       debug "minting other things than scooper tokens"
         (txInfoMint == mempty ||
           onlyHas txInfoMint fbcs (computeScooperTokenName (intToIdent $ getWeek $ toWeek latest)) (const True))

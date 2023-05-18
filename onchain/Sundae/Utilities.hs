@@ -12,6 +12,7 @@ import PlutusLedgerApi.V1.Time
 
 import Data.Aeson qualified as Aeson
 
+import PlutusCore qualified as Core
 import PlutusTx.AssocMap(Map)
 import qualified PlutusTx.AssocMap as Map
 
@@ -25,6 +26,14 @@ import Data.Text.Encoding qualified as Encoding
 import qualified System.Random as Random
 
 import PlutusLedgerApi.V3
+
+{-# inlinable scriptHashAddress #-}
+scriptHashAddress :: ScriptHash -> Address
+scriptHashAddress sh = Address (ScriptCredential sh) Nothing
+
+{-# inlinable getContinuingOutputs #-}
+getContinuingOutputs :: ScriptContext -> [TxOut]
+getContinuingOutputs sc = []
 
 -- These instances were dropped, so we now have to implement them
 -- but they won't be used in contracts
@@ -96,8 +105,8 @@ withoutLovelace v =
 -- If there's an invalid datum, you get a crash.
 datumOf :: FromData a => TxInfo -> TxOut -> Maybe a
 datumOf txInfo txOut = do
-  d <- toData <$> rawDatumOf txInfo txOut
-  fromData d
+  d <- getDatum <$> rawDatumOf txInfo txOut
+  fromBuiltinData d
 
 {-# inlinable rawDatumOf #-}
 rawDatumOf :: TxInfo -> TxOut -> Maybe Datum
@@ -410,8 +419,12 @@ PlutusTx.makeLift ''Week
 PlutusTx.makeIsDataIndexed ''Coin [('CoinA, 0), ('CoinB, 1)]
 PlutusTx.makeIsDataIndexed ''AB [('AB, 0)]
 
---apCode :: _ => _
---apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCode arg
+apCode
+  :: (PlutusTx.Lift Core.DefaultUni a)
+  => PlutusTx.CompiledCode (a -> b)
+  -> a
+  -> Maybe (PlutusTx.CompiledCode b)
+apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCodeDef arg
 
 {-# inlinable onlyHas #-}
 onlyHas :: Value -> CurrencySymbol -> TokenName -> (Integer -> Bool) -> Bool

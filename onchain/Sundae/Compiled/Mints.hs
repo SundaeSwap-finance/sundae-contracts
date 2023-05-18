@@ -2,13 +2,12 @@ module Sundae.Compiled.Mints where
 
 import PlutusTx.Prelude
 import qualified PlutusTx
-import Ledger
-import qualified Ledger.Typed.Scripts as Scripts
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Mints
 import Sundae.Utilities
 
+{-
 factoryBootMintingScript :: FactoryBootSettings -> MintingPolicy
 factoryBootMintingScript fbs = mkMintingPolicyScript $
   $$(PlutusTx.compile [|| \fbs' -> Scripts.mkUntypedMintingPolicy $ factoryBootMintingContract fbs' ||])
@@ -30,3 +29,4 @@ poolMintingScript fbcs opcs = mkMintingPolicyScript $
   $$(PlutusTx.compile [|| poolMintingContract ||])
     `apCode` fbcs
     `apCode` opcs
+-}

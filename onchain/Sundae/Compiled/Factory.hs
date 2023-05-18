@@ -1,5 +1,6 @@
 module Sundae.Compiled.Factory where
 
+{-
 import qualified PlutusTx
 import Ledger.Typed.Scripts (DatumType, RedeemerType, TypedValidator)
 import qualified Ledger.Typed.Scripts as Scripts
@@ -26,3 +27,4 @@ factoryScript settings fbcs propSh psh pcs =
     $$(PlutusTx.compile [|| wrap ||])
   where
   wrap = Scripts.mkUntypedValidator @(DatumType Factory) @(RedeemerType Factory)
+-}

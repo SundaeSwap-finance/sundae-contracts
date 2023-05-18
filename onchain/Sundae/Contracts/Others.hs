@@ -5,7 +5,7 @@ import qualified PlutusTx.AssocMap as Map
 
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V1.Value
-import PlutusLedgerApi.V2.Contexts
+import PlutusLedgerApi.V2.Contexts (findOwnInput)
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
@@ -220,9 +220,6 @@ scooperFeeContract
     | o <- txInfoOutputs
     , txOutAddress o == scriptHashAddress gsh
     ]
-
-scriptHashAddress :: ScriptHash -> Address
-scriptHashAddress sh = Address (ScriptCredential sh) Nothing
 
 -- Dead Factory Contract
 --   Contract locking the factory NFT after it's upgraded, and brokering the upgrade of each liquidity pool.
