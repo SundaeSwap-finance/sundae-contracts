@@ -11,6 +11,7 @@ import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V1.Time
 
 import Data.Aeson qualified as Aeson
+import Data.ByteString.Base16 qualified as Base16
 
 import PlutusCore qualified as Core
 import PlutusTx.AssocMap(Map)
@@ -38,9 +39,12 @@ getContinuingOutputs sc = []
 -- These instances were dropped, so we now have to implement them
 -- but they won't be used in contracts
 instance ToJSON BuiltinByteString where
-  toJSON bs = toJSON (Encoding.decodeUtf8 (fromBuiltin bs))
+  toJSON bs = toJSON (Encoding.decodeUtf8 (Base16.encode (fromBuiltin bs)))
 instance FromJSON BuiltinByteString where
-  parseJSON = withText "BuiltinByteString" $ \s -> Prelude.pure (Prelude.undefined s)
+  parseJSON = withText "BuiltinByteString" $ \s ->
+    case Base16.decode (Encoding.encodeUtf8 s) of
+      Right rawBytes -> Prelude.pure (toBuiltin rawBytes)
+      Left err -> Prelude.fail err
 
 {-# inlinable atLeastOne #-}
 atLeastOne :: (a -> Bool) -> [a] -> Bool
