@@ -41,19 +41,13 @@ plutusScriptHash script =
 -}
 
 currencySymbolOf :: SerialisedScript -> CurrencySymbol
-currencySymbolOf _ = CurrencySymbol ""
+currencySymbolOf _ = CurrencySymbol "00000000000000000000000000000000000000000000000000000000"
 
 txOutRefFromStr :: Text -> Word -> TxOutRef
 txOutRefFromStr txid txix =
   TxOutRef
     (Plutus.TxId (Plutus.toBuiltin (Text.encodeUtf8 txid)))
     (fromIntegral txix)
-
-factoryScript _ _ _ _ _ = ""
-poolMintingScript _ _ = ""
-sundaeMintingScript _ = ""
-treasuryBootMintingScript _ = ""
-factoryBootMintingScript _ = ""
 
 data AllScripts = AllScripts
   { factoryBootMintScr :: SerialisedScript
@@ -185,7 +179,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     convertedTreasuryBootSettings =
       TreasuryBootSettings $ ProtocolBootUTXO $ uncurry txOutRefFromStr treasBootUTXO
     oldPoolCurrencySymbol = case fbSettings of
-      CLIBrandNewFactoryBootSettings {} -> OldPoolCurrencySymbol ""
+      CLIBrandNewFactoryBootSettings {} -> OldPoolCurrencySymbol "00000000000000000000000000000000000000000000000000000000"
       CLIUpgradedFactoryBootSettings _ oldSymbol ->
         OldPoolCurrencySymbol $ unsafePerformIO $ loadOrUse (fmap (currencySymbolOf . deserialise) . LBS.readFile) oldSymbol
     convertedUpgradeSettings = UpgradeSettings
@@ -232,6 +226,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
   in AllScripts {..}
   where
   mcs :: Coercible CurrencySymbol a => ShortByteString -> a
-  mcs script = coerce $ CurrencySymbol ""
+  mcs script = coerce $ CurrencySymbol "00000000000000000000000000000000000000000000000000000000"
   vsh :: Coercible Plutus.ScriptHash a => ShortByteString -> a
   vsh script = coerce $ Plutus.ScriptHash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" -- empty sha256

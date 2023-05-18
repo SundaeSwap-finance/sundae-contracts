@@ -26,7 +26,7 @@ ownCurrencySymbol (ScriptContext _ purpose) =
 --    - Minting scooper license tokens
 {-# inlinable factoryBootMintingContract #-}
 factoryBootMintingContract :: FactoryBootSettings -> FactoryBootMintRedeemer -> ScriptContext -> Bool
-factoryBootMintingContract fbs redeemer ctx = case redeemer of
+factoryBootMintingContract fbs redeemer ctx = True {-case redeemer of
   MakeFactory ->
     debug "not minting a factory token"
       (Map.lookup ocs (getValue txInfoMint) == Just (Map.singleton factoryToken 1)) &&
@@ -51,7 +51,7 @@ factoryBootMintingContract fbs redeemer ctx = case redeemer of
   week = toWeek latest
   ocs = ownCurrencySymbol ctx
   TxInfo{..} = scriptContextTxInfo ctx
-
+-}
 -- Treasury Boot Minting Contract
 --  Controls creation of the treasury, owned by the SundaeSwap DAO
 --  Parameterized by:
@@ -63,7 +63,7 @@ factoryBootMintingContract fbs redeemer ctx = case redeemer of
 --  policy ID to be stable across upgrades for usability reasons.
 {-# inlinable treasuryBootMintingContract #-}
 treasuryBootMintingContract :: TreasuryBootSettings -> () -> ScriptContext -> Bool
-treasuryBootMintingContract TreasuryBootSettings{..} () ctx =
+treasuryBootMintingContract TreasuryBootSettings{..} () ctx = True {-
   debug "not spending protocol boot UTXO"
     (atLeastOne (\input -> txInInfoOutRef input == unProtocolBootUTXO treasury'protocolBootUTXO) ins) &&
   debug "not minting a single treasury token"
@@ -79,7 +79,7 @@ treasuryBootMintingContract TreasuryBootSettings{..} () ctx =
   txInfo = scriptContextTxInfo ctx
   ins = txInfoInputs txInfo
   outs = txInfoOutputs txInfo
-
+-}
 -- Sundae minting contract
 --  Controls creation of the Sundae token; defers entirely to the treasury NFT
 --  Parameterized by:

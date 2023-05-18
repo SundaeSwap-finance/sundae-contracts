@@ -1,9 +1,10 @@
 module Sundae.Compiled.Factory where
 
-{-
+import Prelude qualified
+import PlutusTx.Prelude
 import qualified PlutusTx
-import Ledger.Typed.Scripts (DatumType, RedeemerType, TypedValidator)
-import qualified Ledger.Typed.Scripts as Scripts
+
+import PlutusLedgerApi.V3
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Factory
@@ -15,16 +16,17 @@ factoryScript
   -> DeadFactoryScriptHash
   -> PoolScriptHash
   -> PoolCurrencySymbol
-  -> TypedValidator Factory
+  -> SerialisedScript
 factoryScript settings fbcs propSh psh pcs =
-  Scripts.mkTypedValidator @Factory
-    ($$(PlutusTx.compile [|| factoryContract ||])
-      `apCode` settings
-      `apCode` fbcs
-      `apCode` propSh
-      `apCode` psh
-      `apCode` pcs)
-    $$(PlutusTx.compile [|| wrap ||])
-  where
-  wrap = Scripts.mkUntypedValidator @(DatumType Factory) @(RedeemerType Factory)
--}
+  let
+    x =
+      pure $$(PlutusTx.compile [|| factoryContract ||])
+        >>= flip apCode settings
+        >>= flip apCode fbcs
+        >>= flip apCode propSh
+        >>= flip apCode psh
+        >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile factory script"
