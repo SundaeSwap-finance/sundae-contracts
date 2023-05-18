@@ -58,7 +58,7 @@ factoryContract
   (PoolCurrencySymbol pcs)
   datum@FactoryDatum {..}
   redeemer
-  ctx = True {-
+  ctx =
   (if redeemer /= UpgradeFactory then
     debug "factory token not spent back, and not upgrading factory"
       (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
@@ -164,7 +164,7 @@ factoryContract
       debug "signer is not a registered scooper"
         (elem pkh scooperSet) &&
       debug "datum altered"
-        (rawDatumOf txInfo ownOutput == fromData (toData datum)) &&
+        (rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
       debug "minting other things than scooper tokens"
         (txInfoMint == mempty ||
           onlyHas txInfoMint fbcs (computeScooperTokenName (intToIdent $ getWeek $ toWeek latest)) (const True))
@@ -178,7 +178,6 @@ factoryContract
   !continuingOutputs = getContinuingOutputs ctx
   !ownInput = scriptInput ctx
   ownInputValue = txOutValue ownInput
--}
 
 {-# inlinable toFactoryNft #-}
 toFactoryNft :: CurrencySymbol -> AssetClass
