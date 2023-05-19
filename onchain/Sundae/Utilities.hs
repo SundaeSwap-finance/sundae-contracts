@@ -27,14 +27,32 @@ import Data.Text.Encoding qualified as Encoding
 import qualified System.Random as Random
 
 import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2.Contexts
 
 {-# inlinable scriptHashAddress #-}
 scriptHashAddress :: ScriptHash -> Address
 scriptHashAddress sh = Address (ScriptCredential sh) Nothing
 
+{-
+findOwnInput :: ScriptContext -> Maybe TxInInfo
+findOwnInput (ScriptContext t_info (Spending o_ref)) =
+  let
+    go (this@(TxInInfo tref ot) : tl) o_ref
+      | tref == o_ref = Just this
+      | otherwise = go tl o_ref
+    go [] _ = Nothing
+  in
+    go (txInfoInputs t_info) o_ref
+-}
+
 {-# inlinable getContinuingOutputs #-}
 getContinuingOutputs :: ScriptContext -> [TxOut]
-getContinuingOutputs sc = []
+getContinuingOutputs ctx =
+  case findOwnInput ctx of
+    Just TxInInfo{txInInfoResolved=TxOut{txOutAddress}} -> filter (f txOutAddress) (txInfoOutputs $ scriptContextTxInfo ctx)
+    Nothing -> traceError "Lf"
+  where
+    f addr TxOut{txOutAddress=otherAddress} = addr == otherAddress
 
 -- These instances were dropped, so we now have to implement them
 -- but they won't be used in contracts
