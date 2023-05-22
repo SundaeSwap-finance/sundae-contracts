@@ -97,10 +97,10 @@ library
   hs-source-dirs: .
   exposed-modules:
     Sundae.Compiled
-    --Sundae.Compiled.Factory
-    --Sundae.Compiled.Mints
+    Sundae.Compiled.Factory
+    Sundae.Compiled.Mints
     Sundae.Compiled.Others
-    --Sundae.Compiled.Pool
+    Sundae.Compiled.Pool
     Sundae.Contracts
     Sundae.Contracts.Common
     Sundae.Contracts.Factory
