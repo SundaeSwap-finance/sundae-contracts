@@ -168,14 +168,14 @@ getAddressOutputs ctx addr = filter f (txInfoOutputs $ scriptContextTxInfo ctx)
 {-# inlinable debug #-}
 debug :: BuiltinString -> Bool -> Bool
 debug =
-  const id
-  -- traceIfFalse
+  -- const id
+  traceIfFalse
 
 {-# inlinable die #-}
 die :: BuiltinString -> a
 die =
-  const (error ())
-  -- traceError
+  -- const (error ())
+  traceError
 
 -- the Plutus version of this makes little sense, because it requires that *all*
 -- assets are greater in number, rather than just requiring that just one is,

@@ -1,9 +1,13 @@
 {-# LANGUAGE IncoherentInstances #-}
 
 -- | Wrappers for compiled scripts
-module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts) where
+module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts, testEvalEscrowScr) where
 
-import PlutusLedgerApi.V3 (SerialisedScript, TxOutRef(..), toBuiltin)
+import PlutusLedgerApi.V3 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
+import PlutusLedgerApi.Common (mkDynEvaluationContext, evaluateScriptCounting, PlutusLedgerLanguage(..))
+import PlutusCore.Evaluation.Machine.ExBudgetingDefaults
+import PlutusLedgerApi.Common (ProtocolVersion(..), VerboseMode(..))
+import Data.Default (def)
 import Data.Either (fromRight)
 import PlutusLedgerApi.V3 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), CurrencySymbol(..))
@@ -21,7 +25,10 @@ import Data.Coerce (Coercible, coerce)
 
 import Codec.Serialise (Serialise, deserialise)
 
-import Sundae.Contracts.Common (FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
+
+import Sundae.Utilities (Ident(..), Coin(..))
+
 import Sundae.Compiled.Factory as X
 import Sundae.Compiled.Mints as X
 import Sundae.Compiled.Others as X
@@ -229,3 +236,121 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
   mcs script = coerce $ CurrencySymbol "00000000000000000000000000000000000000000000000000000000"
   vsh :: Coercible Plutus.ScriptHash a => ShortByteString -> a
   vsh script = coerce $ Plutus.ScriptHash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" -- empty sha256
+
+testEvalEscrowScr :: IO (Plutus.LogOutput, Either Plutus.EvaluationError Plutus.ExBudget)
+testEvalEscrowScr = do
+  defCostModel <-
+    case defaultCostModelParams of
+      Just cmp -> pure cmp
+      Nothing -> Prelude.error "No default cost model params"
+  ec <-
+    case mkDynEvaluationContext def defCostModel of
+      Right ok -> pure ok
+      Left err -> Prelude.error (show err)
+  let
+    escrowScriptAddr = Plutus.Address
+      (Plutus.ScriptCredential "1111111111111111111111111111111111111111111111111111111111111111")
+      Nothing
+    poolScriptAddr = Plutus.Address
+      (Plutus.ScriptCredential "2222222222222222222222222222222222222222222222222222222222222222")
+      Nothing
+    myWallet = Plutus.Address
+      (Plutus.PubKeyCredential "3333333333333333333333333333333333333333333333333333333333333333")
+      Nothing
+    escrowDestPkh = "9999999999999999999999999999999999999999999999999999999999999999"
+    escrowAddress =
+      EscrowAddress
+        ( EscrowDestination
+          ( Plutus.Address
+            (Plutus.PubKeyCredential escrowDestPkh)
+            Nothing
+          )
+          Nothing
+        )
+        Nothing
+    escrowAction = EscrowSwap CoinA 1000000 Nothing
+    datum = EscrowDatum (Ident "\NUL") escrowAddress 2500000 escrowAction
+    redeemer = EscrowScoop
+    context =
+      Plutus.ScriptContext
+        { scriptContextTxInfo =
+            Plutus.TxInfo
+              { txInfoInputs =
+                  -- the escrow
+                  [ Plutus.TxInInfo
+                      { txInInfoOutRef =
+                          ( Plutus.TxOutRef
+                              { txOutRefId = "0000000000000000000000000000000000000000000000000000000000000000"
+                              , txOutRefIdx = 0
+                              }
+                          )
+                      , txInInfoResolved = Plutus.TxOut
+                          { txOutAddress = escrowScriptAddr
+                          , txOutValue = mempty
+                          , txOutDatum = Plutus.OutputDatumHash ""
+                          , txOutReferenceScript = Nothing
+                          }
+                      }
+                  , Plutus.TxInInfo
+                      { Plutus.txInInfoOutRef =
+                          ( Plutus.TxOutRef
+                              { Plutus.txOutRefId = "0000000000000000000000000000000000000000000000000000000000000000"
+                              , Plutus.txOutRefIdx = 1
+                              }
+                          )
+                      , Plutus.txInInfoResolved = Plutus.TxOut
+                          { txOutAddress = poolScriptAddr
+                          , txOutValue = Plutus.Value $ Plutus.fromList
+                              [ (CurrencySymbol "", Plutus.fromList [(Plutus.TokenName "", 2_000_000)])
+                              , (coerce $ poolCS scriptsExample, Plutus.fromList [(Plutus.TokenName "p \NUL", 1)])
+                              ]
+                          , txOutDatum = NoOutputDatum
+                          , txOutReferenceScript = Nothing
+                          }
+                      }
+                  ]
+              , txInfoOutputs =
+                [ Plutus.TxOut
+                    { txOutAddress = myWallet
+                    , txOutValue = Plutus.Value $ Plutus.fromList
+                        [ (CurrencySymbol "", Plutus.fromList [(Plutus.TokenName "", 2_000_000)])
+                        , (coerce $ poolCS scriptsExample, Plutus.fromList [(Plutus.TokenName "p \NUL", 1)])
+                        ]
+                    , txOutDatum = NoOutputDatum
+                    , txOutReferenceScript = Nothing
+                    }
+                ]
+              , txInfoFee = mempty -- Value
+              , txInfoMint = mempty -- Value
+              , txInfoDCert = []
+              , txInfoWdrl = Plutus.fromList []
+              , txInfoValidRange =
+                  Plutus.Interval
+                    (Plutus.LowerBound Plutus.NegInf False)
+                    (Plutus.UpperBound Plutus.PosInf False)
+              , txInfoSignatories = []
+              , txInfoData = Plutus.fromList []
+              , txInfoId = "0000000000000000000000000000000000000000000000000000000000000001"
+              , txInfoReferenceInputs = []
+              , txInfoRedeemers = Plutus.fromList []
+              }
+        , scriptContextPurpose =
+            Plutus.Spending
+              ( Plutus.TxOutRef
+                  { txOutRefId = "0000000000000000000000000000000000000000000000000000000000000000"
+                  , txOutRefIdx = 0
+                  }
+              )
+        }
+  let out@(logOutput, result) =
+        evaluateScriptCounting
+          PlutusV3
+          (ProtocolVersion 9 0)
+          Verbose
+          ec
+          (escrowScr scriptsExample)
+          [ Plutus.toData datum
+          , Plutus.toData redeemer
+          , Plutus.toData context
+          ]
+  pure out

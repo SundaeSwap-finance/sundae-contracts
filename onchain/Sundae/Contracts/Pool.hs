@@ -14,8 +14,6 @@ import PlutusTx.Ratio
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
-import qualified Sundae.ShallowData as SD
-import Sundae.ShallowData (unwrap)
 
 -- Pool contract
 --  Holds community liquidity, brokers swaps via a market maker formula via aggregating many operations
@@ -259,11 +257,11 @@ escrowContract
   :: PoolCurrencySymbol
   -> EscrowDatum
   -> EscrowRedeemer
-  -> SD.ScriptContext
+  -> ScriptContext
   -> Bool
 escrowContract
   (PoolCurrencySymbol pcs)
-  escrow_datum redeemer (unwrap . SD.scriptContextTxInfo . unwrap -> tx_info) =
+  escrow_datum redeemer (ScriptContext tx_info _) =
     case redeemer of
       EscrowScoop ->
         escrowScoop
@@ -272,15 +270,15 @@ escrowContract
   where
   escrowScoop =
     debug "no pool token output present"
-      (atLeastOne (hasPoolToken . SD.txOutValue . unwrap) (SD.txInfoOutputs $ tx_info))
+      (atLeastOne (hasPoolToken . txOutValue) (txInfoOutputs $ tx_info))
     where
     !poolNft = toPoolNft pcs (_escrow'poolIdent escrow_datum)
-    hasPoolToken :: SD.Value -> Bool
-    hasPoolToken o = assetClassValueOf (unwrap o) poolNft == 1
+    hasPoolToken :: Value -> Bool
+    hasPoolToken o = assetClassValueOf o poolNft == 1
 
   escrowCancel =
     debug "the canceller did not sign the transaction"
-      (atLeastOne (\x -> atLeastOne (\a -> unwrap a == x) (SD.txInfoSignatories tx_info)) pkhs)
+      (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)
     where
     !(EscrowDatum _ escrow_addr _ _) = escrow_datum
     pkhs = escrowPubKeyHashes escrow_addr
