@@ -17,13 +17,14 @@ import Prelude
 import GHC.Generics
 import Data.Aeson
 import Data.Text.Encoding qualified as Text
+import Data.ByteString.Hash qualified as Hash
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.ByteString.Base16 qualified as Base16
-import Data.Coerce (Coercible, coerce)
+import Data.Coerce (coerce)
 
-import Codec.Serialise (Serialise, deserialise)
+import Codec.Serialise (deserialise)
 
 import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
 
@@ -232,10 +233,19 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     sundaeAssetClass = AssetClass (coerce sundaeCS, sundaeToken)
   in AllScripts {..}
   where
-  mcs :: Coercible CurrencySymbol a => ShortByteString -> a
-  mcs script = coerce $ CurrencySymbol "00000000000000000000000000000000000000000000000000000000"
-  vsh :: Coercible Plutus.ScriptHash a => ShortByteString -> a
-  vsh script = coerce $ Plutus.ScriptHash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" -- empty sha256
+  mcs script = coerce $ Plutus.ScriptHash (toBuiltin (hashScript script))
+  vsh script = coerce $ Plutus.ScriptHash (toBuiltin (hashScript script))
+
+-- Reference for the implementation of script hashing:
+-- https://github.com/input-output-hk/cardano-ledger/blob/d421556ef91362d13963a68a94c6f9e752d67e59/eras/babbage/impl/src/Cardano/Ledger/Babbage/Scripts.hs#L35-L42
+-- https://github.com/input-output-hk/cardano-ledger/blob/d421556ef91362d13963a68a94c6f9e752d67e59/libs/cardano-ledger-core/src/Cardano/Ledger/Core.hs#L449-L456
+hashScript :: SerialisedScript -> BS.ByteString
+hashScript script =
+  let
+    -- Our scripts are plutus V3
+    babbageV3ScriptPrefixTag = "\x03"
+  in
+    Hash.blake2b_256 (babbageV3ScriptPrefixTag <> SBS.fromShort script)
 
 testEvalEscrowScr :: IO (Plutus.LogOutput, Either Plutus.EvaluationError Plutus.ExBudget)
 testEvalEscrowScr = do
