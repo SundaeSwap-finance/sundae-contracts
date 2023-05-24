@@ -22,6 +22,7 @@ import PlutusLedgerApi.V3
 import PlutusLedgerApi.V1.Value
 import qualified PlutusTx.Ratio as Ratio
 import qualified PlutusTx.Prelude as Plutus
+import qualified PlutusTx.AssocMap as AssocMap
 
 import qualified Cardano.Crypto.Hash.Class as Crypto
 
@@ -305,7 +306,7 @@ hourInterval t =
 -- Todo: maybe `run` wants to pass in the redeemer as well.
 runStep :: [Step] -> Assertion
 runStep steps = do
-  let info = nubbed $ foldr step baseTxInfo (zip [(0::Integer)..] steps)
+  let info = foldr step baseTxInfo (zip [(0::Integer)..] steps)
   sequence_ $ catMaybes $ fmap (exec info) $ zip [0..] steps
   where
   run (EscrowScriptInput redeemer datum) ctx = runEscrow datum redeemer ctx
@@ -325,8 +326,6 @@ runStep steps = do
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") (toBuiltinData redeemer) (toBuiltinData ctx)
   runFactory =
     factoryContract upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
-  nubbed info =
-    info & tiData %~ nubOrdOn fst
   handleErrors = handle (\(_ :: SomeException) -> pure False) . evaluate
   runCond = \case
     Pass -> id
@@ -359,6 +358,8 @@ runStep steps = do
       let passes = runCond cond wentThrough
       passes @? "treasury mint failure"
   exec _ _ = Nothing
+  mkDatumHash :: ToData a => a -> DatumHash
+  mkDatumHash x = DatumHash (toBuiltin (Hash.blake2b_256 (LBS.toStrict (serialise (toData x)))))
   scriptInputData = \case
     EscrowScriptInput _ d -> (mkDatumHash d, toDatum d)
     PoolScriptInput _ d -> (mkDatumHash d, toDatum d)
@@ -370,24 +371,24 @@ runStep steps = do
       , txInfoFee = lovelaceValue 1
       , txInfoMint = mempty
       , txInfoDCert = []
-      , txInfoWdrl = []
+      , txInfoWdrl = fromList []
       , txInfoValidRange = always
       , txInfoSignatories = []
-      , txInfoData = []
+      , txInfoData = fromList []
       , txInfoId = mkTxId "#testOut"}
   step (ix, c) info =
     let txIx = fromString ("#" <> show ix)
     in case c of
       FromScript addr v _ _ (scriptInputData -> (hash, d)) ->
-       info & tiInputs %~ (mkScriptInput txIx addr v (Just hash):)
-            & tiData %~ ((hash, d):)
+       info & tiInputs %~ (mkScriptInput txIx addr v (hash):)
+            & tiData %~ AssocMap.insert hash d
       FromUser addr v ->
         info & tiInputs %~ (mkUserInput txIx addr v:)
       ToUser addr v ->
-        info & tiOutputs %~ (TxOut addr v Nothing:)
+        info & tiOutputs %~ (TxOut addr v NoOutputDatum Nothing:)
       ToScript addr v (BuiltinData -> d) ->
-        info & tiOutputs %~ (TxOut addr v (Just $ mkDatumHash d):)
-             & tiData %~ ((mkDatumHash d, toDatum d):)
+        info & tiOutputs %~ (TxOut addr v (OutputDatumHash $ mkDatumHash d) Nothing:)
+             & tiData %~ AssocMap.insert (mkDatumHash d) (toDatum d)
       PoolMint v _ _->
         info & tiMint %~ (<> v)
       FactoryBootMint v _ _ ->

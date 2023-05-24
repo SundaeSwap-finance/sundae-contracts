@@ -7,6 +7,8 @@ import PlutusTx.Prelude
 import PlutusTx.Sqrt
 import Data.Aeson qualified as Aeson
 import Data.Aeson (FromJSON(..), ToJSON(..), withScientific, withObject, (.:), (.=))
+import Data.ByteString.Base16 qualified as Base16
+import Data.Text.Encoding qualified as Text
 
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V3
@@ -69,13 +71,29 @@ newtype ProtocolBootUTXO = ProtocolBootUTXO
   { unProtocolBootUTXO :: TxOutRef
   }
   deriving stock (Generic, Prelude.Show)
-  --deriving newtype (FromJSON, ToJSON)
+  deriving newtype (FromJSON, ToJSON)
 
 -- | Used to make the treasury token an NFT.
 newtype TreasuryBootSettings = TreasuryBootSettings
   { treasury'protocolBootUTXO :: ProtocolBootUTXO
   }
   --deriving newtype (FromJSON, ToJSON)
+
+instance FromJSON PubKeyHash where
+  parseJSON = Aeson.withText "PubKeyHash" $ \s -> do
+    dec <- case Base16.decode (Text.encodeUtf8 s) of
+      Right ok -> Prelude.pure ok
+      Left err -> Prelude.fail err
+    Prelude.pure (PubKeyHash (toBuiltin dec))
+
+instance ToJSON PubKeyHash where
+  toJSON (PubKeyHash pkh) =
+    let
+      bytes = fromBuiltin pkh
+      hex = Base16.encode bytes
+      text = Text.decodeUtf8 hex
+    in
+      Aeson.String text
 
 data FactoryBootSettings
   = BrandNewFactoryBootSettings
@@ -86,7 +104,7 @@ data FactoryBootSettings
   { oldFactoryBootCurrencySymbol :: OldFactoryBootCurrencySymbol
   }
   deriving stock (Generic, Prelude.Show)
-  --deriving anyclass (FromJSON, ToJSON)
+  deriving anyclass (FromJSON, ToJSON)
 
 data UpgradeSettings = UpgradeSettings
   { upgradeTimeLockPeriod :: Integer
@@ -406,7 +424,7 @@ newtype FactoryBootCurrencySymbol = FactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype OldFactoryBootCurrencySymbol = OldFactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
-  --deriving newtype (FromJSON, ToJSON)
+  deriving newtype (FromJSON, ToJSON)
 newtype TreasuryBootCurrencySymbol = TreasuryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype SundaeCurrencySymbol = SundaeCurrencySymbol CurrencySymbol
