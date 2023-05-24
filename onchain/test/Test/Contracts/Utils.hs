@@ -9,34 +9,20 @@ module Test.Contracts.Utils where
 import Codec.Serialise hiding (decode, Fail)
 import Control.Exception
 import Control.Lens hiding (ix)
-import qualified Cardano.Ledger.Alonzo.Data as Alonzo
-import qualified Cardano.Ledger.Alonzo.Language as Alonzo
-import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
-import qualified Cardano.Ledger.Alonzo.TxInfo as Alonzo
 import Data.ByteString(ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Short as SBS
-import Data.Coerce(coerce)
+import Data.ByteString.Hash qualified as Hash
+import Data.Coerce (Coercible, coerce)
 import Data.Containers.ListUtils (nubOrdOn)
 import Data.Maybe (catMaybes)
 import Data.String(fromString)
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
-import qualified Ledger.Scripts as UTScripts
-import Ledger.Typed.Scripts
+import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
 import qualified PlutusTx.Ratio as Ratio
 import qualified PlutusTx.Prelude as Plutus
-import qualified Ledger as Plutus
 
-import qualified Cardano.Ledger.BaseTypes as Ledger
-import qualified Cardano.Ledger.Crypto as Ledger
-import qualified Cardano.Ledger.Era as Ledger
-import qualified Cardano.Ledger.Keys as Ledger
-import qualified Cardano.Ledger.Credential as Ledger
-import qualified Cardano.Ledger.Hashes as Ledger
-
-import qualified Cardano.Api as Cardano
-import qualified Cardano.Api.Shelley as Cardano
 import qualified Cardano.Crypto.Hash.Class as Crypto
 
 import Test.Tasty.HUnit
@@ -46,7 +32,6 @@ import qualified Sundae.Compiled as Sundae
 import qualified Sundae.ShallowData as SD
 import qualified Data.Aeson as Aeson
 import System.IO.Unsafe (unsafePerformIO)
-
 
 data Step
   = FromUser Address Value
@@ -85,7 +70,7 @@ tiMint :: Lens' TxInfo Value
 tiMint f info =
   (\i' -> info{txInfoMint = i'}) <$> f (txInfoMint info)
 
-tiData :: Lens' TxInfo [(DatumHash, Datum)]
+tiData :: Lens' TxInfo (Map DatumHash Datum)
 tiData f info =
   (\i' -> info{txInfoData = i'}) <$> f (txInfoData info)
 
@@ -122,30 +107,25 @@ sundaeCoin = toCoin "SUNDAE"
 swapCoin = toCoin "Swap"
 adaCoin = assetClass adaSymbol adaToken
 
-currencySymbolOf :: MintingPolicy -> CurrencySymbol
-currencySymbolOf = transMintingScriptHash . plutusScriptHash . getMintingPolicy
+currencySymbolOf :: SerialisedScript -> CurrencySymbol
+currencySymbolOf script = coerce $ ScriptHash (toBuiltin (hashScript script))
+
+-- Reference for the implementation of script hashing:
+-- https://github.com/input-output-hk/cardano-ledger/blob/d421556ef91362d13963a68a94c6f9e752d67e59/eras/babbage/impl/src/Cardano/Ledger/Babbage/Scripts.hs#L35-L42
+-- https://github.com/input-output-hk/cardano-ledger/blob/d421556ef91362d13963a68a94c6f9e752d67e59/libs/cardano-ledger-core/src/Cardano/Ledger/Core.hs#L449-L456
+hashScript :: SerialisedScript -> BS.ByteString
+hashScript script =
+  let
+    -- Our scripts are plutus V3
+    babbageV3ScriptPrefixTag = "\x03"
+  in
+    Hash.blake2b_256 (babbageV3ScriptPrefixTag <> SBS.fromShort script)
 
 toDatum :: ToData a => a -> Datum
 toDatum = Datum . BuiltinData . toData
 
-toScriptData :: ToData a => a -> Cardano.ScriptData
-toScriptData d = Cardano.fromAlonzoData $ Alonzo.Data $ toData d
-
-addressOf :: Script -> Cardano.Address Cardano.ShelleyAddr
-addressOf script =
-  Cardano.ShelleyAddress Ledger.Testnet (Ledger.ScriptHashObj (plutusScriptHash script)) Ledger.StakeRefNull
-
-transMintingScriptHash :: Ledger.ScriptHash c -> CurrencySymbol
-transMintingScriptHash h = case Alonzo.transScriptHash h of ValidatorHash vhsh -> CurrencySymbol vhsh
-
-serialiseScript :: Plutus.Script -> Cardano.PlutusScript Cardano.PlutusScriptV1
-serialiseScript script =
-  Cardano.PlutusScriptSerialised $ SBS.toShort $ LBS.toStrict $ serialise script :: Cardano.PlutusScript Cardano.PlutusScriptV1
-
-plutusScriptHash :: Script -> Ledger.ScriptHash Ledger.StandardCrypto
-plutusScriptHash script =
-  Ledger.hashScript @(Cardano.ShelleyLedgerEra Cardano.AlonzoEra) $
-    Alonzo.PlutusScript Alonzo.PlutusV1 (case serialiseScript script of Cardano.PlutusScriptSerialised scr -> scr)
+vsh :: Coercible ScriptHash a => SerialisedScript -> a
+vsh script = coerce $ ScriptHash (toBuiltin (hashScript script))
 
 testFactoryBootSettings :: FactoryBootSettings
 testFactoryBootSettings = unsafePerformIO $
@@ -163,51 +143,51 @@ testSwapFees = SwapFees (Ratio.fromGHC 0.01)
 testScoopFee :: Integer
 testScoopFee = 2_500_000
 
-testDeadFactory :: TypedValidator DeadFactory
+testDeadFactory :: SerialisedScript
 testDeadFactory =
   Sundae.deadFactoryScript factoryBootCS poolHash deadPoolHash poolCS
 
-testFactory :: TypedValidator Factory
+testFactory :: SerialisedScript
 testFactory =
   Sundae.factoryScript upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
 
-testPoolMint :: MintingPolicy
+testPoolMint :: SerialisedScript
 testPoolMint =
   Sundae.poolMintingScript (coerce $ currencySymbolOf factoryBootMint) (OldPoolCurrencySymbol $ CurrencySymbol "")
 
-testPool :: TypedValidator Pool
+testPool :: SerialisedScript
 testPool =
   Sundae.poolScript factoryBootCS poolCS scooperFeeHolderHash escrowHash
 
-testEscrow :: TypedValidator Escrow
+testEscrow :: SerialisedScript
 testEscrow =
   Sundae.escrowScript poolCS
 
-testDeadPool :: TypedValidator DeadPool
+testDeadPool :: SerialisedScript
 testDeadPool =
   Sundae.deadPoolScript poolCS escrowHash
 
-factoryBootMint :: MintingPolicy
+factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
 
-testScooperLicense :: TypedValidator ScooperFeeHolder
+testScooperLicense :: SerialisedScript
 testScooperLicense =
   Sundae.scooperFeeScript scooperFeeSettings giftHash factoryBootCS
 
-treasuryBootMint :: MintingPolicy
+treasuryBootMint :: SerialisedScript
 treasuryBootMint =
   Sundae.treasuryBootMintingScript testTreasuryBootSettings
 
-sundaeMint :: MintingPolicy
+sundaeMint :: SerialisedScript
 sundaeMint =
   Sundae.sundaeMintingScript treasuryBootCS
 
-testTreasury :: TypedValidator Treasury
+testTreasury :: SerialisedScript
 testTreasury =
   Sundae.treasuryScript upgradeSettings treasuryBootCS sundaeCS poolCS
 
-testGift :: TypedValidator Gift
+testGift :: SerialisedScript
 testGift =
   Sundae.giftScript treasuryBootCS
 
@@ -233,88 +213,60 @@ sundaeCS :: SundaeCurrencySymbol
 sundaeCS =
   SundaeCurrencySymbol $ currencySymbolOf sundaeMint
 
-toCurrencySymbol :: ValidatorHash -> CurrencySymbol
-toCurrencySymbol (ValidatorHash h) = CurrencySymbol h
-
 toCoin :: ByteString -> AssetClass
 toCoin str = AssetClass (currencySymbol str, tokenName str)
 
-mkDatumHash :: ToData a => a -> DatumHash
-mkDatumHash = UTScripts.datumHash . Datum . BuiltinData . toData
-
 factoryAC :: AssetClass
 factoryAC =
-  AssetClass (toCurrencySymbol $ coerce factoryBootCS, factoryToken)
+  AssetClass (coerce factoryBootCS, factoryToken)
 
 liquidityAC :: Ident -> AssetClass
 liquidityAC poolIdent =
-  AssetClass (toCurrencySymbol $ coerce poolCS, computeLiquidityTokenName poolIdent)
+  AssetClass (coerce poolCS, computeLiquidityTokenName poolIdent)
 
 poolAC :: Ident -> AssetClass
 poolAC poolIdent =
-  AssetClass (toCurrencySymbol $ coerce poolCS, computePoolTokenName poolIdent)
+  AssetClass (coerce poolCS, computePoolTokenName poolIdent)
 
 scooperTokenAC :: Ident -> AssetClass
 scooperTokenAC week =
   AssetClass (coerce factoryBootCS, computeScooperTokenName week)
 
 treasuryHash :: TreasuryScriptHash
-treasuryHash =
-  TreasuryScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testTreasury
+treasuryHash = vsh testTreasury
 
 giftHash :: GiftScriptHash
-giftHash =
-  GiftScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testGift
+giftHash = vsh testGift
 
 poolHash :: PoolScriptHash
-poolHash =
-  PoolScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testPool
+poolHash = vsh testPool
 
 deadFactoryHash :: DeadFactoryScriptHash
-deadFactoryHash =
-  DeadFactoryScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testDeadFactory
+deadFactoryHash = vsh testDeadFactory
 
 deadPoolHash :: DeadPoolScriptHash
-deadPoolHash =
-  DeadPoolScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testDeadPool
+deadPoolHash = vsh testDeadPool
 
 scooperFeeHolderHash :: ScooperFeeHolderScriptHash
-scooperFeeHolderHash =
-  ScooperFeeHolderScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testScooperLicense
+scooperFeeHolderHash = vsh testScooperLicense
 
 escrowHash :: EscrowScriptHash
-escrowHash =
-  EscrowScriptHash $ Alonzo.transScriptHash $ plutusScriptHash $ unValidatorScript $ validatorScript testScooperLicense
+escrowHash = vsh testScooperLicense
 
 poolAddress :: Address
-poolAddress =
-  toPlutusAddr $ addressOf $ unValidatorScript $ validatorScript testPool
+poolAddress = scriptHashToAddress $ vsh testPool
 
 escrowAddress :: Address
-escrowAddress =
-  toPlutusAddr $ addressOf $ unValidatorScript $ validatorScript testEscrow
+escrowAddress = scriptHashToAddress $ vsh testEscrow
 
 factoryAddress :: Address
-factoryAddress =
-  toPlutusAddr $ addressOf $ unValidatorScript $ validatorScript testFactory
+factoryAddress = scriptHashToAddress $ vsh testFactory
 
 scooperAddress :: Address
-scooperAddress =
-  toPlutusAddr $ addressOf $ unValidatorScript $ validatorScript testScooperLicense
+scooperAddress = scriptHashToAddress $ vsh testScooperLicense
 
-toPlutusAddr :: Cardano.Address Cardano.ShelleyAddr -> Address
-toPlutusAddr (Cardano.ShelleyAddress _ (Ledger.KeyHashObj (Ledger.KeyHash (Crypto.UnsafeHash pk))) staking) =
-  Address (PubKeyCredential $ PubKeyHash $ toBuiltin (SBS.fromShort pk)) transStaking
-  where
-  transStaking =
-    case staking of
-      Ledger.StakeRefNull ->
-        Nothing
-      Ledger.StakeRefBase (Ledger.KeyHashObj (Ledger.KeyHash (Crypto.UnsafeHash sk))) ->
-        Just $ StakingHash $ PubKeyCredential $ PubKeyHash $ toBuiltin (SBS.fromShort sk)
-      _ -> error $ "transFromAddr: mysterious staking credential: " <> show staking
-toPlutusAddr (Cardano.ShelleyAddress _ (Ledger.ScriptHashObj (Ledger.ScriptHash (Crypto.UnsafeHash pk))) _) =
-  Address (ScriptCredential (ValidatorHash $ toBuiltin (SBS.fromShort pk))) Nothing
+scriptHashToAddress :: BuiltinByteString -> Address
+scriptHashToAddress = error "error"
 
 mkTxId :: BuiltinByteString -> TxId
 mkTxId = TxId . Plutus.sha2_256
@@ -329,13 +281,13 @@ mkUserInput :: BuiltinByteString -> Address -> Value -> TxInInfo
 mkUserInput txName usr value =
   TxInInfo
     (TxOutRef (mkTxId txName) 1)
-    (TxOut usr value Nothing)
+    (TxOut usr value NoOutputDatum Nothing)
 
-mkScriptInput :: BuiltinByteString -> Address -> Value -> Maybe DatumHash -> TxInInfo
+mkScriptInput :: BuiltinByteString -> Address -> Value -> DatumHash -> TxInInfo
 mkScriptInput txName scriptAddr value datumHash =
   TxInInfo
     (TxOutRef (mkTxId txName) 1)
-    (TxOut scriptAddr value datumHash)
+    (TxOut scriptAddr value (OutputDatumHash datumHash) Nothing)
 
 lovelaceValue :: Integer -> Value
 lovelaceValue = singleton adaSymbol adaToken
@@ -356,7 +308,7 @@ runStep steps = do
   let info = nubbed $ foldr step baseTxInfo (zip [(0::Integer)..] steps)
   sequence_ $ catMaybes $ fmap (exec info) $ zip [0..] steps
   where
-  run (EscrowScriptInput redeemer datum) ctx = runEscrow datum redeemer (SD.ScriptContext__ (toBuiltinData ctx))
+  run (EscrowScriptInput redeemer datum) ctx = runEscrow datum redeemer ctx
   run (PoolScriptInput redeemer datum) ctx = runPool datum redeemer ctx
   run (FactoryScriptInput redeemer datum) ctx = runFactory datum redeemer ctx
   runPool datum redeemer ctx =

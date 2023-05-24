@@ -6,8 +6,7 @@ import Sundae.Utilities
 import Sundae.Contracts.Common
 import Sundae.Contracts.Pool
 
-import Ledger
-import Plutus.V1.Ledger.Credential
+import PlutusLedgerApi.V3
 
 import Test.Tasty
 import Test.Tasty.HUnit
