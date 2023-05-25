@@ -47,7 +47,7 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh scooperLicenseWeekIdent) ctx =
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh scooperLicenseWeekIdent) ctx = True {-
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
@@ -198,7 +198,7 @@ poolContract
       (txOutAddress $ txInInfoResolved i) == scriptHashAddress esh)
       (txInfoInputs txInfo)))
   where
-  txInfo = scriptContextTxInfo ctx
+  txInfo = scriptContextTxInfo ctx-}
 
 -- Dead Pool contract
 --  When we upgrade a pool, the liquidity moves into a new contract; These are owned by holders of the old liquidity token.

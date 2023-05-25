@@ -100,6 +100,8 @@ mkScoopTest ScoopTest{..} = do
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh (intToIdent 0))
       escrowRedeemer = editEscrowRedeemer EscrowScoop
       interval = editValidRange (hourInterval (POSIXTime 0))
+  --print newPoolValue
+  --print poolCS
   runStep $
     [ fromEscrow escrow1Value "Escrow1 script call with scoop" escrow1Cond escrowRedeemer
         escrow1Datum

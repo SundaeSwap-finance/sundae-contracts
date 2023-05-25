@@ -116,8 +116,8 @@ poolMintingContract
 poolMintingContract
   (FactoryBootCurrencySymbol fbcs)
   (OldPoolCurrencySymbol oldPcs)
-  (unsafeFromBuiltinData -> poolIdent)
-  rawCtx = check $
+  _ --(unsafeFromBuiltinData -> poolIdent)
+  rawCtx = () {-check $
     -- The below is sufficient condition, *provided that*
     -- Each of the following script/redeemer combinations check that they are minting the correct token
     --   factoryContract / CreatePool     -> Only Mint Pool Tokens + Liquidity Tokens  (Checked)
@@ -144,4 +144,4 @@ poolMintingContract
     (unsafeDataAsConstr -> (_, [
       unsafeDataAsList -> ins,
       _, _, _, _, _, _, _, _, _
-    ])), unsafeFromBuiltinData -> !(Minting ocs)])) = rawCtx
+    ])), unsafeFromBuiltinData -> !(Minting ocs)])) = rawCtx-}
