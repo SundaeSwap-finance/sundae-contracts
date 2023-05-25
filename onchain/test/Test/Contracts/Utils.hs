@@ -130,9 +130,9 @@ vsh script = coerce $ ScriptHash (toBuiltin (hashScript script))
 
 testFactoryBootSettings :: FactoryBootSettings
 testFactoryBootSettings = unsafePerformIO $
-  Aeson.decodeFileStrict' "factory-boot-settings.json" >>= \case
-    Nothing -> fail "Could not load factory boot settings."
-    Just b -> pure b
+  Aeson.eitherDecodeFileStrict' "factory-boot-settings.json" >>= \case
+    Left bad -> fail ("Could not load factory boot settings:" ++ bad)
+    Right b -> pure b
 
 testTreasuryBootSettings :: TreasuryBootSettings
 testTreasuryBootSettings = TreasuryBootSettings $ ProtocolBootUTXO $

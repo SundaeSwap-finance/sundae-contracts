@@ -8,6 +8,8 @@ license-file:        ../LICENSE
 author:              sundae
 maintainer:          anton@mlabs.gmail edmund@sundaeswap.finance
 build-type:          Simple
+extra-source-files:
+  factory-boot-settings.json
 
 common ghc-config
   ghc-options:
@@ -148,3 +150,5 @@ test-suite sundae-contracts-tests
   other-modules:
     Test.Contracts.SundaeScooperCompat
     Test.Contracts.Orphans
+    Test.Contracts.Pool
+    Test.Contracts.Utils

@@ -1,17 +1,11 @@
 {
   "initialLegalScoopers": [
-    {
-      "getPubKeyHash": "9d1cbb54faf284f5d262f591b1f9201a1858de155157dad49f3881c4"
-    },
-    {
-      "getPubKeyHash": "694bc6017f9d74a5d9b3ef377b42b9fe4967a04fb1844959057f35bb"
-    }
+    "9d1cbb54faf284f5d262f591b1f9201a1858de155157dad49f3881c4",
+    "694bc6017f9d74a5d9b3ef377b42b9fe4967a04fb1844959057f35bb"
   ],
   "factory'protocolBootUTXO": {
-      "txOutRefIdx": 1,
-      "txOutRefId": {
-          "getTxId": "213c3838a997b9e1a48334097acb6257099bb8001593c22d583afca429cd5bbf"
-      }
+      "txix": 2,
+      "txid": "213c3838a997b9e1a48334097acb6257099bb8001593c22d583afca429cd5bbf"
   },
   "tag": "BrandNewFactoryBootSettings"
 }
