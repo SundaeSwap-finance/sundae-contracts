@@ -21,6 +21,8 @@ import GHC.Generics
 import Control.DeepSeq
 import Sundae.Utilities
 
+import Control.Lens (makeLenses)
+
 -- | Factory script controls creation of pools
 data Factory
 
@@ -329,7 +331,7 @@ data PoolDatum
   , _pool'poolIdent :: !Ident -- ^ unique identifier of the pool.
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
-  } -- deriving (Generic, NFData, ToJSON, FromJSON, Prelude.Show)
+  } deriving (Generic, NFData, Prelude.Show)
 
 instance Eq PoolDatum where
   {-# inlinable (==) #-}
@@ -660,3 +662,6 @@ validRangeSize _ = error ()
 {-# inlinable toPoolNft #-}
 toPoolNft :: CurrencySymbol -> Ident -> AssetClass
 toPoolNft cs poolIdent = assetClass cs (computePoolTokenName poolIdent)
+
+makeLenses ''PoolDatum
+makeLenses ''EscrowDatum

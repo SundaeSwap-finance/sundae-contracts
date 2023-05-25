@@ -147,3 +147,4 @@ test-suite sundae-contracts-tests
   main-is:            Main.hs
   other-modules:
     Test.Contracts.SundaeScooperCompat
+    Test.Contracts.Orphans

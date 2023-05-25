@@ -7,13 +7,14 @@ module Test.Contracts.Pool(tests) where
 
 import Prelude
 import qualified PlutusTx.Prelude as Plutus
+import qualified PlutusTx.Ratio as Plutus
 import Control.Exception
 import Control.Lens
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Plutus.V1.Ledger.Api
-import Plutus.V1.Ledger.Value
+import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
 
 import Sundae.Contracts as Sundae
 import Sundae.Utilities
@@ -498,7 +499,7 @@ testByCoin title coins@(AB coin1 coin2) =
   changingSwapFees = testCase "Should fail when trying to change the swap fees" $ do
     testValidScoop
     mkScoopTest validScoopParams
-      { editNewPoolDatum = pool'swapFees .~ SwapFees (1 Plutus.% 2)
+      { editNewPoolDatum = pool'swapFees .~ SwapFees (Plutus.unsafeRatio 1 2)
       , poolCond = Fail
       }
 
