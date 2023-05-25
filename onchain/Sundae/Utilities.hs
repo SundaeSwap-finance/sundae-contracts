@@ -423,7 +423,7 @@ instance (Eq k, AdditiveMonoid a) => AdditiveMonoid (Map k a) where
 
 {-# inlinable unsafeTxInValue #-}
 unsafeTxInValue :: _ -> Value
-unsafeTxInValue (unsafeDataAsConstr -> (_, [_, (unsafeDataAsConstr -> (_, [_, (unsafeFromBuiltinData -> v), _]))])) = v
+unsafeTxInValue (unsafeDataAsConstr -> (_, [_, (unsafeDataAsConstr -> (_, [_, (unsafeFromBuiltinData -> v), _, _]))])) = v
 unsafeTxInValue _ = error ()
 
 {-# inlinable toWeek #-}

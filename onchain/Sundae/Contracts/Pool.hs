@@ -52,40 +52,39 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
   in
-    True
-    --debug "must have escrows"
-    --  (not $ null escrows) &&
-    --debug "valid range too large"
-    --  (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
-    --debug "issued amount in new datum incorrect"
-    --  (rawDatumOf txInfo poolOutput ==
-    --    Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
-    --debug "extra outputs not spent"
-    --  (all' mustSpendTo (mergeListByKey cons)) &&
-    --debug "issued amount does not match minted amount"
-    --  ( if newCirculatingLP == oldCirculatingLP
-    --    then null (flattenValue' (txInfoMint txInfo))
-    --    else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
-    --  ) &&
-    --debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-    --  (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
-    --debug "pool output does not include all expected liquidity"
-    --  (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
-    --    valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
-    --scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
-    ---- NOTE THE LESS THAN.
-    ---- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
-    ---- 554 - 553 <= 1;  So < is needed to check expiration.
-    ---- Also, people can theoretically get a scooper license up to 4 days in the future, but this is fine as well,
-    ---- as long as scooper rewards delay > scooperLicenseExpiryDelay + 4 days
-    --debug "scooper token must not have expired"
-    --  (getWeek (toWeek latest) - identToInt scooperLicenseWeekIdent < scooperLicenseExpiryDelayWeeks) &&
-    ---- TODO: Allow future scooper rewards to be spent towards tx fee
-    ---- TODO: Reserve >X for treasury
-    --debug "scooper fees must be added"
-    --  (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
-    --debug "scooper output datum must match"
-    --  (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
+    debug "must have escrows"
+      (not $ null escrows) &&
+    debug "valid range too large"
+      (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
+    debug "issued amount in new datum incorrect"
+      (rawDatumOf txInfo poolOutput ==
+        Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
+    debug "extra outputs not spent"
+      (all' mustSpendTo (mergeListByKey cons)) &&
+    debug "issued amount does not match minted amount"
+      ( if newCirculatingLP == oldCirculatingLP
+        then null (flattenValue' (txInfoMint txInfo))
+        else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
+      ) &&
+    debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
+      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
+    debug "pool output does not include all expected liquidity"
+      (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
+        valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
+    scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
+    -- NOTE THE LESS THAN.
+    -- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
+    -- 554 - 553 <= 1;  So < is needed to check expiration.
+    -- Also, people can theoretically get a scooper license up to 4 days in the future, but this is fine as well,
+    -- as long as scooper rewards delay > scooperLicenseExpiryDelay + 4 days
+    debug "scooper token must not have expired"
+      (getWeek (toWeek latest) - identToInt scooperLicenseWeekIdent < scooperLicenseExpiryDelayWeeks) &&
+    -- TODO: Allow future scooper rewards to be spent towards tx fee
+    -- TODO: Reserve >X for treasury
+    debug "scooper fees must be added"
+      (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
+    debug "scooper output datum must match"
+      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
   where
   scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
   scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
