@@ -47,141 +47,142 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh scooperLicenseWeekIdent) ctx = True {-
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh scooperLicenseWeekIdent) ctx =
   let
-    !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
-    !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
+    -- !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
+    -- !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
   in
-    debug "must have escrows"
-      (not $ null escrows) &&
-    debug "valid range too large"
-      (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
-    debug "issued amount in new datum incorrect"
-      (rawDatumOf txInfo poolOutput ==
-        Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
-    debug "extra outputs not spent"
-      (all' mustSpendTo (mergeListByKey cons)) &&
-    debug "issued amount does not match minted amount"
-      ( if newCirculatingLP == oldCirculatingLP
-        then null (flattenValue' (txInfoMint txInfo))
-        else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
-      ) &&
-    debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
-    debug "pool output does not include all expected liquidity"
-      (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
-        valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
-    scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
-    -- NOTE THE LESS THAN.
-    -- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
-    -- 554 - 553 <= 1;  So < is needed to check expiration.
-    -- Also, people can theoretically get a scooper license up to 4 days in the future, but this is fine as well,
-    -- as long as scooper rewards delay > scooperLicenseExpiryDelay + 4 days
-    debug "scooper token must not have expired"
-      (getWeek (toWeek latest) - identToInt scooperLicenseWeekIdent < scooperLicenseExpiryDelayWeeks) &&
-    -- TODO: Allow future scooper rewards to be spent towards tx fee
-    -- TODO: Reserve >X for treasury
-    debug "scooper fees must be added"
-      (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
-    debug "scooper output datum must match"
-      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
+    True
+    --debug "must have escrows"
+    --  (not $ null escrows) &&
+    --debug "valid range too large"
+    --  (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
+    --debug "issued amount in new datum incorrect"
+    --  (rawDatumOf txInfo poolOutput ==
+    --    Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
+    --debug "extra outputs not spent"
+    --  (all' mustSpendTo (mergeListByKey cons)) &&
+    --debug "issued amount does not match minted amount"
+    --  ( if newCirculatingLP == oldCirculatingLP
+    --    then null (flattenValue' (txInfoMint txInfo))
+    --    else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
+    --  ) &&
+    --debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
+    --  (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
+    --debug "pool output does not include all expected liquidity"
+    --  (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
+    --    valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
+    --scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
+    ---- NOTE THE LESS THAN.
+    ---- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
+    ---- 554 - 553 <= 1;  So < is needed to check expiration.
+    ---- Also, people can theoretically get a scooper license up to 4 days in the future, but this is fine as well,
+    ---- as long as scooper rewards delay > scooperLicenseExpiryDelay + 4 days
+    --debug "scooper token must not have expired"
+    --  (getWeek (toWeek latest) - identToInt scooperLicenseWeekIdent < scooperLicenseExpiryDelayWeeks) &&
+    ---- TODO: Allow future scooper rewards to be spent towards tx fee
+    ---- TODO: Reserve >X for treasury
+    --debug "scooper fees must be added"
+    --  (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
+    --debug "scooper output datum must match"
+    --  (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
   where
-  scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
-  scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
-  scooperNFTExists sym tn ((TxInInfo _ ot) : tl)
-    | valueContains (txOutValue ot) sym tn = True
-    | otherwise = scooperNFTExists sym tn tl
+  --  scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
+  --  scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
+  --  scooperNFTExists sym tn ((TxInInfo _ ot) : tl)
+  --    | valueContains (txOutValue ot) sym tn = True
+  --    | otherwise = scooperNFTExists sym tn tl
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
-  !ownInput = scriptInput ctx
-  !poolOutput = uniqueElement'
-    [ o
-    | o <- txInfoOutputs txInfo
-    , isScriptAddress o ownScriptHash
-    ]
-  poolOutputValue = txOutValue poolOutput
-  !poolOutputValueSansRider = sansRider poolOutputValue
-  mustSpendTo (EscrowDestination addr dh, val, count) =
-    atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
-  atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
-  atLeastOneSpending _ _ _ _ [] = False
-  atLeastOneSpending addr dh val count ((o@TxOut{txOutAddress, txOutValue}) : tl)
-    | eqAddrCredential txOutAddress addr
-    , txOutDatumHash o == dh
-      -- Since every escrow input has a rider, we require every output to have a rider as well
-      -- By subtracting it off here, it ensures you're getting all the funds you're entitled to
-      -- according to doEscrows
-    , let !txOutSansRider = sansRider' count txOutValue
-    , val $$ CoinA <= valueOfAC txOutSansRider coinA
-    , val $$ CoinB <= valueOfAC txOutSansRider coinB
-    , liquidity val <= valueOfAC txOutSansRider liquidityAssetClass = True
-    | otherwise = atLeastOneSpending addr dh val count tl
+  --  !ownInput = scriptInput ctx
+  --  !poolOutput = uniqueElement'
+  --    [ o
+  --    | o <- txInfoOutputs txInfo
+  --    , isScriptAddress o ownScriptHash
+  --    ]
+  --  poolOutputValue = txOutValue poolOutput
+  --  !poolOutputValueSansRider = sansRider poolOutputValue
+  --  mustSpendTo (EscrowDestination addr dh, val, count) =
+  --    atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
+  --  atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
+  --  atLeastOneSpending _ _ _ _ [] = False
+  --  atLeastOneSpending addr dh val count ((o@TxOut{txOutAddress, txOutValue}) : tl)
+  --    | eqAddrCredential txOutAddress addr
+  --    , txOutDatumHash o == dh
+  --      -- Since every escrow input has a rider, we require every output to have a rider as well
+  --      -- By subtracting it off here, it ensures you're getting all the funds you're entitled to
+  --      -- according to doEscrows
+  --    , let !txOutSansRider = sansRider' count txOutValue
+  --    , val $$ CoinA <= valueOfAC txOutSansRider coinA
+  --    , val $$ CoinB <= valueOfAC txOutSansRider coinB
+  --    , liquidity val <= valueOfAC txOutSansRider liquidityAssetClass = True
+  --    | otherwise = atLeastOneSpending addr dh val count tl
   !txInfo = scriptContextTxInfo ctx
   !scooperOutput = uniqueElement'
     [ o
     | o <- txInfoOutputs txInfo
     , isScriptAddress o slsh
     ]
-  liquidityAssetClass =
-    AssetClass (pcs, computeLiquidityTokenName poolIdent)
-  !totalScooperFee = foldl' (\a (f,_) -> a + f) zero escrows
-  !minimumScooperFee = totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken
-  !escrows =
-    [ (scoopFee, (fromEscrowAddress ret, act))
-     | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
-     , let !escrowInValue = txOutValue txOut
-     -- Escrows will usually come from the escrow script, but it's OK if they
-     -- come from somewhere else as long as the datum is valid. Other scripts
-     -- might be useful to provide other conditions for escrows, such as stop
-     -- loss orders. So we treat anything that doesn't come from the pool script
-     -- as an escrow.
-     , not (isScriptAddress txOut ownScriptHash)
-     , Just (EscrowDatum ident ret scoopFee act) <- [datumOf txInfo txOut]
-     , scoopFee >= 0
-     -- Coin B can never be ADA, because pool coin pairs are lexicographically
-     -- ordered when we create a pool, so we only check A here
-     -- NOTE: this enforces that the escrow *always* has at least 2 ada on the rider,
-     -- meaning you can't under-spend your rider and get 2ADA back
-     , valueOf (sansAmountA escrowInValue act) adaSymbol adaToken >= scoopFee + riderAmount
-     , if ident == poolIdent && checkAction escrowInValue act
-       then True
-       else die "escrow incorrect"
-     ]
-  oldValue = txOutValue ownInput
-  ownScriptHash =
-    case ownInput of
-      (TxOut (Address (ScriptCredential h) _) _ _ _) -> h
-      _ -> traceError "invalid pool script utxo"
-  amountA = \case
-    EscrowDeposit (DepositMixed (AB amtA _)) -> amtA
-    EscrowDeposit (DepositSingle CoinA amt) -> amt
-    EscrowDeposit (DepositSingle CoinB _) -> 0
-    EscrowWithdraw _ -> 0
-    EscrowSwap CoinA amt _ -> amt
-    EscrowSwap CoinB _ _ -> 0
-  sansAmountA v act =
-    let
-      AssetClass (coinASymbol, coinAToken) = coinA
-      coinAValue = valueOfAC v coinA
-    in
-      Value $ Map.insert
-        coinASymbol
-        (Map.singleton coinAToken (coinAValue - amountA act))
-        (getValue v)
-  -- Subtract off the ADA rider;
-  -- If we don't do this, ADA/X pools, this can screw up the price calculation
-  -- Normally, the amount of ada in the pool should be able to asymptotically approach 0 as the price of ADA goes up
-  -- With the added rider, it asymptotically approaches 2; if we don't subtract off the rider, then
-  -- There might be a hard limit on how much the pool can be traded
-  !oldValueSansRider = sansRider oldValue
-  checkAction !(sansRider -> v) = \case
-    EscrowDeposit (DepositMixed (AB amtA amtB)) ->
-      valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
-    EscrowDeposit (DepositSingle coin amt) ->
-      valueOfAC v (coins $$ coin) >= amt && amt >= 1
-    EscrowWithdraw amt ->
-      valueOfAC v liquidityAssetClass >= amt && amt >= 1
-    EscrowSwap coin amt _ ->
-      valueOfAC v (coins $$ coin) >= amt && amt >= 1
+  --  liquidityAssetClass =
+  --    AssetClass (pcs, computeLiquidityTokenName poolIdent)
+  --  !totalScooperFee = foldl' (\a (f,_) -> a + f) zero escrows
+  --  !minimumScooperFee = totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken
+  --  !escrows =
+  --    [ (scoopFee, (fromEscrowAddress ret, act))
+  --     | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
+  --     , let !escrowInValue = txOutValue txOut
+  --     -- Escrows will usually come from the escrow script, but it's OK if they
+  --     -- come from somewhere else as long as the datum is valid. Other scripts
+  --     -- might be useful to provide other conditions for escrows, such as stop
+  --     -- loss orders. So we treat anything that doesn't come from the pool script
+  --     -- as an escrow.
+  --     , not (isScriptAddress txOut ownScriptHash)
+  --     , Just (EscrowDatum ident ret scoopFee act) <- [datumOf txInfo txOut]
+  --     , scoopFee >= 0
+  --     -- Coin B can never be ADA, because pool coin pairs are lexicographically
+  --     -- ordered when we create a pool, so we only check A here
+  --     -- NOTE: this enforces that the escrow *always* has at least 2 ada on the rider,
+  --     -- meaning you can't under-spend your rider and get 2ADA back
+  --     , valueOf (sansAmountA escrowInValue act) adaSymbol adaToken >= scoopFee + riderAmount
+  --     , if ident == poolIdent && checkAction escrowInValue act
+  --       then True
+  --       else die "escrow incorrect"
+  --     ]
+  --  oldValue = txOutValue ownInput
+  --  ownScriptHash =
+  --    case ownInput of
+  --      (TxOut (Address (ScriptCredential h) _) _ _ _) -> h
+  --      _ -> traceError "invalid pool script utxo"
+  --  amountA = \case
+  --    EscrowDeposit (DepositMixed (AB amtA _)) -> amtA
+  --    EscrowDeposit (DepositSingle CoinA amt) -> amt
+  --    EscrowDeposit (DepositSingle CoinB _) -> 0
+  --    EscrowWithdraw _ -> 0
+  --    EscrowSwap CoinA amt _ -> amt
+  --    EscrowSwap CoinB _ _ -> 0
+  --  sansAmountA v act =
+  --    let
+  --      AssetClass (coinASymbol, coinAToken) = coinA
+  --      coinAValue = valueOfAC v coinA
+  --    in
+  --      Value $ Map.insert
+  --        coinASymbol
+  --        (Map.singleton coinAToken (coinAValue - amountA act))
+  --        (getValue v)
+  --  -- Subtract off the ADA rider;
+  --  -- If we don't do this, ADA/X pools, this can screw up the price calculation
+  --  -- Normally, the amount of ada in the pool should be able to asymptotically approach 0 as the price of ADA goes up
+  --  -- With the added rider, it asymptotically approaches 2; if we don't subtract off the rider, then
+  --  -- There might be a hard limit on how much the pool can be traded
+  --  !oldValueSansRider = sansRider oldValue
+  --  checkAction !(sansRider -> v) = \case
+  --    EscrowDeposit (DepositMixed (AB amtA amtB)) ->
+  --      valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
+  --    EscrowDeposit (DepositSingle coin amt) ->
+  --      valueOfAC v (coins $$ coin) >= amt && amt >= 1
+  --    EscrowWithdraw amt ->
+  --      valueOfAC v liquidityAssetClass >= amt && amt >= 1
+  --    EscrowSwap coin amt _ ->
+  --      valueOfAC v (coins $$ coin) >= amt && amt >= 1
 
 poolContract
   (FactoryBootCurrencySymbol fbcs) _ _ (EscrowScriptHash esh)
@@ -198,7 +199,7 @@ poolContract
       (txOutAddress $ txInInfoResolved i) == scriptHashAddress esh)
       (txInfoInputs txInfo)))
   where
-  txInfo = scriptContextTxInfo ctx-}
+  txInfo = scriptContextTxInfo ctx
 
 -- Dead Pool contract
 --  When we upgrade a pool, the liquidity moves into a new contract; These are owned by holders of the old liquidity token.

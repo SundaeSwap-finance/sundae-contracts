@@ -267,7 +267,7 @@ scooperAddress :: Address
 scooperAddress = scriptHashToAddress $ vsh testScooperLicense
 
 scriptHashToAddress :: BuiltinByteString -> Address
-scriptHashToAddress = error "error"
+scriptHashToAddress bs = Address (ScriptCredential (ScriptHash bs)) Nothing
 
 mkTxId :: BuiltinByteString -> TxId
 mkTxId = TxId . Plutus.sha2_256
