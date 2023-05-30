@@ -41,13 +41,12 @@ poolContract
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
   -> ScooperFeeHolderScriptHash
-  -> FactoryScriptHash
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) (FactoryScriptHash fsh) _
+poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
   datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
@@ -85,7 +84,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
   !factoryReference = uniqueElement'
     [ o
     | o <- txInfoReferenceInputs txInfo
-    , isScriptAddress (txInInfoResolved o) fsh
+    , isFactory fbcs (txInInfoResolved o)
     ]
   !factoryReferenceDatum =
     case datumOf txInfo (txInInfoResolved factoryReference) of
@@ -189,7 +188,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       valueOfAC v (coins $$ coin) >= amt && amt >= 1
 
 poolContract
-  (FactoryBootCurrencySymbol fbcs) _ _ _ (EscrowScriptHash esh)
+  (FactoryBootCurrencySymbol fbcs) _ _ (EscrowScriptHash esh)
   _ PoolUpgrade ctx =
   debug "dead factory not included; must included dead factory to prove that the upgrade should be adopted"
     (atLeastOne (\i ->
@@ -240,6 +239,11 @@ deadPoolContract
   lostNewTrackingTokens =
     valueOf (txOutValue $ txInInfoResolved ownInput) newPcs liquidityTokenName - valueOf (txOutValue ownOutput) newPcs liquidityTokenName
   txInfo@TxInfo{txInfoMint} = scriptContextTxInfo ctx
+
+isFactory :: CurrencySymbol -> TxOut -> Bool
+isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
+  where
+  factoryNft = assetClass fbcs factoryToken
 
 {-# inlinable hasDeadPoolLimited #-}
 -- | Dead pool value should contain pool NFT and no more than 3 items in the value:

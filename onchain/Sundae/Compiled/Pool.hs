@@ -14,18 +14,16 @@ poolScript
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
   -> ScooperFeeHolderScriptHash
-  -> FactoryScriptHash
   -> EscrowScriptHash
   -> SerialisedScript
-poolScript fbcs pcs slsh fsh esh =
+poolScript fbcs pcs slsh esh =
   let
     x =
-      pure $$(PlutusTx.compile [|| \fbcs' pcs' slsh' fsh' esh' datum redeemer ctx ->
-        check $ poolContract fbcs' pcs' slsh' fsh' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+      pure $$(PlutusTx.compile [|| \fbcs' pcs' slsh' esh' datum redeemer ctx ->
+        check $ poolContract fbcs' pcs' slsh' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
         >>= flip apCode fbcs
         >>= flip apCode pcs
         >>= flip apCode slsh
-        >>= flip apCode fsh
         >>= flip apCode esh
   in
     case x of

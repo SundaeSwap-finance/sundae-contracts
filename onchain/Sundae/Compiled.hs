@@ -26,7 +26,7 @@ import Data.Coerce (coerce)
 
 import Codec.Serialise (deserialise)
 
-import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), FactoryScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
 
 import Sundae.Utilities (Ident(..), Coin(..))
 
@@ -203,8 +203,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     sundaeCS = mcs sundaeMintScr
 
     factoryScr = factoryScript convertedUpgradeSettings factoryBootCS deadFactorySH poolSH poolCS
-    factorySH :: FactoryScriptHash
-    factorySH = vsh factoryScr
     treasuryScr = treasuryScript convertedUpgradeSettings treasuryBootCS sundaeCS poolCS
     treasurySH :: TreasuryScriptHash
     treasurySH = vsh treasuryScr
@@ -213,7 +211,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 
     poolMintScr = poolMintingScript factoryBootCS oldPoolCurrencySymbol
     poolCS = mcs poolMintScr
-    poolScr = poolScript factoryBootCS poolCS scooperFeeHolderSH factorySH escrowSH
+    poolScr = poolScript factoryBootCS poolCS scooperFeeHolderSH escrowSH
     poolSH = vsh poolScr
 
     deadPoolScr = deadPoolScript poolCS escrowSH
