@@ -177,8 +177,6 @@ scooperFeeContract
     (atLeastOne (== scooperLicensee) txInfoSignatories) &&
   debug "valid range too large"
     (validRangeSize txInfoValidRange <= fourDaysMillis) &&
-  debug "scooper reward being redeemed too early"
-    (getWeek (toWeek latest) - identToInt scooperLicenseIssued >= scooperRewardRedeemDelayWeeks) &&
   debug "scooper is not licensed anymore"
     (elem scooperLicensee legalScoopers)
   where
@@ -201,8 +199,6 @@ scooperFeeContract
     (txOutValue giftOutput `geq` ownInputValue) &&
   debug "valid range too large"
     (validRangeSize txInfoValidRange <= fourDaysMillis) &&
-  debug "scooper reward being spent into treasury too early"
-    (getWeek (toWeek latest) - identToInt scooperLicenseIssued >= scooperRewardRedeemDelayWeeks * 3) &&
   -- though this datum isn't used by the gift script, bloating the datum is annoying.
   debug "gift output datum incorrect"
     (isDatumUnsafe txInfo giftOutput ())

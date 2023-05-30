@@ -317,7 +317,6 @@ data ScooperFeeSettings
 data ScooperFeeDatum
   = ScooperFeeDatum
   { scooperLicensee :: !PubKeyHash
-  , scooperLicenseIssued :: !Ident
   } --deriving (Generic, NFData, Prelude.Show, ToJSON, FromJSON)
 
 data ScooperFeeRedeemer
@@ -340,7 +339,7 @@ instance Eq PoolDatum where
       coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees'
 
 data PoolRedeemer
-  = PoolScoop !PubKeyHash !Ident -- OPTIMIZATION: PKH here is candidate for removal
+  = PoolScoop !PubKeyHash -- OPTIMIZATION: PKH here is candidate for removal
   | PoolUpgrade
 
 data DeadPoolDatum = DeadPoolDatum
@@ -501,6 +500,7 @@ PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
 PlutusTx.makeLift ''SundaeCurrencySymbol
+PlutusTx.makeLift ''FactoryScriptHash
 PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''DeadFactoryScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash

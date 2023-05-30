@@ -41,13 +41,14 @@ poolContract
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
   -> ScooperFeeHolderScriptHash
+  -> FactoryScriptHash
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh scooperLicenseWeekIdent) ctx =
+poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) (FactoryScriptHash fsh) _
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
@@ -71,21 +72,25 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
         valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
-    scooperNFTExists fbcs (computeScooperTokenName scooperLicenseWeekIdent) (txInfoInputs txInfo) &&
-    -- NOTE THE LESS THAN.
-    -- Consider: It's week 554 (or last hour of 553); You have a token for 553; If scooperLicenseExpiryDelayWeeks == 1, then
-    -- 554 - 553 <= 1;  So < is needed to check expiration.
-    -- Also, people can theoretically get a scooper license up to 4 days in the future, but this is fine as well,
-    -- as long as scooper rewards delay > scooperLicenseExpiryDelay + 4 days
-    debug "scooper token must not have expired"
-      (getWeek (toWeek latest) - identToInt scooperLicenseWeekIdent < scooperLicenseExpiryDelayWeeks) &&
     -- TODO: Allow future scooper rewards to be spent towards tx fee
     -- TODO: Reserve >X for treasury
     debug "scooper fees must be added"
       (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
     debug "scooper output datum must match"
-      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh scooperLicenseWeekIdent))
+      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh)) &&
+    debug "must be a licensed scooper"
+      (case factoryReferenceDatum of
+        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers)
   where
+  !factoryReference = uniqueElement'
+    [ o
+    | o <- txInfoReferenceInputs txInfo
+    , isScriptAddress (txInInfoResolved o) fsh
+    ]
+  !factoryReferenceDatum =
+    case datumOf txInfo (txInInfoResolved factoryReference) of
+      Just fac -> fac
+      Nothing -> traceError "factory reference must have a factory datum"
   scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
   scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
   scooperNFTExists sym tn ((TxInInfo _ ot) : tl)
@@ -184,7 +189,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       valueOfAC v (coins $$ coin) >= amt && amt >= 1
 
 poolContract
-  (FactoryBootCurrencySymbol fbcs) _ _ (EscrowScriptHash esh)
+  (FactoryBootCurrencySymbol fbcs) _ _ _ (EscrowScriptHash esh)
   _ PoolUpgrade ctx =
   debug "dead factory not included; must included dead factory to prove that the upgrade should be adopted"
     (atLeastOne (\i ->

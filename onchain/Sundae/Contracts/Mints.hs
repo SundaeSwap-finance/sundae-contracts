@@ -143,5 +143,6 @@ poolMintingContract
   (unsafeDataAsConstr -> (_, [
     (unsafeDataAsConstr -> (_, [
       unsafeDataAsList -> ins,
-      _, _, _, _, _, _, _, _, _, _, _
+      unsafeDataAsList -> referenceInputs,
+      _, _, _, _, _, _, _, _, _, _
     ])), unsafeFromBuiltinData -> !(Minting ocs)])) = rawCtx
