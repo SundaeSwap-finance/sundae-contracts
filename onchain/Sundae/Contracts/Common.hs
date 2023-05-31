@@ -288,7 +288,7 @@ data FactoryBootMintRedeemer
 newtype DeadFactoryDatum = DeadFactoryDatum ScriptUpgradeProposal
   --deriving newtype (Prelude.Show, Eq, NFData, ToJSON, FromJSON)
 
-newtype ProposalRedeemer = UpgradePool Ident
+newtype ProposalRedeemer = UpgradePool BuiltinByteString
   deriving stock Generic
   --deriving newtype (ToJSON, FromJSON)
 
@@ -327,7 +327,7 @@ data ScooperFeeRedeemer
 data PoolDatum
   = PoolDatum
   { _pool'coins :: !(AB AssetClass)   -- ^ pair of coins on which pool operates
-  , _pool'poolIdent :: !Ident -- ^ unique identifier of the pool.
+  , _pool'poolIdent :: !BuiltinByteString -- ^ unique identifier of the pool.
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
   } deriving (Generic, NFData, Prelude.Show)
@@ -344,7 +344,7 @@ data PoolRedeemer
 
 data DeadPoolDatum = DeadPoolDatum
   { deadPoolNewCurrencySymbol :: CurrencySymbol
-  , deadPoolIdent :: Ident
+  , deadPoolIdent :: BuiltinByteString
   , deadPoolOldToNewRatio :: Rational
   }
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
@@ -359,7 +359,7 @@ instance Eq DeadPoolDatum where
 -- address is for any results of the escrowed operation, and the amount of
 -- lovelace intended to be paid to the scooper.
 data EscrowDatum = EscrowDatum
-  { _escrow'poolIdent :: Ident
+  { _escrow'poolIdent :: BuiltinByteString
   , _escrow'address :: EscrowAddress
   , _escrow'scoopFee :: Integer
   , _escrow'action :: EscrowAction
@@ -460,12 +460,12 @@ computeScooperTokenName :: Ident -> TokenName
 computeScooperTokenName (Ident ident) = TokenName $ "scooper " <> ident
 
 {-# inlinable computeLiquidityTokenName #-}
-computeLiquidityTokenName :: Ident -> TokenName
-computeLiquidityTokenName (Ident ident) = TokenName $ "lp " <> ident
+computeLiquidityTokenName :: BuiltinByteString -> TokenName
+computeLiquidityTokenName poolIdent = TokenName $ "lp " <> poolIdent
 
 {-# inlinable computePoolTokenName #-}
-computePoolTokenName :: Ident -> TokenName
-computePoolTokenName (Ident poolIdent) =
+computePoolTokenName :: BuiltinByteString -> TokenName
+computePoolTokenName poolIdent =
   TokenName $ "p " <> poolIdent
 
 PlutusTx.makeLift ''OldFactoryBootCurrencySymbol
@@ -660,7 +660,7 @@ validRangeSize (Interval (LowerBound (Finite down) _) (UpperBound (Finite up) _)
 validRangeSize _ = error ()
 
 {-# inlinable toPoolNft #-}
-toPoolNft :: CurrencySymbol -> Ident -> AssetClass
+toPoolNft :: CurrencySymbol -> BuiltinByteString -> AssetClass
 toPoolNft cs poolIdent = assetClass cs (computePoolTokenName poolIdent)
 
 makeLenses ''PoolDatum

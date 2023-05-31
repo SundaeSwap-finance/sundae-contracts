@@ -279,7 +279,7 @@ testEvalEscrowScr = do
         )
         Nothing
     escrowAction = EscrowSwap CoinA 1000000 Nothing
-    datum = EscrowDatum (Ident "\NUL") escrowAddress 2500000 escrowAction
+    datum = EscrowDatum "" escrowAddress 2500000 escrowAction
     redeemer = EscrowScoop
     context =
       Plutus.ScriptContext

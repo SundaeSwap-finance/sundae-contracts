@@ -248,7 +248,7 @@ isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
 {-# inlinable hasDeadPoolLimited #-}
 -- | Dead pool value should contain pool NFT and no more than 3 items in the value:
 -- Rider Ada, Liquidity, NFT
-hasDeadPoolLimited :: CurrencySymbol -> Ident -> Value -> Bool
+hasDeadPoolLimited :: CurrencySymbol -> BuiltinByteString -> Value -> Bool
 hasDeadPoolLimited cs poolIdent val = hasLimitedNft 3 (toPoolNft cs poolIdent) val
 
 -- Escrow contract

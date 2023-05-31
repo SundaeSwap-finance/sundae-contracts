@@ -68,53 +68,6 @@ factoryContract
   debug "valid range too large to be useful"
     (validRangeSize txInfoValidRange <= maxValidRangeSize) &&
   case redeemer of
-    CreatePool coinA coinB ->
-      let
-        !poolOutput = uniqueElement' $
-          filter (\case
-            TxOut{txOutAddress, txOutValue}
-              | valueContains txOutValue pcs (computePoolTokenName nextPoolIdent)
-              , txOutAddress == scriptHashAddress poolScriptHash -> True
-            _ -> False
-            ) txInfoOutputs
-        poolOutputValue = txOutValue poolOutput
-        -- Subtract out the rider, so that liquidity is calculated on actual assets tradable in pool
-        poolOutputValueSansRider = sansRider poolOutputValue
-        !initialLiquidityTokens =
-          computeInitialLiquidityTokens
-            (valueOfAC poolOutputValueSansRider coinA)
-            (valueOfAC poolOutputValueSansRider coinB)
-      in
-        debug "coin pair not in canonical ordering, alphanumeric by policyID and assetName"
-          (coinA < coinB) &&
-
-        debug "new factory datum incorrect: should only increment nextPoolIdent" (
-          let newFactoryDatum = datum { nextPoolIdent = succIdent nextPoolIdent }
-          in isDatumUnsafe txInfo ownOutput newFactoryDatum) &&
-
-        debug "minted something other than: a single pool token + correct amount of initial liquidity" (
-          txInfoMint == Value (
-            Map.singleton pcs $ Map.fromList
-              [ (computePoolTokenName nextPoolIdent, 1)
-              , (computeLiquidityTokenName nextPoolIdent, initialLiquidityTokens)
-              ]
-          )) &&
-
-        debug "liquidity and/or pool NFT not spent to pool"
-          ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
-            valueOfAC poolOutputValueSansRider coinB >= 1 &&
-            hasLimitedNft 3 (toPoolNft pcs nextPoolIdent) poolOutputValueSansRider ) &&
-
-        debug "pool datum not properly initialized"
-          (case datumOf txInfo poolOutput of
-            Just PoolDatum{..} ->
-              _pool'coins == AB coinA coinB &&
-              _pool'poolIdent == nextPoolIdent &&
-              _pool'circulatingLP == initialLiquidityTokens &&
-              elem _pool'swapFees legalSwapFees
-            Nothing -> error ()
-          )
-
     MakeProposal
       | let
           !proposalInput = uniqueElement' [ i | i <- txInfoInputs, assetClassValueContains (txOutValue $ txInInfoResolved i) upgradeAuthentication ]
