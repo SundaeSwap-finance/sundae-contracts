@@ -267,15 +267,13 @@ instance Eq FactoryDatum where
 
 -- | Action on factory script
 data FactoryRedeemer
-  = CreatePool !AssetClass !AssetClass
-  | MakeProposal
+  = MakeProposal
   | UpgradeFactory
   | IssueScooperLicense PubKeyHash
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  CreatePool a b == CreatePool a' b' = a == a' && b == b'
   MakeProposal == MakeProposal = True
   UpgradeFactory == UpgradeFactory = True
   IssueScooperLicense pkh == IssueScooperLicense pkh' = pkh == pkh'
@@ -284,6 +282,10 @@ instance Eq FactoryRedeemer where
 data FactoryBootMintRedeemer
   = MakeFactory
   | MakeScooperToken
+
+data PoolMintRedeemer
+  = MintLP BuiltinByteString -- Mint LP for the given pool ident
+  | CreatePool AssetClass AssetClass
 
 newtype DeadFactoryDatum = DeadFactoryDatum ScriptUpgradeProposal
   --deriving newtype (Prelude.Show, Eq, NFData, ToJSON, FromJSON)
