@@ -341,7 +341,7 @@ instance Eq PoolDatum where
       coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees'
 
 data PoolRedeemer
-  = PoolScoop !PubKeyHash -- OPTIMIZATION: PKH here is candidate for removal
+  = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
   | PoolUpgrade
 
 data DeadPoolDatum = DeadPoolDatum

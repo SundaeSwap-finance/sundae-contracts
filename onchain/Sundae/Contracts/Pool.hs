@@ -15,6 +15,25 @@ import PlutusTx.Ratio
 import Sundae.Contracts.Common
 import Sundae.Utilities
 
+{-# inlineable sortOn #-}
+sortOn :: Ord b => (a -> b) -> [a] -> [a]
+sortOn f =
+  map snd . sortBy (comparing fst) . map (\x -> let y = f x in {-y `seq`-} (y, x))
+
+{-# inlineable comparing #-}
+comparing :: (Ord a) => (b -> a) -> b -> b -> Ordering
+comparing p x y = compare (p x) (p y)
+
+data EscrowWithFee = EscrowWithFee
+  { fee :: !Integer
+  , escrow :: {-# UNPACK #-} !(EscrowDestination, EscrowAction)
+  }
+
+data OrderedEscrow = OrderedEscrow
+  { index :: !Integer
+  , escrowWithFee :: {-# UNPACK #-} !EscrowWithFee
+  }
+
 -- Pool contract
 --  Holds community liquidity, brokers swaps via a market maker formula via aggregating many operations
 --  Parameterized by:
@@ -47,10 +66,12 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh) ctx =
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
-    !(ScoopResult cons newAmtA newAmtB newCirculatingLP) = doEscrows swapFees init (snd <$> escrows)
+    !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
+      doEscrows swapFees init
+        (escrow . escrowWithFee <$> sortOn index (zipWith OrderedEscrow order escrows))
   in
     debug "must have escrows"
       (not $ null escrows) &&
@@ -127,10 +148,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     ]
   liquidityAssetClass =
     AssetClass (pcs, computeLiquidityTokenName poolIdent)
-  !totalScooperFee = foldl' (\a (f,_) -> a + f) zero escrows
+  !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
   !minimumScooperFee = totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken
   !escrows =
-    [ (scoopFee, (fromEscrowAddress ret, act))
+    [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
      | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
      , let !escrowInValue = txOutValue txOut
      -- Escrows will usually come from the escrow script, but it's OK if they
