@@ -103,8 +103,7 @@ mkScoopTest ScoopTest{..} = do
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
       escrowRedeemer = editEscrowRedeemer EscrowScoop
       interval = editValidRange (hourInterval (POSIXTime 0))
-  --print newPoolValue
-  --print poolCS
+      factoryValue = assetClassValue factoryAC 1
   runStep $
     [ fromEscrow escrow1Value "Escrow1 script call with scoop" escrow1Cond escrowRedeemer
         escrow1Datum
@@ -112,6 +111,7 @@ mkScoopTest ScoopTest{..} = do
         escrow2Datum
     , fromPool oldPoolValue "Pool script call with scoop" poolCond poolRedeemer
         (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees)
+    , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh])
     , toPool newPoolValue newPoolDatum
     , toScooper scooperOutputValue (ScooperFeeDatum scooperUserPkh)
     , PoolMint minted poolMintCond poolIdent
@@ -124,6 +124,7 @@ mkScoopTest ScoopTest{..} = do
     toScooper v d = ToScript scooperAddress v (toData d)
     fromPool = fromPoolScript poolAddress
     fromEscrow = fromEscrowScript escrowAddress
+    referenceFactory = referenceFactoryScript factoryAddress
 
 tests :: TestTree
 tests =
