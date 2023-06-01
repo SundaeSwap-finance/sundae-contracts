@@ -1,5 +1,6 @@
 packages:
   onchain/onchain.cabal
+  compiler/compiler.cabal
 
 tests: true
 benchmarks: true
