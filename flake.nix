@@ -47,9 +47,15 @@
         compiler-nix-name = "ghc927";
       };
     in
-    flake-utils.lib.eachSystem supportedSystems (system: rec {
-      pkgs = plutus-flake-utils.pkgs system;
-      inherit (plutus-flake-utils.plutusProject system (projectArgs false))
-        project flake devShell;
-    });
+    flake-utils.lib.eachSystem supportedSystems (system: 
+      let
+        plutusProject = (plutus-flake-utils.plutusProject system (projectArgs false));
+      in rec {
+        pkgs = plutus-flake-utils.pkgs system;
+        inherit (plutusProject) flake project;
+        devShell = plutusProject.devShell.overrideAttrs (old: {
+          nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.static.haskellPackages.cabal-install pkgs.static.haskellPackages.haskell-language-server ];
+        });
+      }
+    );
 }
