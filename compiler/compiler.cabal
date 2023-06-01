@@ -1,11 +1,11 @@
 cabal-version: 3.0
 
-name:                txc
+name:                compiler
 version:             0.1.0.0
-synopsis:            generate stdin.json for various transaction types
+synopsis:            compile sundae contracts
 license-file:        ../LICENSE
-author:              sundae
-maintainer:          chessai@sundaeswap.finance
+author:              SundaeSwap Labs
+maintainer:          SundaeSwap Labs
 build-type:          Simple
 
 common ghc-config
@@ -58,7 +58,12 @@ executable compiler
   build-depends:
     , aeson
     , base
+    , base16-bytestring
+    , bytestring
+    , directory
+    , filepath
     , onchain
     , optparse-applicative
+    , plutus-ledger-api
   ghc-options:
     -rtsopts

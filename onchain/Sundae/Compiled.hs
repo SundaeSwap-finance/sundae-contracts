@@ -1,7 +1,7 @@
 {-# LANGUAGE IncoherentInstances #-}
 
 -- | Wrappers for compiled scripts
-module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts, testEvalEscrowScr) where
+module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts, testEvalEscrowScr, hashScript) where
 
 import PlutusLedgerApi.V3 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
 import PlutusLedgerApi.Common (mkDynEvaluationContext, evaluateScriptCounting, PlutusLedgerLanguage(..))
@@ -179,6 +179,8 @@ scriptsExample =
     fees = ScooperFeeSettings 1
   in
     makeAllScripts boot treasBoot bootSettings upgrade fees
+
+
 
 makeAllScripts :: CLIBareUTXO -> CLIBareUTXO -> CLIFactoryBootSettings -> CLIUpgradeSettings -> ScooperFeeSettings -> AllScripts
 makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSettings =

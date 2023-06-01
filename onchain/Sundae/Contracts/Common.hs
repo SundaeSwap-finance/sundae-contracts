@@ -73,7 +73,10 @@ newtype ProtocolBootUTXO = ProtocolBootUTXO
   { unProtocolBootUTXO :: TxOutRef
   }
   deriving stock (Generic, Prelude.Show)
-  deriving newtype (FromJSON, ToJSON)
+  deriving newtype (ToJSON)
+
+instance FromJSON ProtocolBootUTXO where
+  parseJSON v = Prelude.fmap ProtocolBootUTXO $ parseJSON v 
 
 -- | Used to make the treasury token an NFT.
 newtype TreasuryBootSettings = TreasuryBootSettings
@@ -106,7 +109,13 @@ data FactoryBootSettings
   { oldFactoryBootCurrencySymbol :: OldFactoryBootCurrencySymbol
   }
   deriving stock (Generic, Prelude.Show)
-  deriving anyclass (FromJSON, ToJSON)
+  deriving anyclass (ToJSON)
+
+instance FromJSON FactoryBootSettings where
+  parseJSON = withObject "FactoryBootSettings" $ \obj -> do
+    utxo <- obj .: "protocolBootUTXO"
+    scoopers <- obj .: "scoopers"
+    return $ BrandNewFactoryBootSettings utxo scoopers
 
 data UpgradeSettings = UpgradeSettings
   { upgradeTimeLockPeriod :: Integer
