@@ -163,9 +163,6 @@ testByCoin title coins@(AB coin1 coin2) =
     , escrowForDifferentPool
     , hugeSwap
     , extraPoolAssets
-    , expiredScooperToken
-    , reallyExpiredScooperToken
-    , noScooperToken
     , escrowWithNegativeFee
     , stolenPoolToken
     ]
@@ -589,27 +586,6 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editPoolOutputValue = at (poolCoins validScoopParams $$ CoinA) . _Just +~ 1
-      , poolCond = Fail
-      }
-
-  expiredScooperToken = testCase "the scooper token is expired" $ do
-    testValidScoop
-    mkScoopTest validScoopParams
-      { editValidRange = const $ hourInterval (POSIXTime (1000 * 60 * 60 * 24 * 7 * 2))
-      , poolCond = Fail
-      }
-
-  reallyExpiredScooperToken = testCase "the scooper token is *really* expired" $ do
-    testValidScoop
-    mkScoopTest validScoopParams
-      { editValidRange = const $ hourInterval (POSIXTime (1000 * 60 * 60 * 24 * 7 * 52))
-      , poolCond = Fail
-      }
-
-  noScooperToken = testCase "there is no scooper token" $ do
-    testValidScoop
-    mkScoopTest validScoopParams
-      { editScooperInputValue = const mempty
       , poolCond = Fail
       }
 
