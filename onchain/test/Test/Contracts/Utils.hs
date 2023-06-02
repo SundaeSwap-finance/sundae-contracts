@@ -321,7 +321,7 @@ onlyLovelace = lovelaceValue . lovelaceValueOf
 
 hourInterval :: POSIXTime -> Interval POSIXTime
 hourInterval t =
-  Interval (LowerBound (Finite (t - POSIXTime (1000*60*60))) True) (UpperBound (Finite t) True)
+  Interval (LowerBound (Finite t) True) (UpperBound (Finite (t + POSIXTime (1000*60*60))) True)
 
 -- Todo: maybe `run` wants to pass in the redeemer as well.
 runStep :: [Step] -> Assertion
