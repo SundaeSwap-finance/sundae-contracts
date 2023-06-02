@@ -304,11 +304,11 @@ mkScriptInput txName scriptAddr value datumHash =
     (TxOutRef (mkTxId txName) 1)
     (TxOut scriptAddr value (OutputDatumHash datumHash) Nothing)
 
-mkReferenceInput :: BuiltinByteString -> Address -> Value -> TxInInfo
-mkReferenceInput txName addr value =
+mkReferenceInput :: BuiltinByteString -> Address -> Value -> DatumHash -> TxInInfo
+mkReferenceInput txName addr value datumHash =
   TxInInfo
     (TxOutRef (mkTxId txName) 1)
-    (TxOut addr value NoOutputDatum Nothing)
+    (TxOut addr value (OutputDatumHash datumHash) Nothing)
 
 lovelaceValue :: Integer -> Value
 lovelaceValue = singleton adaSymbol adaToken
@@ -412,7 +412,7 @@ runStep steps = do
         info & tiOutputs %~ (TxOut addr v (OutputDatumHash $ mkDatumHash d) Nothing:)
              & tiData %~ AssocMap.insert (mkDatumHash d) (toDatum d)
       ReferenceInput addr v (BuiltinData -> d) ->
-        info & tiReferenceInputs %~ (mkReferenceInput txIx addr v:)
+        info & tiReferenceInputs %~ (mkReferenceInput txIx addr v (mkDatumHash d):)
              & tiData %~ AssocMap.insert (mkDatumHash d) (toDatum d)
       PoolMint v _ _->
         info & tiMint %~ (<> v)
