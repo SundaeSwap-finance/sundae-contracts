@@ -121,6 +121,7 @@ test-suite sundae-contracts-tests
                     , aeson
                     , bytestring
                     , data-default
+                    , file-embed
                     -- , freer-extras
                     -- , freer-simple
                     , lens

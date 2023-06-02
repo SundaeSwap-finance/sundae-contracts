@@ -16,6 +16,7 @@ import qualified Data.ByteString.Short as SBS
 import Data.ByteString.Hash qualified as Hash
 import Data.Coerce (Coercible, coerce)
 import Data.Containers.ListUtils (nubOrdOn)
+import Data.FileEmbed (embedFile)
 import Data.Maybe (catMaybes)
 import Data.String(fromString)
 import PlutusLedgerApi.V3
@@ -128,11 +129,14 @@ toDatum = Datum . BuiltinData . toData
 vsh :: Coercible ScriptHash a => SerialisedScript -> a
 vsh script = coerce $ ScriptHash (toBuiltin (hashScript script))
 
+factoryBootSettingsFile :: ByteString
+factoryBootSettingsFile = $(embedFile "test/data/factory-boot-settings.json")
+
 testFactoryBootSettings :: FactoryBootSettings
-testFactoryBootSettings = unsafePerformIO $
-  Aeson.eitherDecodeFileStrict' "factory-boot-settings.json" >>= \case
-    Left bad -> fail ("Could not load factory boot settings:" ++ bad)
-    Right b -> pure b
+testFactoryBootSettings =
+  case Aeson.eitherDecodeStrict' factoryBootSettingsFile of
+    Left bad -> error ("Could not load factory boot settings: " ++ bad)
+    Right b -> b
 
 testTreasuryBootSettings :: TreasuryBootSettings
 testTreasuryBootSettings = TreasuryBootSettings $ ProtocolBootUTXO $
