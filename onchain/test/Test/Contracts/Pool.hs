@@ -169,6 +169,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , extraPoolAssets
     , escrowWithNegativeFee
     , stolenPoolToken
+    , swapTooEarly
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -597,5 +598,12 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editEscrow1Datum = escrow'scoopFee .~ (-testScoopFee)
+      , poolCond = Fail
+      }
+
+  swapTooEarly = testCase "swapping before the min swap time" $ do
+    testValidScoop
+    mkScoopTest validScoopParams
+      { editValidRange = \i -> Interval (LowerBound (Finite (-1)) True) (ivTo i)
       , poolCond = Fail
       }
