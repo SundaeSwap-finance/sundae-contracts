@@ -40,6 +40,7 @@ data Step
   | FromScript Address Value String Cond ScriptInput
   | ToUser Address Value
   | ToScript Address Value Data
+  | ReferenceInput Address Value Data
   | PoolMint Value Cond BuiltinByteString
   | TreasuryBootMint Value Cond
   | SundaeMint Value Cond
@@ -59,6 +60,8 @@ fromEscrowScript :: Address -> Value -> String -> Cond -> EscrowRedeemer -> Escr
 fromEscrowScript a v dbg cond red dat = FromScript a v dbg cond (EscrowScriptInput red dat)
 fromFactoryScript :: Address -> Value -> String -> Cond -> FactoryRedeemer -> FactoryDatum -> Step
 fromFactoryScript a v dbg cond red dat = FromScript a v dbg cond (FactoryScriptInput red dat)
+referenceFactoryScript :: Address -> Value -> Data -> Step
+referenceFactoryScript a v d = ReferenceInput a v d
 
 tiInputs :: Lens' TxInfo [TxInInfo]
 tiInputs f info =
@@ -67,6 +70,10 @@ tiInputs f info =
 tiOutputs :: Lens' TxInfo [TxOut]
 tiOutputs f info =
   (\i' -> info{txInfoOutputs = i'}) <$> f (txInfoOutputs info)
+
+tiReferenceInputs :: Lens' TxInfo [TxInInfo]
+tiReferenceInputs f info =
+  (\i' -> info{txInfoReferenceInputs = i'}) <$> f (txInfoReferenceInputs info)
 
 tiMint :: Lens' TxInfo Value
 tiMint f info =
@@ -297,6 +304,12 @@ mkScriptInput txName scriptAddr value datumHash =
     (TxOutRef (mkTxId txName) 1)
     (TxOut scriptAddr value (OutputDatumHash datumHash) Nothing)
 
+mkReferenceInput :: BuiltinByteString -> Address -> Value -> DatumHash -> TxInInfo
+mkReferenceInput txName addr value datumHash =
+  TxInInfo
+    (TxOutRef (mkTxId txName) 1)
+    (TxOut addr value (OutputDatumHash datumHash) Nothing)
+
 lovelaceValue :: Integer -> Value
 lovelaceValue = singleton adaSymbol adaToken
 
@@ -375,12 +388,14 @@ runStep steps = do
     TxInfo
       { txInfoInputs = []
       , txInfoOutputs = []
+      , txInfoReferenceInputs = []
       , txInfoFee = lovelaceValue 1
       , txInfoMint = mempty
       , txInfoDCert = []
       , txInfoWdrl = fromList []
       , txInfoValidRange = always
       , txInfoSignatories = []
+      , txInfoRedeemers = fromList []
       , txInfoData = fromList []
       , txInfoId = mkTxId "#testOut"}
   step (ix, c) info =
@@ -395,6 +410,9 @@ runStep steps = do
         info & tiOutputs %~ (TxOut addr v NoOutputDatum Nothing:)
       ToScript addr v (BuiltinData -> d) ->
         info & tiOutputs %~ (TxOut addr v (OutputDatumHash $ mkDatumHash d) Nothing:)
+             & tiData %~ AssocMap.insert (mkDatumHash d) (toDatum d)
+      ReferenceInput addr v (BuiltinData -> d) ->
+        info & tiReferenceInputs %~ (mkReferenceInput txIx addr v (mkDatumHash d):)
              & tiData %~ AssocMap.insert (mkDatumHash d) (toDatum d)
       PoolMint v _ _->
         info & tiMint %~ (<> v)
