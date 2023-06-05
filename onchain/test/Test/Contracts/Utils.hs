@@ -16,6 +16,7 @@ import qualified Data.ByteString.Short as SBS
 import Data.ByteString.Hash qualified as Hash
 import Data.Coerce (Coercible, coerce)
 import Data.Containers.ListUtils (nubOrdOn)
+import Data.FileEmbed (embedFile)
 import Data.Maybe (catMaybes)
 import Data.String(fromString)
 import PlutusLedgerApi.V3
@@ -39,7 +40,7 @@ data Step
   | FromScript Address Value String Cond ScriptInput
   | ToUser Address Value
   | ToScript Address Value Data
-  | PoolMint Value Cond Ident
+  | PoolMint Value Cond BuiltinByteString
   | TreasuryBootMint Value Cond
   | SundaeMint Value Cond
   | FactoryBootMint Value Cond FactoryBootMintRedeemer
@@ -128,11 +129,14 @@ toDatum = Datum . BuiltinData . toData
 vsh :: Coercible ScriptHash a => SerialisedScript -> a
 vsh script = coerce $ ScriptHash (toBuiltin (hashScript script))
 
+factoryBootSettingsFile :: ByteString
+factoryBootSettingsFile = $(embedFile "test/data/factory-boot-settings.json")
+
 testFactoryBootSettings :: FactoryBootSettings
-testFactoryBootSettings = unsafePerformIO $
-  Aeson.eitherDecodeFileStrict' "factory-boot-settings.json" >>= \case
-    Left bad -> fail ("Could not load factory boot settings:" ++ bad)
-    Right b -> pure b
+testFactoryBootSettings =
+  case Aeson.eitherDecodeStrict' factoryBootSettingsFile of
+    Left bad -> error ("Could not load factory boot settings: " ++ bad)
+    Right b -> b
 
 testTreasuryBootSettings :: TreasuryBootSettings
 testTreasuryBootSettings = TreasuryBootSettings $ ProtocolBootUTXO $
@@ -206,6 +210,9 @@ poolCS :: PoolCurrencySymbol
 poolCS =
   PoolCurrencySymbol $ currencySymbolOf testPoolMint
 
+poolSH :: PoolScriptHash
+poolSH = vsh testPool
+
 treasuryBootCS :: TreasuryBootCurrencySymbol
 treasuryBootCS =
   TreasuryBootCurrencySymbol $ currencySymbolOf treasuryBootMint
@@ -221,11 +228,11 @@ factoryAC :: AssetClass
 factoryAC =
   AssetClass (coerce factoryBootCS, factoryToken)
 
-liquidityAC :: Ident -> AssetClass
+liquidityAC :: BuiltinByteString -> AssetClass
 liquidityAC poolIdent =
   AssetClass (coerce poolCS, computeLiquidityTokenName poolIdent)
 
-poolAC :: Ident -> AssetClass
+poolAC :: BuiltinByteString -> AssetClass
 poolAC poolIdent =
   AssetClass (coerce poolCS, computePoolTokenName poolIdent)
 
@@ -323,7 +330,7 @@ runStep steps = do
   runSundaeMint ctx =
     sundaeMintingContract treasuryBootCS () ctx
   runPoolMint redeemer ctx =
-    poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") (toBuiltinData redeemer) (toBuiltinData ctx)
+    poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
     factoryContract upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
   handleErrors = handle (\(_ :: SomeException) -> pure False) . evaluate
@@ -339,7 +346,7 @@ runStep steps = do
       passes @? dbg
   exec info (_, PoolMint _ cond ident) = do
     pure $ do
-      wentThrough <- handleErrors $ runPoolMint (toBuiltinData ident) (toBuiltinData $  ScriptContext info (Minting $ coerce poolCS)) `seq` True
+      wentThrough <- handleErrors $ runPoolMint (MintLP ident) (ScriptContext info (Minting $ coerce poolCS)) `seq` True
       let passes = runCond cond wentThrough
       passes @? "pool mint failure"
   exec info (_, FactoryBootMint _ cond redeemer) = do
