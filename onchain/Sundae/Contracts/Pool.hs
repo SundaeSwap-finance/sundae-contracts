@@ -66,7 +66,7 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees) (PoolScoop scooperPkh order) ctx =
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees minSwapTime) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -100,8 +100,18 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh)) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers)
+        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers) &&
+    debug "no swaps allowed before min swap time"
+      ( if earliest < minSwapTime
+        then all nonSwap escrows
+        else True
+      )
   where
+  nonSwap (EscrowWithFee fee (_, escrowAction)) =
+    case escrowAction of
+      EscrowSwap _ _ _ -> False
+      _ -> True
+  !(LowerBound (Finite earliest) _) = ivFrom (txInfoValidRange txInfo)
   !factoryReference = uniqueElement'
     [ o
     | o <- txInfoReferenceInputs txInfo

@@ -341,13 +341,14 @@ data PoolDatum
   , _pool'poolIdent :: !BuiltinByteString -- ^ unique identifier of the pool.
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
+  , _pool'minSwapTime :: !POSIXTime -- ^ time to enable swaps on this pool
   } deriving (Generic, NFData, Prelude.Show)
 
 instance Eq PoolDatum where
   {-# inlinable (==) #-}
-  PoolDatum coinPair ident issuedLiquidity swapFees ==
-    PoolDatum coinPair' ident' issuedLiquidity' swapFees' =
-      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees'
+  PoolDatum coinPair ident issuedLiquidity swapFees minSwapTime ==
+    PoolDatum coinPair' ident' issuedLiquidity' swapFees' minSwapTime' =
+      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees' && minSwapTime == minSwapTime'
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal

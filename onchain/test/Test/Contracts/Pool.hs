@@ -99,7 +99,7 @@ mkScoopTest ScoopTest{..} = do
       newIssued = initialLiquidityTokenCount + extraLiquidity
       minted = editMinted $ assetClassValue (liquidityAC poolIdent) (newIssued - initialLiquidityTokenCount)
       newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
-      newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees)
+      newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees 0)
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
       escrowRedeemer = editEscrowRedeemer EscrowScoop
       interval = editValidRange (hourInterval (POSIXTime 0))
@@ -110,7 +110,7 @@ mkScoopTest ScoopTest{..} = do
     , fromEscrow escrow2Value "Escrow2 script call with scoop" escrow2Cond escrowRedeemer
         escrow2Datum
     , fromPool oldPoolValue "Pool script call with scoop" poolCond poolRedeemer
-        (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees)
+        (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees 0)
     , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh])
     , toPool newPoolValue newPoolDatum
     , toScooper scooperOutputValue (ScooperFeeDatum scooperUserPkh)
@@ -169,6 +169,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , extraPoolAssets
     , escrowWithNegativeFee
     , stolenPoolToken
+    , swapTooEarly
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -597,5 +598,12 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editEscrow1Datum = escrow'scoopFee .~ (-testScoopFee)
+      , poolCond = Fail
+      }
+
+  swapTooEarly = testCase "swapping before the min swap time" $ do
+    testValidScoop
+    mkScoopTest validScoopParams
+      { editValidRange = \i -> Interval (LowerBound (Finite (-1)) True) (ivTo i)
       , poolCond = Fail
       }
