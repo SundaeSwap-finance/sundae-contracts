@@ -49,10 +49,11 @@ findOwnInput (ScriptContext t_info (Spending o_ref)) =
 getContinuingOutputs :: ScriptContext -> [TxOut]
 getContinuingOutputs ctx =
   case findOwnInput ctx of
-    Just TxInInfo{txInInfoResolved=TxOut{txOutAddress}} -> filter (f txOutAddress) (txInfoOutputs $ scriptContextTxInfo ctx)
+    Just TxInInfo{txInInfoResolved=TxOut{txOutAddress}} -> filter (isPaymentKeyEq txOutAddress) (txInfoOutputs $ scriptContextTxInfo ctx)
     Nothing -> traceError "Lf"
   where
-    f addr TxOut{txOutAddress=otherAddress} = addr == otherAddress
+    -- check only payment key, not staking, so that the staking address for a pool may be changed
+    isPaymentKeyEq addr TxOut{txOutAddress=otherAddress} = addressCredential addr == addressCredential otherAddress
 
 -- These instances were dropped, so we now have to implement them
 -- but they won't be used in contracts
