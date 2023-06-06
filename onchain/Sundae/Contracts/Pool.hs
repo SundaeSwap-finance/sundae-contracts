@@ -100,7 +100,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh)) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers) &&
+        FactoryDatum _ _ _ scoopers _ -> elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
