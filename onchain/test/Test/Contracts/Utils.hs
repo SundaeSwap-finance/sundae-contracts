@@ -319,6 +319,7 @@ lovelaceValueOf v = valueOf v adaSymbol adaToken
 onlyLovelace :: Value -> Value
 onlyLovelace = lovelaceValue . lovelaceValueOf
 
+-- POSIXTime is milliseconds, so 1 hour is represented as 1000 * 60 * 60 ms
 hourInterval :: POSIXTime -> Interval POSIXTime
 hourInterval t =
   Interval (LowerBound (Finite t) True) (UpperBound (Finite (t + POSIXTime (1000*60*60))) True)
