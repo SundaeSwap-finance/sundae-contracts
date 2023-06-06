@@ -23,6 +23,7 @@ import System.IO.Unsafe
 
 import Test.Contracts.Orphans
 import Test.Contracts.Utils
+import PlutusLedgerApi.V1 (Credential(PubKeyCredential))
 
 data ScoopTest
   = ScoopTest
@@ -40,6 +41,7 @@ data ScoopTest
   , editEscrow2Datum :: EscrowDatum -> EscrowDatum
   , editOldPoolValue :: Value -> Value
   , editPoolOutputValue :: Value -> Value
+  , editPoolAddress :: Address -> Address
   , editMinTakes :: Integer -> Integer
   , editValidRange :: Interval POSIXTime -> Interval POSIXTime
   , editNewPoolDatum :: PoolDatum -> PoolDatum
@@ -69,6 +71,7 @@ defaultValidScoopParams =
   , editNewPoolDatum = id
   , editPoolRedeemer = id
   , editEscrowRedeemer = id
+  , editPoolAddress = id
   }
 
 getIdent :: Ident -> BuiltinByteString
@@ -100,6 +103,7 @@ mkScoopTest ScoopTest{..} = do
       minted = editMinted $ assetClassValue (liquidityAC poolIdent) (newIssued - initialLiquidityTokenCount)
       newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
       newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees)
+      newPoolAddr = editPoolAddress poolAddress
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
       escrowRedeemer = editEscrowRedeemer EscrowScoop
       interval = editValidRange (hourInterval (POSIXTime 0))
@@ -112,7 +116,7 @@ mkScoopTest ScoopTest{..} = do
     , fromPool oldPoolValue "Pool script call with scoop" poolCond poolRedeemer
         (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees)
     , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh])
-    , toPool newPoolValue newPoolDatum
+    , toPool newPoolValue newPoolDatum newPoolAddr
     , toScooper scooperOutputValue (ScooperFeeDatum scooperUserPkh)
     , PoolMint minted poolMintCond poolIdent
     , CustomInterval interval
@@ -120,7 +124,7 @@ mkScoopTest ScoopTest{..} = do
     , CustomSignatories [scooperUserPkh]
     ] ++ (uncurry ToUser <$> disbursed)
   where
-    toPool v d = ToScript poolAddress v (toData d)
+    toPool v d a = ToScript a v (toData d)
     toScooper v d = ToScript scooperAddress v (toData d)
     fromPool = fromPoolScript poolAddress
     fromEscrow = fromEscrowScript escrowAddress
@@ -180,7 +184,9 @@ testByCoin title coins@(AB coin1 coin2) =
     , validateSingleDeposit
     , validDepositOnDifferentRate
     , validDoubleSwap
-    , validTwoOrdersSamePerson ]
+    , validTwoOrdersSamePerson
+    , poolChangeStaking
+    ]
   -- User 1 is depositing.
   -- User 2 is swapping.
   testValidScoop = evaluate $ unsafePerformIO $ mkScoopTest validScoopParams
@@ -598,4 +604,10 @@ testByCoin title coins@(AB coin1 coin2) =
     mkScoopTest validScoopParams
       { editEscrow1Datum = escrow'scoopFee .~ (-testScoopFee)
       , poolCond = Fail
+      }
+
+  poolChangeStaking = testCase "change staking key of pool" $ do
+    mkScoopTest validScoopParams
+      { editPoolAddress = \(Address poolPaymentCred _) ->
+          Address poolPaymentCred (Just (StakingHash (PubKeyCredential "1234")))
       }
