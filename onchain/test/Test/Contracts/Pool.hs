@@ -173,6 +173,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , extraPoolAssets
     , escrowWithNegativeFee
     , stolenPoolToken
+    , poolChangePayment
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -610,4 +611,11 @@ testByCoin title coins@(AB coin1 coin2) =
     mkScoopTest validScoopParams
       { editPoolAddress = \(Address poolPaymentCred _) ->
           Address poolPaymentCred (Just (StakingHash (PubKeyCredential "1234")))
+      }
+
+  poolChangePayment = testCase "change payment key of pool" $ do
+    mkScoopTest validScoopParams
+      { editPoolAddress = \(Address _ poolStakingCred) ->
+          Address (ScriptCredential "1234") poolStakingCred
+      , poolCond = Fail
       }
