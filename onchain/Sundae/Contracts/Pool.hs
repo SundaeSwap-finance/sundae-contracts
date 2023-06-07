@@ -59,13 +59,12 @@ data OrderedEscrow = OrderedEscrow
 poolContract
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
-  -> ScooperFeeHolderScriptHash
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
+poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
@@ -212,7 +211,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       valueOfAC v (coins $$ coin) >= amt && amt >= 1
 
 poolContract
-  (FactoryBootCurrencySymbol fbcs) _ _ (EscrowScriptHash esh)
+  (FactoryBootCurrencySymbol fbcs) _ (EscrowScriptHash esh)
   _ PoolUpgrade ctx =
   debug "dead factory not included; must included dead factory to prove that the upgrade should be adopted"
     (atLeastOne (\i ->
@@ -228,7 +227,7 @@ poolContract
   where
   txInfo = scriptContextTxInfo ctx
 
-poolContract (FactoryBootCurrencySymbol fbcs) _ _ _ poolInputDatum (PoolClaimRewards manager amountClaimed) ctx =
+poolContract (FactoryBootCurrencySymbol fbcs) _ _ poolInputDatum (PoolClaimRewards manager amountClaimed) ctx =
   debug "must be a treasury manager"
     (manager `elem` treasuryManagers factoryReferenceDatum) &&
   debug "must not claim more than total rewards"

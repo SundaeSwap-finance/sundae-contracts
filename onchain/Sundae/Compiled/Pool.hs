@@ -13,17 +13,15 @@ import Sundae.Utilities
 poolScript
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
-  -> ScooperFeeHolderScriptHash
   -> EscrowScriptHash
   -> SerialisedScript
-poolScript fbcs pcs slsh esh =
+poolScript fbcs pcs esh =
   let
     x =
-      pure $$(PlutusTx.compile [|| \fbcs' pcs' slsh' esh' datum redeemer ctx ->
-        check $ poolContract fbcs' pcs' slsh' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+      pure $$(PlutusTx.compile [|| \fbcs' pcs' esh' datum redeemer ctx ->
+        check $ poolContract fbcs' pcs' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
         >>= flip apCode fbcs
         >>= flip apCode pcs
-        >>= flip apCode slsh
         >>= flip apCode esh
   in
     case x of

@@ -28,7 +28,7 @@ import Codec.Serialise (deserialise)
 
 import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), DeadFactoryScriptHash(..), TreasuryScriptHash(..))
 
-import Sundae.Utilities (Ident(..), Coin(..))
+import Sundae.Utilities (Coin(..))
 
 import Sundae.Compiled.Factory as X
 import Sundae.Compiled.Mints as X
@@ -213,7 +213,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 
     poolMintScr = poolMintingScript factoryBootCS oldPoolCurrencySymbol
     poolCS = mcs poolMintScr
-    poolScr = poolScript factoryBootCS poolCS scooperFeeHolderSH escrowSH
+    poolScr = poolScript factoryBootCS poolCS escrowSH
     poolSH = vsh poolScr
 
     deadPoolScr = deadPoolScript poolCS escrowSH
@@ -224,9 +224,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     deadFactorySH = vsh deadFactoryScr
 
     proposalScr = proposalScript convertedUpgradeSettings
-
-    scooperFeeHolderScr = scooperFeeScript scooperFeeSettings giftSH factoryBootCS
-    scooperFeeHolderSH = vsh scooperFeeHolderScr
 
     escrowScr = escrowScript poolCS
     escrowSH = vsh escrowScr
