@@ -629,6 +629,21 @@ sansRider' c v =
 sansRider :: Value -> Value
 sansRider v = sansRider' 1 v
 
+{-# inlinable sansAda #-}
+sansAda :: Integer -> Value -> Value
+sansAda whatever v =
+  let
+    !lovelace = valueOf v adaSymbol adaToken
+  in
+    if lovelace < whatever
+    then die "not enough Ada to sans the whatever"
+    else
+      let v_l = removeSymbol adaSymbol (Map.toList $ getValue v) [] in
+        if lovelace - whatever /= 0 then
+          Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - whatever)) : v_l)
+        else
+          Value $ Map.fromList v_l
+
 -- Valid fees for the protocol
 -- [0.05%, 0.3%, 1%]
 {-# inlinable legalSwapFees #-}
