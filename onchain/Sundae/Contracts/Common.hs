@@ -355,6 +355,7 @@ instance Eq PoolDatum where
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
+  | PoolClaimRewards !PubKeyHash Integer
   | PoolUpgrade
 
 data DeadPoolDatum = DeadPoolDatum
@@ -503,7 +504,7 @@ PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0), ('SpendScooperFeesIntoTreasury, 1)]
-PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1)]
+PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1), ('PoolClaimRewards, 2)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''DeadPoolDatum [('DeadPoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]
@@ -618,11 +619,12 @@ sansRider' c v =
           Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - finalRider)) : v_l)
         else
           Value $ Map.fromList v_l
-  where
-    removeSymbol _ [] acc = acc
-    removeSymbol sym (x@(cs, _) : tl) acc
-     | sym == cs = removeSymbol sym tl acc
-     | otherwise = removeSymbol sym tl (x : acc)
+
+{-# inlinable removeSymbol #-}
+removeSymbol _ [] acc = acc
+removeSymbol sym (x@(cs, _) : tl) acc
+  | sym == cs = removeSymbol sym tl acc
+  | otherwise = removeSymbol sym tl (x : acc)
 
 -- In the pool contract, we subtract off the riders so as not to affect the price calculation
 {-# inlinable sansRider #-}
@@ -631,16 +633,16 @@ sansRider v = sansRider' 1 v
 
 {-# inlinable sansAda #-}
 sansAda :: Integer -> Value -> Value
-sansAda whatever v =
+sansAda extra v =
   let
     !lovelace = valueOf v adaSymbol adaToken
   in
-    if lovelace < whatever
-    then die "not enough Ada to sans the whatever"
+    if lovelace < extra
+    then die "not enough ada"
     else
       let v_l = removeSymbol adaSymbol (Map.toList $ getValue v) [] in
-        if lovelace - whatever /= 0 then
-          Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - whatever)) : v_l)
+        if lovelace - extra /= 0 then
+          Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - extra)) : v_l)
         else
           Value $ Map.fromList v_l
 
