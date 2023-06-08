@@ -65,7 +65,7 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
+  (PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -76,12 +76,17 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       (not $ null escrows) &&
     debug "valid range too large"
       (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
-    debug "issued amount in new datum incorrect"
-      (datumOf txInfo poolOutput ==
-        Just (datum
-          { _pool'circulatingLP = newCirculatingLP
-          , _pool'rewards = newRewardsAmt
-          })) &&
+    debug "constant datum fields were changed"
+      ( poolOutputCoins == coins &&
+        poolOutputIdent == poolIdent &&
+        poolOutputSwapFees == swapFees &&
+        poolOutputMarketOpenTime == marketOpenTime) &&
+    debug "circulating LP is wrong"
+      (poolOutputLP == newCirculatingLP) &&
+    debug "minimum scooper fee is negative"
+      (minimumScooperFee >= 0) &&
+    debug "new rewards is wrong"
+      (poolOutputRewards >= rewards + minimumScooperFee) &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
@@ -103,7 +108,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         else True
       )
   where
-  !newRewardsAmt = rewards + minimumScooperFee
+  !(PoolDatum !poolOutputCoins !poolOutputIdent !poolOutputLP !poolOutputSwapFees !poolOutputMarketOpenTime !poolOutputRewards) =
+    case datumOf txInfo poolOutput of
+      Just pool -> pool
+      Nothing -> traceError "pool output must have a pool datum"
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ _ -> False
@@ -130,8 +138,8 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     | o <- txInfoOutputs txInfo
     , isScriptAddress o ownScriptHash
     ]
-  poolOutputValue = txOutValue poolOutput
-  !poolOutputFunds = sansAda (newRewardsAmt + riderAmount) poolOutputValue
+  !poolOutputValue = txOutValue poolOutput
+  !poolOutputFunds = sansAda (poolOutputRewards + riderAmount) poolOutputValue
   mustSpendTo (EscrowDestination addr dh, val, count) =
     atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
   atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool

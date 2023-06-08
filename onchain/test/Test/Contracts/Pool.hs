@@ -183,7 +183,9 @@ testByCoin title coins@(AB coin1 coin2) =
     , validateSingleDeposit
     , validDepositOnDifferentRate
     , validDoubleSwap
-    , validTwoOrdersSamePerson ]
+    , validTwoOrdersSamePerson
+    , allowExtraLockedRewards
+    ]
   -- User 1 is depositing.
   -- User 2 is swapping.
   testValidScoop = evaluate $ unsafePerformIO $ mkScoopTest validScoopParams
@@ -651,4 +653,10 @@ testByCoin title coins@(AB coin1 coin2) =
     mkScoopTest validScoopParams
       { editNewPoolDatum = pool'rewards .~ 0
       , poolCond = Fail
+      }
+
+  allowExtraLockedRewards = testCase "locking extra rewards is okay" $ do
+    mkScoopTest validScoopParams
+      { editNewPoolDatum = pool'rewards .~ 10_000_000
+      , editPoolOutputValue = (<> lovelaceValue (5_000_000 + 1))
       }
