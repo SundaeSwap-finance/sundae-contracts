@@ -611,20 +611,20 @@ testByCoin title coins@(AB coin1 coin2) =
 
   poolSetStaking = testCase "change staking key of pool to a non-empty credential" $ do
     mkScoopTest validScoopParams
-      { editPoolAddress = \(Address poolPaymentCred _) ->
-          Address poolPaymentCred (Just (StakingHash (PubKeyCredential "1234")))
+      { editPoolAddress = \(Address previousPoolPaymentCred _) ->
+          Address previousPoolPaymentCred (Just (StakingHash (PubKeyCredential "1234")))
       }
 
   poolUnsetStaking = testCase "unset staking key of pool" $ do
     mkScoopTest validScoopParams
-      { editPoolAddress = \(Address poolPaymentCred _) ->
-          Address poolPaymentCred Nothing
+      { editPoolAddress = \(Address previousPoolPaymentCred _) ->
+          Address previousPoolPaymentCred Nothing
       }
 
   poolChangePayment = testCase "change payment key of pool" $ do
     mkScoopTest validScoopParams
-      { editPoolAddress = \(Address _ existingPoolStakingCred) ->
-          Address (ScriptCredential "0") existingPoolStakingCred
+      { editPoolAddress = \(Address _ previousPoolStakingCred) ->
+          Address (ScriptCredential "0") previousPoolStakingCred
       , poolCond = Fail
       }
 
