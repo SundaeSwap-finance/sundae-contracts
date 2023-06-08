@@ -101,7 +101,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ _ scoopers _ -> elem scooperPkh scoopers) &&
+        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
@@ -234,48 +234,6 @@ poolContract
       (txInfoInputs txInfo)))
   where
   txInfo = scriptContextTxInfo ctx
-
-poolContract (FactoryBootCurrencySymbol fbcs) _ _ poolInputDatum (PoolClaimRewards manager amountClaimed) ctx =
-  debug "must be a treasury manager"
-    (manager `elem` treasuryManagers factoryReferenceDatum) &&
-  debug "must not claim more than total rewards"
-    (_pool'rewards poolInputDatum >= amountClaimed) &&
-  debug "may only change pool datum by decreasing rewards"
-    (datumOf txInfo poolOutput == Just (poolInputDatum
-      { _pool'rewards = _pool'rewards poolInputDatum - amountClaimed
-      })) &&
-  debug "output must have the correct adjusted value"
-    (poolOutputValue == poolInputValue - ofAda amountClaimed)
-  where
-  ofAda c = singleton adaSymbol adaToken c
-  txInfo = scriptContextTxInfo ctx
-  !poolInput = uniqueElement'
-    [ o
-    | i <- txInfoInputs txInfo
-    , let o = txInInfoResolved i
-    , isScriptAddress o ownScriptHash
-    ]
-  !poolInputValue = txOutValue poolInput
-  !poolOutput = uniqueElement'
-    [ o
-    | o <- txInfoOutputs txInfo
-    , isScriptAddress o ownScriptHash
-    ]
-  !poolOutputValue = txOutValue poolOutput
-  !factoryReference = uniqueElement'
-    [ o
-    | o <- txInfoReferenceInputs txInfo
-    , isFactory fbcs (txInInfoResolved o)
-    ]
-  !factoryReferenceDatum =
-    case datumOf txInfo (txInInfoResolved factoryReference) of
-      Just fac -> fac
-      Nothing -> traceError "factory reference must have a factory datum"
-  !ownInput = scriptInput ctx
-  ownScriptHash =
-    case ownInput of
-      (TxOut (Address (ScriptCredential h) _) _ _ _) -> h
-      _ -> traceError "invalid pool script utxo"
 
 -- Dead Pool contract
 --  When we upgrade a pool, the liquidity moves into a new contract; These are owned by holders of the old liquidity token.

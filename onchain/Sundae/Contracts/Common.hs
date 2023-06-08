@@ -263,18 +263,16 @@ data FactoryDatum = FactoryDatum
   , proposalState :: !ProposalState
   , scooperIdent :: !Ident
   , scooperSet :: ![PubKeyHash]
-  , treasuryManagers :: ![PubKeyHash]
   }
   deriving stock (Generic, Prelude.Show)
   --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' factoryManagers' ==
-    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' factoryManagers'' =
+  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' ==
+    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' =
       nextPoolIdent' == nextPoolIdent'' && currentProposal' == currentProposal'' &&
-      scooperIdent' == scooperIdent'' && scooperSet' == scooperSet'' &&
-      factoryManagers' == factoryManagers''
+      scooperIdent' == scooperIdent'' && scooperSet' == scooperSet''
 
 -- | Action on factory script
 data FactoryRedeemer
@@ -355,7 +353,6 @@ instance Eq PoolDatum where
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
-  | PoolClaimRewards !PubKeyHash Integer
   | PoolUpgrade
 
 data DeadPoolDatum = DeadPoolDatum
@@ -504,7 +501,7 @@ PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0), ('SpendScooperFeesIntoTreasury, 1)]
-PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1), ('PoolClaimRewards, 2)]
+PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''DeadPoolDatum [('DeadPoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]

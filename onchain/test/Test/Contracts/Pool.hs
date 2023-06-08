@@ -112,7 +112,7 @@ mkScoopTest ScoopTest{..} = do
         escrow2Datum
     , fromPool oldPoolValue "Pool script call with scoop" poolCond poolRedeemer
         (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees 0 0)
-    , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh] [])
+    , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh])
     , toPool newPoolValue newPoolDatum
     , PoolMint minted poolMintCond poolIdent
     , CustomInterval interval
