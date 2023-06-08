@@ -77,11 +77,11 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     debug "valid range too large"
       (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
     debug "issued amount in new datum incorrect"
-      (rawDatumOf txInfo poolOutput ==
-        Just (Datum (toBuiltinData (datum
+      (datumOf txInfo poolOutput ==
+        Just (datum
           { _pool'circulatingLP = newCirculatingLP
           , _pool'rewards = newRewardsAmt
-          })))) &&
+          })) &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
