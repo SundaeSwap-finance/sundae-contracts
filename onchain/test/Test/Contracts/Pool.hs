@@ -170,6 +170,8 @@ testByCoin title coins@(AB coin1 coin2) =
     , escrowWithNegativeFee
     , stolenPoolToken
     , swapTooEarly
+    , rewardsNotPaidToPool
+    , poolRewardsFieldNotChanged
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -631,5 +633,22 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editValidRange = \i -> Interval (LowerBound (Finite (-1)) True) (ivTo i)
+      , poolCond = Fail
+      }
+
+  rewardsNotPaidToPool = testCase "rewards not paid to pool" $ do
+    testValidScoop
+    let
+      txFee = 1
+      scooperFee = 2_500_000
+      rewards = 2 * scooperFee - txFee
+    mkScoopTest validScoopParams
+      { editPoolOutputValue = (<> Plutus.inv (lovelaceValue rewards))
+      , poolCond = Fail
+      }
+
+  poolRewardsFieldNotChanged = testCase "pool rewards field not updated correctly" $ do
+    mkScoopTest validScoopParams
+      { editNewPoolDatum = pool'rewards .~ 0
       , poolCond = Fail
       }
