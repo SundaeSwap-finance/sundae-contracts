@@ -656,7 +656,8 @@ testByCoin title coins@(AB coin1 coin2) =
       }
 
   allowExtraLockedRewards = testCase "locking extra rewards is okay" $ do
+    let extra = 5_000_000
     mkScoopTest validScoopParams
-      { editNewPoolDatum = pool'rewards .~ 10_000_000
-      , editPoolOutputValue = (<> lovelaceValue (5_000_000 + 1))
+      { editNewPoolDatum = pool'rewards +~ extra
+      , editPoolOutputValue = (<> lovelaceValue extra)
       }
