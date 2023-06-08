@@ -172,6 +172,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , swapTooEarly
     , rewardsNotPaidToPool
     , poolRewardsFieldNotChanged
+    , requireSufficientLockedRewards
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -660,4 +661,12 @@ testByCoin title coins@(AB coin1 coin2) =
     mkScoopTest validScoopParams
       { editNewPoolDatum = pool'rewards +~ extra
       , editPoolOutputValue = (<> lovelaceValue extra)
+      }
+
+  requireSufficientLockedRewards = testCase "must lock sufficient rewards" $ do
+    let missing = 10_000
+    mkScoopTest validScoopParams
+      { editNewPoolDatum = pool'rewards -~ missing
+      , editPoolOutputValue = (<> Plutus.inv (lovelaceValue missing))
+      , poolCond = Fail
       }
