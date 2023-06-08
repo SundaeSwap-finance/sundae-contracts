@@ -86,8 +86,6 @@ mkScoopTest ScoopTest{..} = do
       poolIdent = case intToIdent 0 of { Ident i -> i }
       minAda = lovelaceValue 2_000_000
       scooperInputValue = editScooperInputValue $ assetClassValue (scooperTokenAC $ intToIdent 0) 1
-      scooperFee = 2 * testScoopFee
-      scooperOutputValue = scooperInputValue <> lovelaceValue scooperFee <> minAda
       escrow1Value = editEscrow1Value $ (assetClassValue coin1 depositAmt1 <> assetClassValue coin2 depositAmt2 <> minAda <> lovelaceValue testScoopFee)
       escrow1Datum = editEscrow1Datum $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowDeposit (DepositMixed (AB depositAmt1 depositAmt2)))
       escrow2Value = editEscrow2Value $ (assetClassValue coin1 swapAmt <> minAda <> lovelaceValue testScoopFee)
@@ -98,8 +96,11 @@ mkScoopTest ScoopTest{..} = do
       newAmtB = poolAmt2 + depositAmt2 - swapAmtReceived
       newIssued = initialLiquidityTokenCount + extraLiquidity
       minted = editMinted $ assetClassValue (liquidityAC poolIdent) (newIssued - initialLiquidityTokenCount)
-      newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
-      newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees 0)
+      txFee = 1
+      scooperFee = 2_500_000
+      rewards = 2 * scooperFee - txFee
+      newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
+      newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees 0 rewards)
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
       escrowRedeemer = editEscrowRedeemer EscrowScoop
       interval = editValidRange (hourInterval (POSIXTime 0))
@@ -110,10 +111,9 @@ mkScoopTest ScoopTest{..} = do
     , fromEscrow escrow2Value "Escrow2 script call with scoop" escrow2Cond escrowRedeemer
         escrow2Datum
     , fromPool oldPoolValue "Pool script call with scoop" poolCond poolRedeemer
-        (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees 0)
+        (PoolDatum (AB coin1 coin2) poolIdent initialLiquidityTokenCount testSwapFees 0 0)
     , referenceFactory factoryValue (toData $ FactoryDatum initialIdent NoProposal initialIdent [scooperUserPkh] [])
     , toPool newPoolValue newPoolDatum
-    , toScooper scooperOutputValue (ScooperFeeDatum scooperUserPkh)
     , PoolMint minted poolMintCond poolIdent
     , CustomInterval interval
     , FromUser scooperUserAddr scooperInputValue
@@ -196,12 +196,15 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmtB = poolAmt2 + depositAmt2*2
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         invalid = validScoopParams
                   { editEscrow2Value = const $ assetClassValue coin1 depositAmt1 <> assetClassValue coin2 depositAmt2 <> minAda <> lovelaceValue testScoopFee
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowDeposit (DepositMixed (AB depositAmt1 depositAmt2)))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + extraLiquidity*2
                   , editMinted = at (liquidityAC poolIdent) .~ Just (extraLiquidity * 2)
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [(user1Addr, assetClassValue (liquidityAC poolIdent) (extraLiquidity*2) <> minAda <> minAda)] -- two orders, two riders
                   }
     mkScoopTest invalid
@@ -217,12 +220,15 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmt2 = 3400
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
     in  validScoopParams
           { editEscrow2Value = const $ assetClassValue coin1 depositAmt1 <> assetClassValue coin2 depositAmt2 <> minAda <> lovelaceValue testScoopFee
           , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowDeposit (DepositMixed (AB depositAmt1 depositAmt2)))
           , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + userLiq
           , editMinted = at (liquidityAC poolIdent) .~ Just userLiq
-          , editPoolOutputValue = const $ assetClassValue coin1 newAmt1 <> assetClassValue coin2 newAmt2 <> assetClassValue (poolAC poolIdent) 1 <> minAda
+          , editPoolOutputValue = const $ assetClassValue coin1 newAmt1 <> assetClassValue coin2 newAmt2 <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
           , editDisbursed = const $ [(user1Addr, assetClassValue coin1 change1 <> assetClassValue (liquidityAC poolIdent) userLiq <> minAda <> minAda)] -- two orders, two riders
           }
 
@@ -237,6 +243,9 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmt2 = 3200
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         userDeposit1 x = EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowDeposit x)
     in  validScoopParams
           { editEscrow1Value = const $ assetClassValue coin1 depositAmt1 <> minAda <> lovelaceValue testScoopFee
@@ -245,7 +254,7 @@ testByCoin title coins@(AB coin1 coin2) =
           , editEscrow2Datum = const $ userDeposit1 (DepositSingle CoinB depositAmt2)
           , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + userLiq
           , editMinted = at (liquidityAC poolIdent) .~ Just userLiq
-          , editPoolOutputValue = const $ assetClassValue coin1 newAmt1 <> assetClassValue coin2 newAmt2 <> assetClassValue (poolAC poolIdent) 1 <> minAda
+          , editPoolOutputValue = const $ assetClassValue coin1 newAmt1 <> assetClassValue coin2 newAmt2 <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
           , editDisbursed = const $ [(user1Addr, assetClassValue (liquidityAC poolIdent) userLiq <> minAda <> minAda)] -- two orders, two riders
           }
 
@@ -262,13 +271,15 @@ testByCoin title coins@(AB coin1 coin2) =
         (withdrawReceived1, withdrawReceived2) = (81, 122)
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
-        scooperFee = 2 * testScoopFee
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         valid = validScoopParams
                   { editEscrow2Value = const $ assetClassValue (liquidityAC (getIdent initialIdent)) withdrawAmount <> minAda <> lovelaceValue testScoopFee
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user2Dest Nothing) testScoopFee (EscrowWithdraw withdrawAmount)
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + extraLiquidity - withdrawAmount
                   , editMinted = at (liquidityAC (getIdent initialIdent)) .~ Just (extraLiquidity - withdrawAmount)
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [ (user1Addr, assetClassValue (liquidityAC poolIdent) extraLiquidity <> minAda)
                                             , (user2Addr, assetClassValue coin1 withdrawReceived1 <> assetClassValue coin2 withdrawReceived2 <> minAda)]
                   }
@@ -343,12 +354,15 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmtB = poolAmt2 + depositAmt2*2
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         invalid = validScoopParams
                   { editEscrow2Value = const $ assetClassValue coin1 depositAmt1 <> assetClassValue coin2 depositAmt2 <> minAda <> lovelaceValue testScoopFee
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowDeposit (DepositMixed (AB depositAmt1 depositAmt2)))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + extraLiquidity*2
                   , editMinted = at (liquidityAC (getIdent initialIdent)) .~ Just (initialLiquidityTokenCount + extraLiquidity*2)
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [(user1Addr, assetClassValue (liquidityAC poolIdent) extraLiquidity <> minAda)
                                     , (user2Addr, assetClassValue (liquidityAC poolIdent) extraLiquidity <> minAda)]
                   , poolCond = Fail}
@@ -380,11 +394,14 @@ testByCoin title coins@(AB coin1 coin2) =
         (withdrawReceived1, withdrawReceived2) = (81, 122)
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         invalid = validScoopParams
                   { editEscrow2Value = const $ assetClassValue (liquidityAC (getIdent initialIdent)) (withdrawAmount - 100) <> minAda <> lovelaceValue testScoopFee
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user2Dest Nothing) testScoopFee (EscrowWithdraw (withdrawAmount - 1))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount + extraLiquidity - (withdrawAmount - 100)
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [ (user1Addr, assetClassValue (liquidityAC poolIdent) extraLiquidity <> minAda)
                                             , (user2Addr, assetClassValue coin1 withdrawReceived1 <> assetClassValue coin2 withdrawReceived2 <> minAda)]
                   , poolCond = Fail
@@ -408,6 +425,9 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmtB = poolAmt2 - swapReceived1 - swapReceived2
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         valid = validScoopParams
                   { editEscrow1Value = const $ assetClassValue coin1 swapAmt <> minAda <> lovelaceValue testScoopFee
                   , editEscrow1Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapReceived1))
@@ -415,7 +435,7 @@ testByCoin title coins@(AB coin1 coin2) =
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user2Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapReceived2))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount
                   , editMinted = at (liquidityAC (getIdent initialIdent)) .~ Nothing
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [ (user1Addr, assetClassValue coin2 swapReceived1 <> minAda)
                                             , (user2Addr, assetClassValue coin2 swapReceived2 <> minAda)]
                   }
@@ -432,6 +452,9 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmtB = poolAmt2 - swapReceivedT
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         valid = validScoopParams
                   { editEscrow1Value = const $ assetClassValue coin1 swapAmt <> minAda <> lovelaceValue testScoopFee
                   , editEscrow1Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapReceived1))
@@ -439,7 +462,7 @@ testByCoin title coins@(AB coin1 coin2) =
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapReceived2))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount
                   , editMinted = at (liquidityAC (getIdent initialIdent)) .~ Nothing
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [ (user1Addr, assetClassValue coin2 swapReceivedT <> minAda <> minAda)]
                   }
     mkScoopTest valid
@@ -472,6 +495,9 @@ testByCoin title coins@(AB coin1 coin2) =
         newAmtB = poolAmt2 - swapReceived1 - swapReceived2
         poolIdent = getIdent initialIdent
         minAda = lovelaceValue 2_000_000
+        txFee = 1
+        scooperFee = 2_500_000
+        rewards = 2 * scooperFee - txFee
         invalid = validScoopParams
                   { editEscrow1Value = const $ assetClassValue coin1 swapAmt <> minAda
                   , editEscrow1Datum = const $ EscrowDatum poolIdent (EscrowAddress user1Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapMinTakes))
@@ -479,7 +505,7 @@ testByCoin title coins@(AB coin1 coin2) =
                   , editEscrow2Datum = const $ EscrowDatum poolIdent (EscrowAddress user2Dest Nothing) testScoopFee (EscrowSwap CoinA swapAmt (Just swapMinTakes))
                   , editNewPoolDatum = pool'circulatingLP .~ initialLiquidityTokenCount
                   , editMinted = at (liquidityAC (getIdent initialIdent)) .~ Nothing
-                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> minAda
+                  , editPoolOutputValue = const $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
                   , editDisbursed = const $ [ (user1Addr, assetClassValue coin2 swapReceived1 <> minAda)
                                             , (user2Addr, assetClassValue coin2 swapReceived2 <> minAda)]
                   , poolCond = Fail

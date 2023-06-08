@@ -169,7 +169,7 @@ testPoolMint =
 
 testPool :: SerialisedScript
 testPool =
-  Sundae.poolScript factoryBootCS poolCS scooperFeeHolderHash escrowHash
+  Sundae.poolScript factoryBootCS poolCS escrowHash
 
 testEscrow :: SerialisedScript
 testEscrow =
@@ -262,9 +262,6 @@ deadFactoryHash = vsh testDeadFactory
 deadPoolHash :: DeadPoolScriptHash
 deadPoolHash = vsh testDeadPool
 
-scooperFeeHolderHash :: ScooperFeeHolderScriptHash
-scooperFeeHolderHash = vsh testScooperLicense
-
 escrowHash :: EscrowScriptHash
 escrowHash = vsh testScooperLicense
 
@@ -334,7 +331,7 @@ runStep steps = do
   run (PoolScriptInput redeemer datum) ctx = runPool datum redeemer ctx
   run (FactoryScriptInput redeemer datum) ctx = runFactory datum redeemer ctx
   runPool datum redeemer ctx =
-    poolContract factoryBootCS poolCS scooperFeeHolderHash escrowHash datum redeemer ctx
+    poolContract factoryBootCS poolCS escrowHash datum redeemer ctx
   runEscrow datum redeemer ctx =
     escrowContract poolCS datum redeemer ctx
   runFactoryBootMint redeemer ctx =
