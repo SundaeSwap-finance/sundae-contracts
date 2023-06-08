@@ -616,8 +616,8 @@ testByCoin title coins@(AB coin1 coin2) =
 
   poolChangePayment = testCase "change payment key of pool" $ do
     mkScoopTest validScoopParams
-      { editPoolAddress = \(Address _ poolStakingCred) ->
-          Address (ScriptCredential "1234") poolStakingCred
+      { editPoolAddress = \(Address _ existingPoolStakingCred) ->
+          Address (ScriptCredential "0") existingPoolStakingCred
       , poolCond = Fail
       }
   swapTooEarly = testCase "swapping before marketOpenTime" $ do
