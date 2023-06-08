@@ -83,8 +83,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         poolOutputMarketOpenTime == marketOpenTime) &&
     debug "circulating LP is wrong"
       (poolOutputLP == newCirculatingLP) &&
-    debug "minimum scooper fee is negative"
-      (minimumScooperFee >= 0) &&
     debug "new rewards is wrong"
       (poolOutputRewards >= rewards + minimumScooperFee) &&
     debug "extra outputs not spent"
@@ -159,7 +157,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   liquidityAssetClass =
     AssetClass (pcs, computeLiquidityTokenName poolIdent)
   !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
-  !minimumScooperFee = totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken
+  !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
   !escrows =
     [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
      | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
