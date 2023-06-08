@@ -187,7 +187,8 @@ testByCoin title coins@(AB coin1 coin2) =
     , validDepositOnDifferentRate
     , validDoubleSwap
     , validTwoOrdersSamePerson
-    , poolChangeStaking
+    , poolSetStaking
+    , poolUnsetStaking
     ]
   -- User 1 is depositing.
   -- User 2 is swapping.
@@ -608,10 +609,16 @@ testByCoin title coins@(AB coin1 coin2) =
       , poolCond = Fail
       }
 
-  poolChangeStaking = testCase "change staking key of pool" $ do
+  poolSetStaking = testCase "change staking key of pool to a non-empty credential" $ do
     mkScoopTest validScoopParams
       { editPoolAddress = \(Address poolPaymentCred _) ->
           Address poolPaymentCred (Just (StakingHash (PubKeyCredential "1234")))
+      }
+
+  poolUnsetStaking = testCase "unset staking key of pool" $ do
+    mkScoopTest validScoopParams
+      { editPoolAddress = \(Address poolPaymentCred _) ->
+          Address poolPaymentCred Nothing
       }
 
   poolChangePayment = testCase "change payment key of pool" $ do
@@ -620,6 +627,7 @@ testByCoin title coins@(AB coin1 coin2) =
           Address (ScriptCredential "0") existingPoolStakingCred
       , poolCond = Fail
       }
+
   swapTooEarly = testCase "swapping before marketOpenTime" $ do
     testValidScoop
     mkScoopTest validScoopParams
