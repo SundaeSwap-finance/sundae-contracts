@@ -101,6 +101,9 @@ user1Pkh = mkUsrPkh user1
 user2Pkh = mkUsrPkh user2
 scooperUserPkh = mkUsrPkh scooperUsr
 
+poolStakingCred :: StakingCredential
+poolStakingCred = StakingHash (PubKeyCredential "1234")
+
 user1Addr, user2Addr, scooperUserAddr :: Address
 user1Addr = mkUserAddr user1
 user2Addr = mkUserAddr user2
