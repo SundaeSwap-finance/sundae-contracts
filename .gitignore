@@ -3,3 +3,4 @@ result
 result-*
 cabal.project.local
 cabal.project.local~
+.direnv

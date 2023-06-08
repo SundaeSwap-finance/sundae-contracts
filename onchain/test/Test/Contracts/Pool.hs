@@ -620,7 +620,7 @@ testByCoin title coins@(AB coin1 coin2) =
           Address (ScriptCredential "1234") poolStakingCred
       , poolCond = Fail
       }
-  swapTooEarly = testCase "swapping before the min swap time" $ do
+  swapTooEarly = testCase "swapping before marketOpenTime" $ do
     testValidScoop
     mkScoopTest validScoopParams
       { editValidRange = \i -> Interval (LowerBound (Finite (-1)) True) (ivTo i)

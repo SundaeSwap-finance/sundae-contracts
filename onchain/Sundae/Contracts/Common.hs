@@ -76,7 +76,7 @@ newtype ProtocolBootUTXO = ProtocolBootUTXO
   deriving newtype (ToJSON)
 
 instance FromJSON ProtocolBootUTXO where
-  parseJSON v = Prelude.fmap ProtocolBootUTXO $ parseJSON v 
+  parseJSON v = Prelude.fmap ProtocolBootUTXO $ parseJSON v
 
 -- | Used to make the treasury token an NFT.
 newtype TreasuryBootSettings = TreasuryBootSettings
@@ -341,14 +341,14 @@ data PoolDatum
   , _pool'poolIdent :: !BuiltinByteString -- ^ unique identifier of the pool.
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
-  , _pool'minSwapTime :: !POSIXTime -- ^ time to enable swaps on this pool
+  , _pool'marketOpenTime :: !POSIXTime -- ^ time to enable swaps on this pool
   } deriving (Generic, NFData, Prelude.Show)
 
 instance Eq PoolDatum where
   {-# inlinable (==) #-}
-  PoolDatum coinPair ident issuedLiquidity swapFees minSwapTime ==
-    PoolDatum coinPair' ident' issuedLiquidity' swapFees' minSwapTime' =
-      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees' && minSwapTime == minSwapTime'
+  PoolDatum coinPair ident issuedLiquidity swapFees marketOpenTime ==
+    PoolDatum coinPair' ident' issuedLiquidity' swapFees' marketOpenTime' =
+      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees' && marketOpenTime == marketOpenTime'
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal

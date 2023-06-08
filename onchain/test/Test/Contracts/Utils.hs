@@ -16,7 +16,7 @@ import qualified Data.ByteString.Short as SBS
 import Data.ByteString.Hash qualified as Hash
 import Data.Coerce (Coercible, coerce)
 import Data.Containers.ListUtils (nubOrdOn)
-import Data.FileEmbed (embedFile)
+import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Maybe (catMaybes)
 import Data.String(fromString)
 import PlutusLedgerApi.V3
@@ -137,7 +137,7 @@ vsh :: Coercible ScriptHash a => SerialisedScript -> a
 vsh script = coerce $ ScriptHash (toBuiltin (hashScript script))
 
 factoryBootSettingsFile :: ByteString
-factoryBootSettingsFile = $(embedFile "test/data/factory-boot-settings.json")
+factoryBootSettingsFile = $(makeRelativeToProject "test/data/factory-boot-settings.json" >>= embedFile)
 
 testFactoryBootSettings :: FactoryBootSettings
 testFactoryBootSettings =
