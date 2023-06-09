@@ -185,7 +185,8 @@ testByCoin title coins@(AB coin1 coin2) =
     , validateSingleDeposit
     , validDepositOnDifferentRate
     , validDoubleSwap
-    , validTwoOrdersSamePerson ]
+    , validTwoOrdersSamePerson
+    ]
   -- User 1 is depositing.
   -- User 2 is swapping.
   testValidScoop = evaluate $ unsafePerformIO $ mkScoopTest validScoopParams
