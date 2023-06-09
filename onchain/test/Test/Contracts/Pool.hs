@@ -172,6 +172,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , swapTooEarly
     , rewardsNotPaidToPool
     , poolRewardsFieldNotChanged
+    , noExtraLockedRewards
     , requireSufficientLockedRewards
     ]
   validTest = testGroup "Expecting success"
@@ -184,9 +185,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , validateSingleDeposit
     , validDepositOnDifferentRate
     , validDoubleSwap
-    , validTwoOrdersSamePerson
-    , allowExtraLockedRewards
-    ]
+    , validTwoOrdersSamePerson ]
   -- User 1 is depositing.
   -- User 2 is swapping.
   testValidScoop = evaluate $ unsafePerformIO $ mkScoopTest validScoopParams
@@ -656,11 +655,12 @@ testByCoin title coins@(AB coin1 coin2) =
       , poolCond = Fail
       }
 
-  allowExtraLockedRewards = testCase "locking extra rewards is okay" $ do
-    let extra = 5_000_000
+  noExtraLockedRewards = testCase "may not lock extra rewards" $ do
+    let extra = 10_000
     mkScoopTest validScoopParams
       { editNewPoolDatum = pool'rewards +~ extra
       , editPoolOutputValue = (<> lovelaceValue extra)
+      , poolCond = Fail
       }
 
   requireSufficientLockedRewards = testCase "must lock sufficient rewards" $ do
