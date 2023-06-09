@@ -100,7 +100,7 @@ mkScoopTest ScoopTest{..} = do
       minted = editMinted $ assetClassValue (liquidityAC poolIdent) (newIssued - initialLiquidityTokenCount)
       txFee = editFee (lovelaceValue 1)
       scooperFee = 2_500_000
-      rewards = 2 * scooperFee - lovelaceOf txFee
+      rewards = max 0 (2 * scooperFee - lovelaceOf txFee)
       newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
       newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees 0 rewards)
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
@@ -189,6 +189,8 @@ testByCoin title coins@(AB coin1 coin2) =
     , validDepositOnDifferentRate
     , validDoubleSwap
     , validTwoOrdersSamePerson
+    , feeMatchesRewards
+    , feeExceedsRewards
     ]
   -- User 1 is depositing.
   -- User 2 is swapping.
@@ -673,4 +675,14 @@ testByCoin title coins@(AB coin1 coin2) =
       { editNewPoolDatum = pool'rewards -~ missing
       , editPoolOutputValue = (<> Plutus.inv (lovelaceValue missing))
       , poolCond = Fail
+      }
+
+  feeExceedsRewards = testCase "fee exceeds rewards" $ do
+    mkScoopTest validScoopParams
+      { editFee = const $ lovelaceValue 5_000_001
+      }
+
+  feeMatchesRewards = testCase "fee matches rewards" $ do
+    mkScoopTest validScoopParams
+      { editFee = const $ lovelaceValue 5_000_000
       }
