@@ -45,6 +45,7 @@ data ScoopTest
   , editNewPoolDatum :: PoolDatum -> PoolDatum
   , editPoolRedeemer :: PoolRedeemer -> PoolRedeemer
   , editEscrowRedeemer :: EscrowRedeemer -> EscrowRedeemer
+  , editFee :: Value -> Value
   }
 
 defaultValidScoopParams :: ScoopTest
@@ -69,6 +70,7 @@ defaultValidScoopParams =
   , editNewPoolDatum = id
   , editPoolRedeemer = id
   , editEscrowRedeemer = id
+  , editFee = id
   }
 
 getIdent :: Ident -> BuiltinByteString
@@ -96,9 +98,9 @@ mkScoopTest ScoopTest{..} = do
       newAmtB = poolAmt2 + depositAmt2 - swapAmtReceived
       newIssued = initialLiquidityTokenCount + extraLiquidity
       minted = editMinted $ assetClassValue (liquidityAC poolIdent) (newIssued - initialLiquidityTokenCount)
-      txFee = 1
+      txFee = editFee (lovelaceValue 1)
       scooperFee = 2_500_000
-      rewards = 2 * scooperFee - txFee
+      rewards = 2 * scooperFee - lovelaceOf txFee
       newPoolValue = editPoolOutputValue $ assetClassValue coin1 newAmtA <> assetClassValue coin2 newAmtB <> assetClassValue (poolAC poolIdent) 1 <> lovelaceValue rewards <> minAda
       newPoolDatum = editNewPoolDatum (PoolDatum (AB coin1 coin2) poolIdent newIssued testSwapFees 0 rewards)
       poolRedeemer = editPoolRedeemer (PoolScoop scooperUserPkh [0, 1])
@@ -118,6 +120,7 @@ mkScoopTest ScoopTest{..} = do
     , CustomInterval interval
     , FromUser scooperUserAddr scooperInputValue
     , CustomSignatories [scooperUserPkh]
+    , TxFee txFee
     ] ++ (uncurry ToUser <$> disbursed)
   where
     toPool v d = ToScript poolAddress v (toData d)

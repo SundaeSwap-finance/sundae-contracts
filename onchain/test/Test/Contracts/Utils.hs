@@ -47,6 +47,7 @@ data Step
   | FactoryBootMint Value Cond FactoryBootMintRedeemer
   | CustomInterval (Interval POSIXTime)
   | CustomSignatories [PubKeyHash]
+  | TxFee Value
 
 data Cond = Pass | Fail
 data ScriptInput
@@ -90,6 +91,10 @@ tiValidRange f info =
 tiSignatories :: Lens' TxInfo [PubKeyHash]
 tiSignatories f info =
   (\i' -> info{txInfoSignatories = i'}) <$> f (txInfoSignatories info)
+
+tiFee :: Lens' TxInfo Value
+tiFee f info =
+  (\i' -> info{txInfoFee = i'}) <$> f (txInfoFee info)
 
 user1, user2, scooperUsr :: BuiltinByteString
 user1 = "usr#1"
@@ -424,3 +429,5 @@ runStep steps = do
         info & tiValidRange .~ v
       CustomSignatories v ->
         info & tiSignatories %~ (++ v)
+      TxFee f ->
+        info & tiFee .~ f
