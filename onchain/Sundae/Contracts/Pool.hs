@@ -76,7 +76,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       (not $ null escrows) &&
     debug "valid range too large"
       (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
-    debug "issued amount in new datum incorrect"
+    debug "issued amount or locked rewards in new datum incorrect"
       (datumOf txInfo poolOutput ==
         Just (datum
           { _pool'circulatingLP = newCirculatingLP
