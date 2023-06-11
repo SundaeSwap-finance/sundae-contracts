@@ -344,13 +344,14 @@ data PoolDatum
   , _pool'circulatingLP :: !Integer    -- ^ amount of minted liquidity
   , _pool'swapFees :: !SwapFees -- ^ this pool's trading fee.
   , _pool'marketOpenTime :: !POSIXTime -- ^ time to enable swaps on this pool
+  , _pool'rewards :: !Integer -- ^ ADA reserved for scooper rewards
   } deriving (Generic, NFData, Prelude.Show)
 
 instance Eq PoolDatum where
   {-# inlinable (==) #-}
-  PoolDatum coinPair ident issuedLiquidity swapFees marketOpenTime ==
-    PoolDatum coinPair' ident' issuedLiquidity' swapFees' marketOpenTime' =
-      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees' && marketOpenTime == marketOpenTime'
+  PoolDatum coinPair ident issuedLiquidity swapFees marketOpenTime rewards ==
+    PoolDatum coinPair' ident' issuedLiquidity' swapFees' marketOpenTime' rewards' =
+      coinPair == coinPair' && ident == ident' && issuedLiquidity == issuedLiquidity' && swapFees == swapFees' && marketOpenTime == marketOpenTime' && rewards == rewards'
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
@@ -617,16 +618,32 @@ sansRider' c v =
           Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - finalRider)) : v_l)
         else
           Value $ Map.fromList v_l
-  where
-    removeSymbol _ [] acc = acc
-    removeSymbol sym (x@(cs, _) : tl) acc
-     | sym == cs = removeSymbol sym tl acc
-     | otherwise = removeSymbol sym tl (x : acc)
+
+{-# inlinable removeSymbol #-}
+removeSymbol _ [] acc = acc
+removeSymbol sym (x@(cs, _) : tl) acc
+  | sym == cs = removeSymbol sym tl acc
+  | otherwise = removeSymbol sym tl (x : acc)
 
 -- In the pool contract, we subtract off the riders so as not to affect the price calculation
 {-# inlinable sansRider #-}
 sansRider :: Value -> Value
 sansRider v = sansRider' 1 v
+
+{-# inlinable sansAda #-}
+sansAda :: Integer -> Value -> Value
+sansAda extra v =
+  let
+    !lovelace = valueOf v adaSymbol adaToken
+  in
+    if lovelace < extra
+    then die "not enough ada"
+    else
+      let v_l = removeSymbol adaSymbol (Map.toList $ getValue v) [] in
+        if lovelace - extra /= 0 then
+          Value $ Map.fromList ((adaSymbol, Map.singleton adaToken (lovelace - extra)) : v_l)
+        else
+          Value $ Map.fromList v_l
 
 -- Valid fees for the protocol
 -- [0.05%, 0.3%, 1%]

@@ -60,14 +60,13 @@ data OrderedEscrow = OrderedEscrow
 poolContract
   :: FactoryBootCurrencySymbol
   -> PoolCurrencySymbol
-  -> ScooperFeeHolderScriptHash
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperFeeHolderScriptHash slsh) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime) (PoolScoop scooperPkh order) ctx =
+poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -78,9 +77,12 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       (not $ null escrows) &&
     debug "valid range too large"
       (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
-    debug "issued amount in new datum incorrect"
-      (rawDatumOf txInfo poolOutput ==
-        Just (Datum (toBuiltinData (datum { _pool'circulatingLP = newCirculatingLP })))) &&
+    debug "issued amount or locked rewards in new datum incorrect"
+      (datumOf txInfo poolOutput ==
+        Just (datum
+          { _pool'circulatingLP = newCirculatingLP
+          , _pool'rewards = newRewardsAmt
+          })) &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
@@ -89,16 +91,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
         else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputValueSansRider) &&
+      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputFunds) &&
     debug "pool output does not include all expected liquidity"
-      (valueOfAC poolOutputValueSansRider coinA == newAmtA &&
-        valueOfAC poolOutputValueSansRider coinB == newAmtB) &&
-    -- TODO: Allow future scooper rewards to be spent towards tx fee
-    -- TODO: Reserve >X for treasury
-    debug "scooper fees must be added"
-      (valueOf (txOutValue scooperOutput) adaSymbol adaToken >= minimumScooperFee) && -- TODO: consider economic incentive of requiring add'l ada
-    debug "scooper output datum must match"
-      (rawDatumOf txInfo scooperOutput == Just (Datum $ toBuiltinData $ ScooperFeeDatum scooperPkh)) &&
+      (valueOfAC poolOutputFunds coinA == newAmtA &&
+        valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
         FactoryDatum _ _ _ scoopers _ -> elem scooperPkh scoopers) &&
@@ -115,6 +111,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
             TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
+  !newRewardsAmt = rewards + minimumScooperFee
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ _ -> False
@@ -142,7 +139,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     , isScriptAddress o ownScriptHash
     ]
   poolOutputValue = txOutValue poolOutput
-  !poolOutputValueSansRider = sansRider poolOutputValue
+  !poolOutputFunds = sansAda (newRewardsAmt + riderAmount) poolOutputValue
   mustSpendTo (EscrowDestination addr dh, val, count) =
     atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
   atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
@@ -159,15 +156,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
     , liquidity val <= valueOfAC txOutSansRider liquidityAssetClass = True
     | otherwise = atLeastOneSpending addr dh val count tl
   !txInfo = scriptContextTxInfo ctx
-  !scooperOutput = uniqueElement'
-    [ o
-    | o <- txInfoOutputs txInfo
-    , isScriptAddress o slsh
-    ]
   liquidityAssetClass =
     AssetClass (pcs, computeLiquidityTokenName poolIdent)
   !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
-  !minimumScooperFee = totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken
+  !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
   !escrows =
     [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
      | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
@@ -215,7 +207,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
   -- Normally, the amount of ada in the pool should be able to asymptotically approach 0 as the price of ADA goes up
   -- With the added rider, it asymptotically approaches 2; if we don't subtract off the rider, then
   -- There might be a hard limit on how much the pool can be traded
-  !oldValueSansRider = sansRider oldValue
+  !oldValueSansRider = sansAda (rewards + riderAmount) oldValue
   checkAction !(sansRider -> v) = \case
     EscrowDeposit (DepositMixed (AB amtA amtB)) ->
       valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
@@ -227,7 +219,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) (ScooperF
       valueOfAC v (coins $$ coin) >= amt && amt >= 1
 
 poolContract
-  (FactoryBootCurrencySymbol fbcs) _ _ (EscrowScriptHash esh)
+  (FactoryBootCurrencySymbol fbcs) _ (EscrowScriptHash esh)
   _ PoolUpgrade ctx =
   debug "dead factory not included; must included dead factory to prove that the upgrade should be adopted"
     (atLeastOne (\i ->

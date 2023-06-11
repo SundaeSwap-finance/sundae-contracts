@@ -282,7 +282,7 @@ deadFactoryContract
     , unwrap (SD.txOutAddress (unwrap $ SD.txInInfoResolved i)) == scriptHashAddress psh
     ]
   !oldPoolValue = unwrap $ SD.txOutValue $ unwrap $ SD.txInInfoResolved poolInput
-  PoolDatum (AB coinA coinB) _ oldCirculatingLP _ _ = unsafeFromBuiltinData $
+  PoolDatum (AB coinA coinB) _ oldCirculatingLP _ _ _ = unsafeFromBuiltinData $
     shallowDatumOf (unwrap $ SD.txInInfoResolved poolInput)
   !newLiquidityTokens = scaleInteger (proposedOldToNewLiquidityRatio p) oldCirculatingLP
   !deadPoolOutput = uniqueElement'
