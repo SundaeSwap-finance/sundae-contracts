@@ -263,16 +263,18 @@ data FactoryDatum = FactoryDatum
   , proposalState :: !ProposalState
   , scooperIdent :: !Ident
   , scooperSet :: ![PubKeyHash]
+  -- permissible staking credentials for pool
+  , poolStakingCredSet :: ![StakingCredential]
   }
   deriving stock (Generic, Prelude.Show)
   --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' ==
-    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' =
+  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' poolStakingCredSet' ==
+    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
       nextPoolIdent' == nextPoolIdent'' && currentProposal' == currentProposal'' &&
-      scooperIdent' == scooperIdent'' && scooperSet' == scooperSet''
+      scooperIdent' == scooperIdent'' && scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
 data FactoryRedeemer

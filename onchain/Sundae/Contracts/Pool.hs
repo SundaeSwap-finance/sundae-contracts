@@ -14,6 +14,7 @@ import PlutusTx.Ratio
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
+import PlutusLedgerApi.V1.Address (stakingCredential)
 
 {-# inlineable sortOn #-}
 sortOn :: Ord b => (a -> b) -> [a] -> [a]
@@ -96,11 +97,18 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ _ scoopers -> elem scooperPkh scoopers) &&
+        FactoryDatum _ _ _ scoopers _ -> elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
         else True
+      ) &&
+    debug "staking key must be allowed"
+      (case factoryReferenceDatum of 
+        FactoryDatum _ _ _ _ stakerKeySet ->
+          case poolOutput of
+            TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
+            TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
   !newRewardsAmt = rewards + minimumScooperFee
