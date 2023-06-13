@@ -177,6 +177,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , poolRewardsFieldNotChanged
     , noExtraLockedRewards
     , requireSufficientLockedRewards
+    , marketOrderTakeCoinDoesn'tMatchPool
     ]
   validTest = testGroup "Expecting success"
     [ validScoop
@@ -191,6 +192,7 @@ testByCoin title coins@(AB coin1 coin2) =
     , validTwoOrdersSamePerson
     , feeMatchesRewards
     , feeExceedsRewards
+    , marketOrderTakeCoinMatchesPool
     ]
   -- User 1 is depositing.
   -- User 2 is swapping.
@@ -689,4 +691,20 @@ testByCoin title coins@(AB coin1 coin2) =
   feeMatchesRewards = testCase "fee matches rewards" $ do
     mkScoopTest validScoopParams
       { editFee = const $ lovelaceValue 5_000_000
+      }
+
+  marketOrderTakeCoinMatchesPool = testCase "market order expecting a coin in the pool" $ do
+    let
+      swapAmt = 100
+    mkScoopTest validScoopParams
+      { editEscrow2Datum = const $ EscrowDatum (EscrowAddress user2Dest Nothing) testScoopFee (EscrowSwap (coin1, swapAmt) (coin2, Nothing))
+      }
+
+  marketOrderTakeCoinDoesn'tMatchPool = testCase "market order expecting a coin not in the pool" $ do
+    let
+      coin3 = toCoin "worm"
+      swapAmt = 100
+    mkScoopTest validScoopParams
+      { editEscrow2Datum = const $ EscrowDatum (EscrowAddress user2Dest Nothing) testScoopFee (EscrowSwap (coin1, swapAmt) (coin3, Nothing))
+      , poolCond = Fail
       }
