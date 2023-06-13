@@ -615,7 +615,6 @@ testByCoin title coins@(AB coin1 coin2) =
             (EscrowAddress user1Dest Nothing)
             testScoopFee
             (EscrowDeposit (getIdent $ intToIdent 1) (DepositMixed (AB depositAmt1 depositAmt2)))
-      , escrow1Cond = Fail
       , poolCond = Fail
       }
 
