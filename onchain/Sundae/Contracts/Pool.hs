@@ -300,7 +300,14 @@ escrowContract
       EscrowCancel ->
         escrowCancel
   where
-  escrowScoop = False
+  escrowScoop =
+    debug "no pool token output present"
+      (atLeastOne (hasPoolToken . txOutValue) (txInfoOutputs $ tx_info))
+    where
+    hasPoolToken :: Value -> Bool
+    hasPoolToken v = any isPoolNft (flattenValue v)
+    isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
+    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 2 tk == "p "
   escrowCancel =
     debug "the canceller did not sign the transaction"
       (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)
