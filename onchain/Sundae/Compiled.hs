@@ -204,7 +204,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     treasuryBootCS = mcs treasuryBootMintScr
     sundaeCS = mcs sundaeMintScr
 
-    factoryScr = factoryScript convertedUpgradeSettings factoryBootCS deadFactorySH poolSH poolCS
+    factoryScr = factoryScript convertedUpgradeSettings factoryBootCS poolSH poolCS
     treasuryScr = treasuryScript convertedUpgradeSettings treasuryBootCS sundaeCS poolCS
     treasurySH :: TreasuryScriptHash
     treasurySH = vsh treasuryScr

@@ -169,7 +169,7 @@ testDeadFactory =
 
 testFactory :: SerialisedScript
 testFactory =
-  Sundae.factoryScript upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
+  Sundae.factoryScript upgradeSettings factoryBootCS poolHash poolCS
 
 testPoolMint :: SerialisedScript
 testPoolMint =
@@ -351,7 +351,7 @@ runStep steps = do
   runPoolMint redeemer ctx =
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
-    factoryContract upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
+    factoryContract upgradeSettings factoryBootCS poolHash poolCS
   handleErrors = handle (\(_ :: SomeException) -> pure False) . evaluate
   runCond = \case
     Pass -> id
