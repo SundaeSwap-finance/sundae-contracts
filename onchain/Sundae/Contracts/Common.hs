@@ -374,8 +374,7 @@ instance Eq DeadPoolDatum where
 -- address is for any results of the escrowed operation, and the amount of
 -- lovelace intended to be paid to the scooper.
 data EscrowDatum = EscrowDatum
-  { _escrow'poolIdent :: BuiltinByteString
-  , _escrow'address :: EscrowAddress
+  { _escrow'address :: EscrowAddress
   , _escrow'scoopFee :: Integer
   , _escrow'action :: EscrowAction
   }
@@ -383,8 +382,8 @@ data EscrowDatum = EscrowDatum
   --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowDatum where
-  EscrowDatum pool ret fee act == EscrowDatum pool' ret' fee' act' =
-    pool == pool' && ret == ret' && fee == fee' && act == act'
+  EscrowDatum ret fee act == EscrowDatum ret' fee' act' =
+    ret == ret' && fee == fee' && act == act'
 
 -- | Deposits take the form of single-asset and mixed-asset deposits.
 data Deposit = DepositSingle Coin Integer | DepositMixed (AB Integer)
@@ -401,22 +400,22 @@ instance Eq Deposit where
 data EscrowAction
   -- | Swap to address given amount of tokens (Integer) of asset (AssetClass),
   --   expecting to get at least some amount (Integer) in return.
-  = EscrowSwap Coin Integer (Maybe Integer)
+  = EscrowSwap (AssetClass, Integer) (AssetClass, Maybe Integer)
   -- | Withdraw some amount of liquidity, by burning liquidity tracking tokens.
-  | EscrowWithdraw Integer
+  | EscrowWithdraw BuiltinByteString Integer
   -- | Make a deposit, in exchange for newly-minted liquidity tracking tokens.
-  | EscrowDeposit Deposit
+  | EscrowDeposit BuiltinByteString Deposit
   deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
   --deriving anyclass (NFData, ToJSON, FromJSON)
 
 instance Eq EscrowAction where
   {-# inlinable (==) #-}
-  EscrowSwap coin gives minTakes == EscrowSwap coin' gives' minTakes' =
-    coin == coin' && gives == gives' && minTakes == minTakes'
-  EscrowWithdraw givesLiq == EscrowWithdraw givesLiq' =
-    givesLiq == givesLiq'
-  EscrowDeposit dep == EscrowDeposit dep' =
-    dep == dep'
+  EscrowSwap (coinGive, gives) (coinTake, minTakes) == EscrowSwap (coinGive', gives') (coinTake', minTakes') =
+    coinGive == coinGive' && gives == gives' && coinTake == coinTake' && minTakes == minTakes'
+  EscrowWithdraw poolId givesLiq == EscrowWithdraw poolId' givesLiq' =
+    poolId == poolId' && givesLiq == givesLiq'
+  EscrowDeposit poolId dep == EscrowDeposit poolId' dep' =
+    poolId == poolId' && dep == dep'
   _ == _ =
     False
 

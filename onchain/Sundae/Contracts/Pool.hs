@@ -70,7 +70,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
-      doEscrows swapFees init
+      doEscrows poolIdent coinA coinB swapFees init
         (escrow . escrowWithFee <$> sortOn index (zipWith OrderedEscrow order escrows))
   in
     debug "must have escrows"
@@ -114,7 +114,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   !newRewardsAmt = rewards + minimumScooperFee
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
-      EscrowSwap _ _ _ -> False
+      EscrowSwap _ _ -> False
       _ -> True
   !(LowerBound (Finite earliest) _) = ivFrom (txInfoValidRange txInfo)
   !factoryReference = uniqueElement'
@@ -170,14 +170,14 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
      -- loss orders. So we treat anything that doesn't come from the pool script
      -- as an escrow.
      , not (isScriptAddress txOut ownScriptHash)
-     , Just (EscrowDatum ident ret scoopFee act) <- [datumOf txInfo txOut]
+     , Just (EscrowDatum ret scoopFee act) <- [datumOf txInfo txOut]
      , scoopFee >= 0
      -- Coin B can never be ADA, because pool coin pairs are lexicographically
      -- ordered when we create a pool, so we only check A here
      -- NOTE: this enforces that the escrow *always* has at least 2 ada on the rider,
      -- meaning you can't under-spend your rider and get 2ADA back
      , valueOf (sansAmountA escrowInValue act) adaSymbol adaToken >= scoopFee + riderAmount
-     , if ident == poolIdent && checkAction escrowInValue act
+     , if checkAction escrowInValue act
        then True
        else die "escrow incorrect"
      ]
@@ -187,12 +187,12 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       (TxOut (Address (ScriptCredential h) _) _ _ _) -> h
       _ -> traceError "invalid pool script utxo"
   amountA = \case
-    EscrowDeposit (DepositMixed (AB amtA _)) -> amtA
-    EscrowDeposit (DepositSingle CoinA amt) -> amt
-    EscrowDeposit (DepositSingle CoinB _) -> 0
-    EscrowWithdraw _ -> 0
-    EscrowSwap CoinA amt _ -> amt
-    EscrowSwap CoinB _ _ -> 0
+    EscrowDeposit _ (DepositMixed (AB amtA _)) -> amtA
+    EscrowDeposit _ (DepositSingle CoinA amt) -> amt
+    EscrowDeposit _ (DepositSingle CoinB _) -> 0
+    EscrowWithdraw _ _ -> 0
+    EscrowSwap (giveCoin, amt) _ | giveCoin == coinA -> amt
+    EscrowSwap _ _ -> 0
   sansAmountA v act =
     let
       AssetClass (coinASymbol, coinAToken) = coinA
@@ -209,14 +209,14 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   -- There might be a hard limit on how much the pool can be traded
   !oldValueSansRider = sansAda (rewards + riderAmount) oldValue
   checkAction !(sansRider -> v) = \case
-    EscrowDeposit (DepositMixed (AB amtA amtB)) ->
+    EscrowDeposit _ (DepositMixed (AB amtA amtB)) ->
       valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
-    EscrowDeposit (DepositSingle coin amt) ->
+    EscrowDeposit _ (DepositSingle coin amt) ->
       valueOfAC v (coins $$ coin) >= amt && amt >= 1
-    EscrowWithdraw amt ->
+    EscrowWithdraw _ amt ->
       valueOfAC v liquidityAssetClass >= amt && amt >= 1
-    EscrowSwap coin amt _ ->
-      valueOfAC v (coins $$ coin) >= amt && amt >= 1
+    EscrowSwap (giveCoin, amt) _ ->
+      valueOfAC v giveCoin >= amt && amt >= 1
 
 poolContract
   (FactoryBootCurrencySymbol fbcs) _ (EscrowScriptHash esh)
@@ -312,15 +312,15 @@ escrowContract
     debug "no pool token output present"
       (atLeastOne (hasPoolToken . txOutValue) (txInfoOutputs $ tx_info))
     where
-    !poolNft = toPoolNft pcs (_escrow'poolIdent escrow_datum)
     hasPoolToken :: Value -> Bool
-    hasPoolToken o = assetClassValueOf o poolNft == 1
-
+    hasPoolToken v = any isPoolNft (flattenValue v)
+    isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
+    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 2 tk == "p "
   escrowCancel =
     debug "the canceller did not sign the transaction"
       (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)
     where
-    !(EscrowDatum _ escrow_addr _ _) = escrow_datum
+    !(EscrowDatum escrow_addr _ _) = escrow_datum
     pkhs = escrowPubKeyHashes escrow_addr
 
 data ScoopResult = ScoopResult
@@ -350,36 +350,51 @@ unsafeSqrt !r = case rsqrt r of
 -- transaction
 {-# inlinable doEscrows #-}
 doEscrows
-  :: SwapFees
+  :: BuiltinByteString
+  -> AssetClass
+  -> AssetClass
+  -> SwapFees
   -> ABL Integer
   -> [(EscrowDestination, EscrowAction)]
   -> ScoopResult
-doEscrows (SwapFees swapFees) !initialState !escrows =
+doEscrows poolId poolCoinA poolCoinB (SwapFees swapFees) !initialState !escrows =
   go (initialState $$ CoinA) (initialState $$ CoinB) (liquidity initialState) [] escrows
   where
   go !a !b !liq !cons ((ret,act):es) = case act of
-    EscrowWithdraw givesLiquidity ->
-      doWithdrawal ret givesLiquidity a b liq cons es
-    EscrowSwap coin gives minTakes ->
+    EscrowWithdraw withdrawId givesLiquidity ->
+      if withdrawId == poolId then
+        doWithdrawal ret givesLiquidity a b liq cons es
+      else
+        error ()
+    EscrowSwap (giveAC, gives) (takeAC, minTakes) ->
       let
         !de = denominator swapFees
         !nu = numerator swapFees
         !diff = de - nu
       in
-        case coin of
-          CoinA
-            | let !takes = (b * gives * diff) `divide` (a * de + gives * diff)
-            , b > takes
-            , Just takes >= minTakes ->
-            go (a + gives) (b - takes) liq ((ret, takes `ofCoin` CoinB) : cons) es
-          CoinB
-            | let !takes = (a * gives * diff) `divide` (b * de + gives * diff)
-            , a > takes
-            , Just takes >= minTakes ->
-            go (a - takes) (b + gives) liq ((ret, takes `ofCoin` CoinA) : cons) es
-          _ -> error ()
-    EscrowDeposit dep ->
-      doDeposit ret dep a b liq cons es
+        if giveAC == poolCoinA && takeAC == poolCoinB then
+            let
+              !takes = (b * gives * diff) `divide` (a * de + gives * diff)
+            in
+              if b > takes && Just takes >= minTakes then
+                go (a + gives) (b - takes) liq ((ret, takes `ofCoin` CoinB) : cons) es
+              else
+                error ()
+        else if giveAC == poolCoinB && takeAC == poolCoinA then
+            let
+              !takes = (a * gives * diff) `divide` (b * de + gives * diff)
+            in
+              if a > takes && Just takes >= minTakes then
+                go (a - takes) (b + gives) liq ((ret, takes `ofCoin` CoinA) : cons) es
+              else
+                error ()
+        else
+          error ()
+    EscrowDeposit depositId dep ->
+      if depositId == poolId then
+        doDeposit ret dep a b liq cons es
+      else
+        error ()
   go a b liq cons [] = ScoopResult cons a b liq
 
   -- similar to the balancer formula

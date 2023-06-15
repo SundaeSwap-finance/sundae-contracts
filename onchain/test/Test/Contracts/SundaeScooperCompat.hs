@@ -7,6 +7,7 @@ import Sundae.Contracts.Common
 import Sundae.Contracts.Pool
 
 import PlutusLedgerApi.V3
+import PlutusLedgerApi.V1.Value
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -18,15 +19,20 @@ tests = testCase "sundae-scooper compat tests" $ do
   let pkh = "00000000000000000000000000000000"
   let escrows =
         [ ( EscrowDestination (Address (PubKeyCredential (PubKeyHash pkh)) Nothing) Nothing
-          , EscrowDeposit (DepositMixed (AB 105 200))
+          , EscrowDeposit "00" (DepositMixed (AB 105 200))
           )
         ]
   let poolA = 1000000
   let poolB = 2000000
   let isqrt = floor . sqrt @Double . fromIntegral
   let initialLiquidity = isqrt (poolA * poolB)
+  let coinA = AssetClass ("", "")
+  let coinB = AssetClass ("", "")
   let (ScoopResult _cons _a _b newLiquidity) =
         doEscrows
+          "00"
+          coinA
+          coinB
           (SwapFees (1 % 2000))
           (ABL poolA poolB initialLiquidity)
           escrows
