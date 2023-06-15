@@ -218,23 +218,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     EscrowSwap (giveCoin, amt) _ ->
       valueOfAC v giveCoin >= amt && amt >= 1
 
-poolContract
-  (FactoryBootCurrencySymbol fbcs) _ (EscrowScriptHash esh)
-  _ PoolUpgrade ctx =
-  debug "dead factory not included; must included dead factory to prove that the upgrade should be adopted"
-    (atLeastOne (\i ->
-      valueContains (txOutValue $ txInInfoResolved i) fbcs factoryToken &&
-        case datumOf txInfo (txInInfoResolved i) of
-          Just (DeadFactoryDatum {}) -> True
-          _ -> False
-      ) (txInfoInputs txInfo)) &&
-  debug "must not spend escrows when upgrading pool"
-    (not (atLeastOne (\i ->
-      (txOutAddress $ txInInfoResolved i) == scriptHashAddress esh)
-      (txInfoInputs txInfo)))
-  where
-  txInfo = scriptContextTxInfo ctx
-
 -- Dead Pool contract
 --  When we upgrade a pool, the liquidity moves into a new contract; These are owned by holders of the old liquidity token.
 --  This script holds onto them and allows an exchange.

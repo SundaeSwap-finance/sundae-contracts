@@ -29,24 +29,6 @@ treasuryScript upgradeSettings tbcs tcs pcs =
       Just x' -> serialiseCompiledCode x'
       Nothing -> Prelude.error "Couldn't compile treasury script"
 
-deadFactoryScript
-  :: FactoryBootCurrencySymbol
-  -> PoolScriptHash
-  -> DeadPoolScriptHash
-  -> PoolCurrencySymbol
-  -> SerialisedScript
-deadFactoryScript fbcs psh dpsh pcs =
-  let
-    x = pure $$(PlutusTx.compile [|| \fbcs' psh' dpsh' pcs' datum redeemer ctx -> check $ deadFactoryContract fbcs' psh' dpsh' pcs' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
-      >>= flip apCode fbcs
-      >>= flip apCode psh
-      >>= flip apCode dpsh
-      >>= flip apCode pcs
-  in
-    case x of
-      Just x' -> serialiseCompiledCode x'
-      Nothing -> Prelude.error "Couldn't compile dead factory script"
-
 scooperFeeScript
   :: ScooperFeeSettings
   -> GiftScriptHash

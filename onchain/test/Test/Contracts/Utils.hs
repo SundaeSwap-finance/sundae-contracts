@@ -163,10 +163,6 @@ testSwapFees = SwapFees (Ratio.fromGHC 0.01)
 testScoopFee :: Integer
 testScoopFee = 2_500_000
 
-testDeadFactory :: SerialisedScript
-testDeadFactory =
-  Sundae.deadFactoryScript factoryBootCS poolHash deadPoolHash poolCS
-
 testFactory :: SerialisedScript
 testFactory =
   Sundae.factoryScript upgradeSettings factoryBootCS poolHash poolCS
@@ -263,9 +259,6 @@ giftHash = vsh testGift
 
 poolHash :: PoolScriptHash
 poolHash = vsh testPool
-
-deadFactoryHash :: DeadFactoryScriptHash
-deadFactoryHash = vsh testDeadFactory
 
 deadPoolHash :: DeadPoolScriptHash
 deadPoolHash = vsh testDeadPool

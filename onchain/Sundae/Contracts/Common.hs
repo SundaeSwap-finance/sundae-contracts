@@ -26,9 +26,6 @@ import Control.Lens (makeLenses)
 -- | Factory script controls creation of pools
 data Factory
 
--- | The dead factory script holds adopted proposal data for upgrading pools
-data DeadFactory
-
 -- | Script that holds all live pools
 data Pool
 
@@ -296,9 +293,6 @@ data PoolMintRedeemer
   = MintLP BuiltinByteString -- Mint LP for the given pool ident
   | CreatePool AssetClass AssetClass
 
-newtype DeadFactoryDatum = DeadFactoryDatum ScriptUpgradeProposal
-  --deriving newtype (Prelude.Show, Eq, NFData, ToJSON, FromJSON)
-
 newtype ProposalRedeemer = UpgradePool BuiltinByteString
   deriving stock Generic
   --deriving newtype (ToJSON, FromJSON)
@@ -426,8 +420,6 @@ data EscrowRedeemer
 
 newtype FactoryScriptHash = FactoryScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype DeadFactoryScriptHash = DeadFactoryScriptHash ScriptHash
-  deriving stock Prelude.Show
 newtype TreasuryScriptHash = TreasuryScriptHash ScriptHash
   deriving stock Prelude.Show
 newtype GiftScriptHash = GiftScriptHash ScriptHash
@@ -490,8 +482,6 @@ PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeS
 PlutusTx.makeIsDataIndexed ''ScriptUpgradeProposal [('ScriptUpgradeProposal, 0)]
 PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
--- the difference here gives us a bit more safety in the face of possible changes to FactoryDatum or DeadFactoryDatum.
-PlutusTx.makeIsDataIndexed ''DeadFactoryDatum [('DeadFactoryDatum, 20)]
 PlutusTx.makeIsDataIndexed ''ScooperUpgradeProposal [('ScooperUpgradeProposal, 0)]
 PlutusTx.makeIsDataIndexed ''UpgradeProposal [('UpgradeScripts, 0), ('UpgradeScooperSet, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('MakeProposal, 1), ('UpgradeScooperSet, 2), ('IssueScooperLicense, 3)]
@@ -514,7 +504,6 @@ PlutusTx.makeLift ''TreasuryBootCurrencySymbol
 PlutusTx.makeLift ''SundaeCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash
 PlutusTx.makeLift ''PoolScriptHash
-PlutusTx.makeLift ''DeadFactoryScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
 PlutusTx.makeLift ''GiftScriptHash
 PlutusTx.makeLift ''ScooperFeeHolderScriptHash
@@ -527,10 +516,6 @@ PlutusTx.makeLift ''EscrowScriptHash
 --instance Scripts.ValidatorTypes Factory where
 --  type instance DatumType Factory = FactoryDatum
 --  type instance RedeemerType Factory = FactoryRedeemer
---
---instance Scripts.ValidatorTypes DeadFactory where
---  type instance DatumType DeadFactory = DeadFactoryDatum
---  type instance RedeemerType DeadFactory = ProposalRedeemer
 --
 --instance Scripts.ValidatorTypes Escrow where
 --  type instance DatumType Escrow = EscrowDatum
