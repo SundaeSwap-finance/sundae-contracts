@@ -31,14 +31,12 @@ treasuryScript upgradeSettings tbcs tcs pcs =
 
 scooperFeeScript
   :: ScooperFeeSettings
-  -> GiftScriptHash
   -> FactoryBootCurrencySymbol
   -> SerialisedScript
-scooperFeeScript sfs gsh fbcs =
+scooperFeeScript sfs fbcs =
   let
-    x = pure $$(PlutusTx.compile [|| \sfs' gsh' fbcs' d r c -> check $ scooperFeeContract sfs' gsh' fbcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData c) ||])
+    x = pure $$(PlutusTx.compile [|| \sfs' fbcs' d r c -> check $ scooperFeeContract sfs' fbcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData c) ||])
       >>= flip apCode sfs
-      >>= flip apCode gsh
       >>= flip apCode fbcs
     in
       case x of
@@ -56,15 +54,3 @@ proposalScript upgradeSettings =
       case x of
         Just x' -> serialiseCompiledCode x'
         Nothing -> Prelude.error "Couldn't compile proposal script"
-
-giftScript
-  :: TreasuryBootCurrencySymbol
-  -> SerialisedScript
-giftScript tbcs =
-  let
-    x = pure $$(PlutusTx.compile [|| giftContract ||])
-      >>= flip apCode tbcs
-  in
-    case x of
-      Just x' -> serialiseCompiledCode x'
-      Nothing -> Prelude.error "Couldn't compile gift script"

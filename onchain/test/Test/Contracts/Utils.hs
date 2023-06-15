@@ -185,7 +185,7 @@ factoryBootMint =
 
 testScooperLicense :: SerialisedScript
 testScooperLicense =
-  Sundae.scooperFeeScript scooperFeeSettings giftHash factoryBootCS
+  Sundae.scooperFeeScript scooperFeeSettings factoryBootCS
 
 treasuryBootMint :: SerialisedScript
 treasuryBootMint =
@@ -198,10 +198,6 @@ sundaeMint =
 testTreasury :: SerialisedScript
 testTreasury =
   Sundae.treasuryScript upgradeSettings treasuryBootCS sundaeCS poolCS
-
-testGift :: SerialisedScript
-testGift =
-  Sundae.giftScript treasuryBootCS
 
 scooperFeeSettings :: ScooperFeeSettings
 scooperFeeSettings = ScooperFeeSettings 0
@@ -249,9 +245,6 @@ scooperTokenAC week =
 
 treasuryHash :: TreasuryScriptHash
 treasuryHash = vsh testTreasury
-
-giftHash :: GiftScriptHash
-giftHash = vsh testGift
 
 poolHash :: PoolScriptHash
 poolHash = vsh testPool
