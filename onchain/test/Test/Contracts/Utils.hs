@@ -356,7 +356,7 @@ runStep steps = do
       passes @? "pool mint failure"
   exec info (_, FactoryBootMint _ cond redeemer) = do
     pure $ do
-      wentThrough <- handleErrors $ runFactoryBootMint redeemer (ScriptContext info (Minting $ coerce treasuryBootCS))
+      wentThrough <- handleErrors $ runFactoryBootMint redeemer (ScriptContext info (Minting $ coerce factoryBootCS))
       let passes = runCond cond wentThrough
       passes @? "factory boot mint failure"
   exec info (_, TreasuryBootMint _ cond) = do
