@@ -347,7 +347,6 @@ instance Eq PoolDatum where
 
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
-  | PoolUpgrade
 
 data DeadPoolDatum = DeadPoolDatum
   { deadPoolNewCurrencySymbol :: CurrencySymbol
@@ -490,7 +489,7 @@ PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0), ('SpendScooperFeesIntoTreasury, 1)]
-PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0), ('PoolUpgrade, 1)]
+PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''DeadPoolDatum [('DeadPoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]
