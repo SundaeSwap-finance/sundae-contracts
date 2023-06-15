@@ -104,7 +104,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         else True
       ) &&
     debug "staking key must be allowed"
-      (case factoryReferenceDatum of 
+      (case factoryReferenceDatum of
         FactoryDatum _ _ _ _ stakerKeySet ->
           case poolOutput of
             TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
@@ -315,7 +315,7 @@ escrowContract
     hasPoolToken :: Value -> Bool
     hasPoolToken v = any isPoolNft (flattenValue v)
     isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
-    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 2 tk == "p "
+    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
   escrowCancel =
     debug "the canceller did not sign the transaction"
       (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)

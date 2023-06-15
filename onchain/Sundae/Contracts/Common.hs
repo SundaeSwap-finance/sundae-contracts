@@ -475,12 +475,11 @@ computeScooperTokenName (Ident ident) = TokenName $ "scooper " <> ident
 
 {-# inlinable computeLiquidityTokenName #-}
 computeLiquidityTokenName :: BuiltinByteString -> TokenName
-computeLiquidityTokenName poolIdent = TokenName $ "lp " <> poolIdent
+computeLiquidityTokenName poolIdent = TokenName $ "l" <> poolIdent
 
 {-# inlinable computePoolTokenName #-}
 computePoolTokenName :: BuiltinByteString -> TokenName
-computePoolTokenName poolIdent =
-  TokenName $ "p " <> poolIdent
+computePoolTokenName poolIdent = TokenName $ "p" <> poolIdent
 
 PlutusTx.makeLift ''OldFactoryBootCurrencySymbol
 PlutusTx.makeLift ''ProtocolBootUTXO
