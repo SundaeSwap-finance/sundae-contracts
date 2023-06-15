@@ -29,9 +29,6 @@ data Factory
 -- | Script that holds all live pools
 data Pool
 
--- | Script that holds all dead pools
-data DeadPool
-
 -- | Script that holds scooper licenses
 data ScooperFeeHolder
 
@@ -348,19 +345,6 @@ instance Eq PoolDatum where
 data PoolRedeemer
   = PoolScoop !PubKeyHash [Integer] -- OPTIMIZATION: PKH here is candidate for removal
 
-data DeadPoolDatum = DeadPoolDatum
-  { deadPoolNewCurrencySymbol :: CurrencySymbol
-  , deadPoolIdent :: BuiltinByteString
-  , deadPoolOldToNewRatio :: Rational
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  --deriving anyclass (NFData, ToJSON, FromJSON)
-
-instance Eq DeadPoolDatum where
-  {-# inlinable (==) #-}
-  (==) (DeadPoolDatum cs1 ident1 ratio1) (DeadPoolDatum cs2 ident2 ratio2) =
-    cs1 == cs2 && ident1 == ident2 && ratio1 == ratio2
-
 -- | The escrow datum specified which pool it's intended for, what the return
 -- address is for any results of the escrowed operation, and the amount of
 -- lovelace intended to be paid to the scooper.
@@ -438,10 +422,6 @@ newtype OldPoolCurrencySymbol = OldPoolCurrencySymbol CurrencySymbol
 newtype PoolCurrencySymbol = PoolCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 
-newtype OldDeadPoolScriptHash = OldDeadPoolScriptHash ScriptHash
-  deriving stock Prelude.Show
-newtype DeadPoolScriptHash = DeadPoolScriptHash ScriptHash
-  deriving stock Prelude.Show
 newtype ScooperFeeHolderScriptHash = ScooperFeeHolderScriptHash ScriptHash
   deriving stock Prelude.Show
 newtype PoolScriptHash = PoolScriptHash ScriptHash
@@ -491,7 +471,6 @@ PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0), ('SpendScooperFeesIntoTreasury, 1)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
-PlutusTx.makeIsDataIndexed ''DeadPoolDatum [('DeadPoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]
 PlutusTx.makeIsDataIndexed ''EscrowAction [('EscrowSwap, 0), ('EscrowWithdraw, 1), ('EscrowDeposit, 2)]
 PlutusTx.makeIsDataIndexed ''EscrowDestination [('EscrowDestination, 0)]
@@ -506,8 +485,6 @@ PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
 PlutusTx.makeLift ''GiftScriptHash
 PlutusTx.makeLift ''ScooperFeeHolderScriptHash
-PlutusTx.makeLift ''DeadPoolScriptHash
-PlutusTx.makeLift ''OldDeadPoolScriptHash
 PlutusTx.makeLift ''PoolCurrencySymbol
 PlutusTx.makeLift ''OldPoolCurrencySymbol
 PlutusTx.makeLift ''EscrowScriptHash
@@ -527,10 +504,6 @@ PlutusTx.makeLift ''EscrowScriptHash
 --instance Scripts.ValidatorTypes Pool where
 --  type instance DatumType Pool = PoolDatum
 --  type instance RedeemerType Pool = PoolRedeemer
---
---instance Scripts.ValidatorTypes DeadPool where
---  type instance DatumType DeadPool = DeadPoolDatum
---  type instance RedeemerType DeadPool = ()
 --
 --instance Scripts.ValidatorTypes Treasury where
 --  type instance DatumType Treasury = TreasuryDatum

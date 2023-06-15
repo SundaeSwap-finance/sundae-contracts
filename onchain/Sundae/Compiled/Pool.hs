@@ -40,18 +40,3 @@ escrowScript pcs =
     case x of
       Just x' -> serialiseCompiledCode x'
       Nothing -> Prelude.error "Couldn't compile escrow script"
-
-deadPoolScript
-  :: PoolCurrencySymbol
-  -> EscrowScriptHash
-  -> SerialisedScript
-deadPoolScript pcs esh =
-  let
-    x =
-      pure $$(PlutusTx.compile [|| deadPoolContract ||])
-        >>= flip apCode pcs
-        >>= flip apCode esh
-  in
-    case x of
-      Just x' -> serialiseCompiledCode x'
-      Nothing -> Prelude.error "Couldn't compile dead pool script"

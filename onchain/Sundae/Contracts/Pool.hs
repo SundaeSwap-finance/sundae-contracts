@@ -104,7 +104,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         else True
       ) &&
     debug "staking key must be allowed"
-      (case factoryReferenceDatum of 
+      (case factoryReferenceDatum of
         FactoryDatum _ _ _ _ stakerKeySet ->
           case poolOutput of
             TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
@@ -218,52 +218,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     EscrowSwap (giveCoin, amt) _ ->
       valueOfAC v giveCoin >= amt && amt >= 1
 
--- Dead Pool contract
---  When we upgrade a pool, the liquidity moves into a new contract; These are owned by holders of the old liquidity token.
---  This script holds onto them and allows an exchange.
---  Parameterized by:
---    PoolCurrencySymbol, to identify the old liquidity token
---  Uses Datum:
---    new liquidity token symbol, identifier of the old pool, the exchange ratio, in case we change the liquidity formula
---  Allows (via Redeemer):
---    Exchange an old liquidity token for a new one
-{-# inlinable deadPoolContract #-}
-deadPoolContract :: PoolCurrencySymbol -> EscrowScriptHash -> DeadPoolDatum -> () -> ScriptContext -> Bool
-deadPoolContract
-  (PoolCurrencySymbol pcs)
-  (EscrowScriptHash esh)
-  datum@(DeadPoolDatum newPcs poolIdent oldToNewRatio) () ctx =
-  debug "Pool nft not paid back out"
-    (hasDeadPoolLimited pcs poolIdent (txOutValue ownOutput)) &&
-  debug "Cannot include any escrows when spending dead pool"
-    (not (atLeastOne (\i ->
-      (txOutAddress $ txInInfoResolved i) == scriptHashAddress esh)
-      (txInfoInputs txInfo))) &&
-  debug "not disbursing the new liquidity tokens"
-    (lostNewTrackingTokens == scaleInteger oldToNewRatio (PlutusTx.Numeric.negate burnedLiquidity)) &&
-  debug "must only burn liquidity tokens"
-    (onlyHas txInfoMint pcs liquidityTokenName (< 0)) &&
-  debug "datum mismatch"
-    (rawDatumOf txInfo ownOutput == Just (Datum $ toBuiltinData datum))
-  where
-  Just ownInput = findOwnInput ctx
-  !ownOutput = uniqueElement' $ getContinuingOutputs ctx
-  liquidityTokenName = computeLiquidityTokenName poolIdent
-  burnedLiquidity = valueOf txInfoMint pcs liquidityTokenName
-  lostNewTrackingTokens =
-    valueOf (txOutValue $ txInInfoResolved ownInput) newPcs liquidityTokenName - valueOf (txOutValue ownOutput) newPcs liquidityTokenName
-  txInfo@TxInfo{txInfoMint} = scriptContextTxInfo ctx
-
 isFactory :: CurrencySymbol -> TxOut -> Bool
 isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
   where
   factoryNft = assetClass fbcs factoryToken
-
-{-# inlinable hasDeadPoolLimited #-}
--- | Dead pool value should contain pool NFT and no more than 3 items in the value:
--- Rider Ada, Liquidity, NFT
-hasDeadPoolLimited :: CurrencySymbol -> BuiltinByteString -> Value -> Bool
-hasDeadPoolLimited cs poolIdent val = hasLimitedNft 3 (toPoolNft cs poolIdent) val
 
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool
