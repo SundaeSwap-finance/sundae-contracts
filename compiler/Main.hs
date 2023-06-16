@@ -62,7 +62,7 @@ getConfig = O.execParser $ O.info parser $ mconcat
             format <- pFormat
             dest <- pDestination
             pure $ CompileConfig compilationTarget settingsSource format dest
-        
+
         pTarget :: O.Parser CompilationTarget
         pTarget
             =     (O.flag' FactoryValidator (O.long "factory" <> O.help "compile the factory script"))
@@ -112,8 +112,6 @@ main = do
             let
                 -- Hard coding these until they gets ripped out
                 oldPoolCurrencySymbol = OldPoolCurrencySymbol "00000000000000000000000000000000000000000000000000000000"
-                scooperFeeHolder = ScooperFeeHolderScriptHash $ Plutus.ScriptHash "00000000000000000000000000000000000000000000000000000000"
-                deadFactoryScriptHash = DeadFactoryScriptHash $ Plutus.ScriptHash "00000000000000000000000000000000000000000000000000000000"
                 upgradeSettings = UpgradeSettings
                     { upgradeTimeLockPeriod = 0
                     , upgradeAuthentication = AssetClass ("00000000000000000000000000000000000000000000000000000000", "00")
@@ -122,16 +120,16 @@ main = do
                 -- Factory related scripts
                 factoryMintScript = factoryBootMintingScript settings
                 factoryCurrencySymbol = makeCurrencySymbol factoryMintScript :: FactoryBootCurrencySymbol
-                factoryValidatorScript = factoryScript upgradeSettings factoryCurrencySymbol deadFactoryScriptHash poolScriptHash poolCurrencySymbol
+                factoryValidatorScript = factoryScript upgradeSettings factoryCurrencySymbol poolScriptHash poolCurrencySymbol
 
                 -- Pool related scripts
                 poolMintScript = poolMintingScript factoryCurrencySymbol oldPoolCurrencySymbol
                 poolCurrencySymbol = makeCurrencySymbol poolMintScript :: PoolCurrencySymbol
-                poolValidatorScript = poolScript factoryCurrencySymbol poolCurrencySymbol scooperFeeHolder escrowScriptHash
+                poolValidatorScript = poolScript factoryCurrencySymbol poolCurrencySymbol escrowScriptHash
                 poolScriptHash = makeValidatorScriptHash poolValidatorScript
 
                 -- Escrow related scripts
-                escrowValidatorScript = escrowScript poolCurrencySymbol 
+                escrowValidatorScript = escrowScript poolCurrencySymbol
                 escrowScriptHash = makeValidatorScriptHash escrowValidatorScript
 
                 encode = case format of
@@ -159,7 +157,7 @@ main = do
                         let path = targetDirectory ++ filename
                         createDirectoryIfMissing True targetDirectory
                         BS.writeFile path scr
-                
+
             traverse_ (\(f, scr) -> output $ (f, encode . BS.fromShort $ scr)) $ case target of
                 All -> [ ("factory-mint", factoryMintScript)
                        , ("factory", factoryValidatorScript)
