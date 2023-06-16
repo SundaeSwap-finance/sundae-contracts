@@ -57,7 +57,7 @@ factoryContract
   datum@FactoryDatum {..}
   redeemer
   ctx =
-  debug "factory token not spent back, and not upgrading factory"
+  debug "factory token not spent back"
     (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
   debug "factory output not equal to input factory"
     (ownInputValue == txOutValue ownOutput) &&
