@@ -179,10 +179,6 @@ testEscrow :: SerialisedScript
 testEscrow =
   Sundae.escrowScript poolCS
 
-testDeadPool :: SerialisedScript
-testDeadPool =
-  Sundae.deadPoolScript poolCS escrowHash
-
 factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
@@ -259,9 +255,6 @@ giftHash = vsh testGift
 
 poolHash :: PoolScriptHash
 poolHash = vsh testPool
-
-deadPoolHash :: DeadPoolScriptHash
-deadPoolHash = vsh testDeadPool
 
 escrowHash :: EscrowScriptHash
 escrowHash = vsh testScooperLicense

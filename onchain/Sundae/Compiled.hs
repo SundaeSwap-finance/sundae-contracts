@@ -26,7 +26,7 @@ import Data.Coerce (coerce)
 
 import Codec.Serialise (deserialise)
 
-import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), DeadPoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), GiftScriptHash(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
 
 import Sundae.Utilities (Coin(..))
 
@@ -73,8 +73,6 @@ data AllScripts = AllScripts
   , poolCS :: PoolCurrencySymbol
   , poolScr :: SerialisedScript
   , poolSH :: PoolScriptHash
-  , deadPoolScr :: SerialisedScript
-  , deadPoolSH :: DeadPoolScriptHash
   , proposalScr :: SerialisedScript
   , scooperFeeHolderScr :: SerialisedScript
   , scooperFeeHolderSH :: ScooperFeeHolderScriptHash
@@ -94,7 +92,6 @@ instance ToJSON AssetClass where
 
 instance ToJSON EscrowScriptHash where
 instance ToJSON ScooperFeeHolderScriptHash where
-instance ToJSON DeadPoolScriptHash where
 instance ToJSON PoolScriptHash where
 instance ToJSON PoolCurrencySymbol where
 instance ToJSON GiftScriptHash where
@@ -105,7 +102,6 @@ instance ToJSON FactoryBootCurrencySymbol where
 
 deriving instance Generic EscrowScriptHash
 deriving instance Generic ScooperFeeHolderScriptHash
-deriving instance Generic DeadPoolScriptHash
 deriving instance Generic PoolScriptHash
 deriving instance Generic PoolCurrencySymbol
 deriving instance Generic GiftScriptHash
@@ -211,9 +207,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     poolCS = mcs poolMintScr
     poolScr = poolScript factoryBootCS poolCS escrowSH
     poolSH = vsh poolScr
-
-    deadPoolScr = deadPoolScript poolCS escrowSH
-    deadPoolSH = vsh deadPoolScr
 
     proposalScr = proposalScript convertedUpgradeSettings
 
