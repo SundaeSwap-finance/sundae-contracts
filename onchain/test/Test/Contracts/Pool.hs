@@ -166,7 +166,6 @@ testByCoin title coins@(AB coin1 coin2) =
     , unboundedValidRangeDownwards
     , unboundedValidRangeBothWays
     , mintingPoolToken
-    , upgradeRedeemer
     , cancelRedeemer
     , stolenPoolToken
     , noPoolToken
@@ -576,13 +575,6 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editMinted = at (poolAC (getIdent initialIdent)) .~ Just 1
-      , poolCond = Fail
-      }
-
-  upgradeRedeemer = testCase "scooping with PoolUpgrade as the pool redeemer" $ do
-    testValidScoop
-    mkScoopTest validScoopParams
-      { editPoolRedeemer = const PoolUpgrade
       , poolCond = Fail
       }
 

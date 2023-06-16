@@ -43,7 +43,6 @@ import Sundae.Utilities
 factoryContract
   :: UpgradeSettings
   -> FactoryBootCurrencySymbol
-  -> DeadFactoryScriptHash
   -> PoolScriptHash
   -> PoolCurrencySymbol
   -> FactoryDatum
@@ -53,18 +52,15 @@ factoryContract
 factoryContract
   UpgradeSettings {..}
   (FactoryBootCurrencySymbol fbcs)
-  (DeadFactoryScriptHash deadFactorySh)
   (PoolScriptHash poolScriptHash)
   (PoolCurrencySymbol pcs)
   datum@FactoryDatum {..}
   redeemer
   ctx =
-  (if redeemer /= UpgradeFactory then
-    debug "factory token not spent back, and not upgrading factory"
-      (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
-    debug "factory output not equal to input factory"
-      (ownInputValue == txOutValue ownOutput)
-  else True) &&
+  debug "factory token not spent back"
+    (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
+  debug "factory output not equal to input factory"
+    (ownInputValue == txOutValue ownOutput) &&
   debug "valid range too large to be useful"
     (validRangeSize txInfoValidRange <= maxValidRangeSize) &&
   case redeemer of
@@ -88,28 +84,6 @@ factoryContract
               (scooperIdent == proposedOldScooperIdent) &&
             debug "datum not updated correctly; should increment scooperIdent, and set the new set of allowed scoopers"
               (isDatumUnsafe txInfo ownOutput (datum { scooperIdent = succIdent scooperIdent, scooperSet = proposedNewScooperSet}))
-    UpgradeFactory ->
-      case proposalState of
-        PendingProposal proposalStart proposal@ScriptUpgradeProposal{..}
-          | POSIXTime gap <- latest - proposalStart
-          , let !newFactoryOut = uniqueElement' [ o | o <- txInfoOutputs, txOutAddress o == scriptHashAddress proposedNewFactory ]
-          ->
-          debug "too few or too many new factory tokens"
-            (hasFactoryLimited proposedNewFactoryBoot (txOutValue newFactoryOut)) &&
-          debug "new factory datum not initialized correctly"
-            (isDatumUnsafe txInfo newFactoryOut (datum { proposalState = NoProposal, scooperIdent = initialIdent })) &&
-          debug "continuing factory datum not updated correctly: should only set proposalState to adopted"
-            (null continuingOutputs) &&
-          debug "time-lock hasn't expired"
-            (gap >= upgradeTimeLockPeriod) &&
-          debug "dead factory not paid into or initialized correctly"
-            ( let !deadFactoryOutput = uniqueElement' $ getAddressOutputs ctx (scriptHashAddress deadFactorySh)
-              in  isDatumUnsafe txInfo deadFactoryOutput (DeadFactoryDatum proposal) &&
-                  onlyHas (withoutLovelace (txOutValue deadFactoryOutput)) fbcs factoryToken (== 1)
-            ) &&
-          debug "minting something other than the new factory token"
-            (txInfoMint == singleton proposedNewFactoryBoot factoryToken 1)
-        _ -> debug "no pending proposal to upgrade, or not paid into new factory script" False
 
     IssueScooperLicense pkh ->
       debug "scooper key is not a signatory"

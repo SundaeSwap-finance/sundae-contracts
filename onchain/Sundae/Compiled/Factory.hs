@@ -13,17 +13,15 @@ import Sundae.Utilities
 factoryScript
   :: UpgradeSettings
   -> FactoryBootCurrencySymbol
-  -> DeadFactoryScriptHash
   -> PoolScriptHash
   -> PoolCurrencySymbol
   -> SerialisedScript
-factoryScript settings fbcs propSh psh pcs =
+factoryScript settings fbcs psh pcs =
   let
     x =
       pure $$(PlutusTx.compile [|| factoryContract ||])
         >>= flip apCode settings
         >>= flip apCode fbcs
-        >>= flip apCode propSh
         >>= flip apCode psh
         >>= flip apCode pcs
   in

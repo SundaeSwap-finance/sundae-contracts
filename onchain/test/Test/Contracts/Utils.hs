@@ -163,13 +163,9 @@ testSwapFees = SwapFees (Ratio.fromGHC 0.01)
 testScoopFee :: Integer
 testScoopFee = 2_500_000
 
-testDeadFactory :: SerialisedScript
-testDeadFactory =
-  Sundae.deadFactoryScript factoryBootCS poolHash deadPoolHash poolCS
-
 testFactory :: SerialisedScript
 testFactory =
-  Sundae.factoryScript upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
+  Sundae.factoryScript upgradeSettings factoryBootCS poolHash poolCS
 
 testPoolMint :: SerialisedScript
 testPoolMint =
@@ -264,9 +260,6 @@ giftHash = vsh testGift
 poolHash :: PoolScriptHash
 poolHash = vsh testPool
 
-deadFactoryHash :: DeadFactoryScriptHash
-deadFactoryHash = vsh testDeadFactory
-
 deadPoolHash :: DeadPoolScriptHash
 deadPoolHash = vsh testDeadPool
 
@@ -351,7 +344,7 @@ runStep steps = do
   runPoolMint redeemer ctx =
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
-    factoryContract upgradeSettings factoryBootCS deadFactoryHash poolHash poolCS
+    factoryContract upgradeSettings factoryBootCS poolHash poolCS
   handleErrors = handle (\(_ :: SomeException) -> pure False) . evaluate
   runCond = \case
     Pass -> id
