@@ -155,70 +155,6 @@ instance ToJSON SwapFees where
   toJSON (SwapFees r) =
     toJSON (Prelude.fromRational (toGHC r) :: Prelude.Double)
 
-data UpgradeProposal
-  = UpgradeScripts !ScriptUpgradeProposal
-  | UpgradeScooperSet !ScooperUpgradeProposal
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
-data ScriptUpgradeProposal
-  = ScriptUpgradeProposal
-  { _scriptProposedOldFactory :: !ScriptHash
-  , proposedNewFactory :: !ScriptHash
-  , proposedNewFactoryBoot :: !CurrencySymbol
-  , proposedNewPool :: !ScriptHash
-  , proposedNewPoolMint :: !CurrencySymbol
-  , proposedOldToNewLiquidityRatio :: !Rational
-  , proposedOldTreasury :: !ScriptHash
-  , proposedNewTreasury :: !ScriptHash
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
-data ScooperUpgradeProposal
-  = ScooperUpgradeProposal
-  { _scoopProposedOldFactory :: !ScriptHash
-  , proposedOldScooperIdent :: !Ident
-  , proposedNewScooperSet :: ![PubKeyHash]
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
--- Plutus compiler doesn't like multiple record constructors
-{-# inlinable proposedOldFactory #-}
-proposedOldFactory :: UpgradeProposal -> ScriptHash
-proposedOldFactory (UpgradeScripts p) = _scriptProposedOldFactory p
-proposedOldFactory (UpgradeScooperSet p) = _scoopProposedOldFactory p
-
-instance Eq UpgradeProposal where
-  {-# inlinable (==) #-}
-  UpgradeScripts p == UpgradeScripts p' = p == p'
-  UpgradeScooperSet p == UpgradeScooperSet p' = p == p'
-  _ == _ = False
-
-instance Eq ScriptUpgradeProposal where
-  {-# inlinable (==) #-}
-  ScriptUpgradeProposal oldFactory newFactory newFactoryBoot newPool newPoolMint newLiquidityRatio oldTreasury newTreasury ==
-    ScriptUpgradeProposal oldFactory' newFactory' newFactoryBoot' newPool' newPoolMint' newLiquidityRatio' oldTreasury' newTreasury'
-      = oldFactory == oldFactory' &&
-        newFactory == newFactory' &&
-        newFactoryBoot == newFactoryBoot' &&
-        newPool == newPool' &&
-        newPoolMint == newPoolMint' &&
-        newLiquidityRatio == newLiquidityRatio' &&
-        oldTreasury == oldTreasury' &&
-        newTreasury == newTreasury'
-
-instance Eq ScooperUpgradeProposal where
-  {-# inlinable (==) #-}
-  ScooperUpgradeProposal oldFactory oldScooperIdent newScooperSet ==
-    ScooperUpgradeProposal oldFactory' oldScooperIdent' newScooperSet'
-      = oldFactory == oldFactory' &&
-        oldScooperIdent == oldScooperIdent' &&
-        newScooperSet == newScooperSet'
-
-instance ToJSON ScriptUpgradeProposal where
-instance FromJSON ScriptUpgradeProposal where
 instance ToJSON POSIXTime where
 instance FromJSON POSIXTime where
 instance ToJSON CurrencySymbol where
@@ -226,23 +162,9 @@ instance FromJSON CurrencySymbol where
 instance ToJSON ScriptHash where
 instance FromJSON ScriptHash where
 
-data ProposalState
-  = NoProposal
-  | PendingProposal !POSIXTime !ScriptUpgradeProposal
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
-
-instance Eq ProposalState where
-  {-# inlinable (==) #-}
-  NoProposal == NoProposal = True
-  PendingProposal start proposal == PendingProposal start' proposal' =
-    start == start' && proposal == proposal'
-  _ == _ = False
-
 -- | Factory keeps track of the identifier for a new pool.
 data FactoryDatum = FactoryDatum
   { nextPoolIdent :: !Ident
-  , proposalState :: !ProposalState
   , scooperIdent :: !Ident
   , scooperSet :: ![PubKeyHash]
   -- permissible staking credentials for pool
@@ -253,9 +175,9 @@ data FactoryDatum = FactoryDatum
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' poolStakingCredSet' ==
-    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
-      nextPoolIdent' == nextPoolIdent'' && currentProposal' == currentProposal'' &&
+  FactoryDatum nextPoolIdent' scooperIdent' scooperSet' poolStakingCredSet' ==
+    FactoryDatum nextPoolIdent'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
+      nextPoolIdent' == nextPoolIdent'' &&
       scooperIdent' == scooperIdent'' && scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
@@ -275,27 +197,6 @@ data FactoryBootMintRedeemer
 data PoolMintRedeemer
   = MintLP BuiltinByteString -- Mint LP for the given pool ident
   | CreatePool AssetClass AssetClass
-
-newtype ProposalRedeemer = UpgradePool BuiltinByteString
-  deriving stock Generic
-  --deriving newtype (ToJSON, FromJSON)
-
-data TreasuryDatum = TreasuryDatum
-  { issuedSundae :: Integer
-  , treasuryProposalState :: ProposalState
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  --deriving anyclass (NFData, ToJSON, FromJSON)
-
-instance Eq TreasuryDatum where
-  {-# inlinable (==) #-}
-  TreasuryDatum issued propState == TreasuryDatum issued' propState' =
-    issued == issued' && propState == propState'
-
-data TreasuryRedeemer
-  = MakeTreasuryProposal
-  | UpgradeTreasury
-  | SpendIntoTreasury
 
 data ScooperFeeSettings
   = ScooperFeeSettings
@@ -434,15 +335,8 @@ PlutusTx.makeLift ''TreasuryBootSettings
 PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
-PlutusTx.makeIsDataIndexed ''ScriptUpgradeProposal [('ScriptUpgradeProposal, 0)]
-PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''ScooperUpgradeProposal [('ScooperUpgradeProposal, 0)]
-PlutusTx.makeIsDataIndexed ''UpgradeProposal [('UpgradeScripts, 0), ('UpgradeScooperSet, 1)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('UpgradeScooperSet, 1), ('IssueScooperLicense, 2)]
-PlutusTx.makeIsDataIndexed ''ProposalRedeemer [('UpgradePool, 0)]
-PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('IssueScooperLicense, 1)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
