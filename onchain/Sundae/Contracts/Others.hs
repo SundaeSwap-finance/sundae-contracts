@@ -100,51 +100,6 @@ ownHash p = fst (ownHashes p)
 toTreasuryNft :: CurrencySymbol -> AssetClass
 toTreasuryNft cs = assetClass cs treasuryToken
 
-{-# inlinable giftContract #-}
-giftContract
-  :: TreasuryBootCurrencySymbol
-  -> ()
-  -> ()
-  -> ScriptContext
-  -> Bool
-giftContract
-  (TreasuryBootCurrencySymbol tbcs)
-  _
-  _
-  ctx =
-  ((treasuryOutValue + ownOutputValue) `geq` (treasuryInValue + ownInputValue)) &&
-  treasuryOutValue `geq` treasuryInValue
-  where
-  !ownAddress = txOutAddress (txInInfoResolved ownInput)
-  -- we're careful here to grab the value from *all* gift inputs. If we
-  -- didn't, spending multiple gifts allows stealing some.
-  ownInputValue = fold
-    [ txOutValue (txInInfoResolved i)
-    | i <- txInfoInputs
-    , txOutAddress (txInInfoResolved i) == ownAddress
-    ]
-  !ownOutputValue = atMostOne
-    [ txOutValue o
-    | o <- txInfoOutputs
-    , txOutAddress o == ownAddress
-    ]
-  atMostOne xs = case xs of
-    [] -> mempty
-    [x] -> x
-    _ -> error ()
-  !(Just !ownInput) = findOwnInput ctx
-  TxInfo{..} = scriptContextTxInfo ctx
-  !treasuryInValue = uniqueElement'
-    [ txOutValue (txInInfoResolved i)
-    | i <- txInfoInputs
-    , valueContains (txOutValue (txInInfoResolved i)) tbcs treasuryToken
-    ]
-  !treasuryOutValue = uniqueElement'
-    [ txOutValue o
-    | o <- txInfoOutputs
-    , valueContains (txOutValue o) tbcs treasuryToken
-    ]
-
 -- Scooper Fee Contract
 --  Scoopers get to collect any surplus ada from a scoop; however, we timelock it so that governance has a chance to revoke.
 --  Parameterized by:
@@ -160,7 +115,6 @@ giftContract
 {-# inlinable scooperFeeContract #-}
 scooperFeeContract
   :: ScooperFeeSettings
-  -> GiftScriptHash
   -> FactoryBootCurrencySymbol
   -> ScooperFeeDatum
   -> ScooperFeeRedeemer
@@ -168,7 +122,6 @@ scooperFeeContract
   -> Bool
 scooperFeeContract
   ScooperFeeSettings {..}
-  (GiftScriptHash _)
   (FactoryBootCurrencySymbol fbcs)
   ScooperFeeDatum{..}
   ScooperCollectScooperFees
@@ -187,34 +140,6 @@ scooperFeeContract
     | txIn <- txInfoInputs
     , valueContains (txOutValue $ txInInfoResolved txIn) fbcs factoryToken
     , let Just dat = datumOf txInfo (txInInfoResolved txIn)
-    ]
-scooperFeeContract
-  ScooperFeeSettings {..}
-  (GiftScriptHash gsh)
-  _
-  ScooperFeeDatum{..}
-  SpendScooperFeesIntoTreasury
-  ctx =
-  debug "gift output doesn't have all the fees"
-    (txOutValue giftOutput `geq` ownInputValue) &&
-  debug "valid range too large"
-    (validRangeSize txInfoValidRange <= fourDaysMillis) &&
-  -- though this datum isn't used by the gift script, bloating the datum is annoying.
-  debug "gift output datum incorrect"
-    (isDatumUnsafe txInfo giftOutput ())
-  where
-  !(UpperBound (Finite !latest) _) = ivTo txInfoValidRange
-  !(Just !ownInput) = findOwnInput ctx
-  !ownInputValue = fold
-    [ txOutValue (txInInfoResolved i)
-    | i <- txInfoInputs
-    , txOutAddress (txInInfoResolved i) == txOutAddress (txInInfoResolved ownInput)
-    ]
-  txInfo@TxInfo{..} = scriptContextTxInfo ctx
-  !giftOutput = uniqueElement'
-    [ o
-    | o <- txInfoOutputs
-    , txOutAddress o == scriptHashAddress gsh
     ]
 
 -- The proposal contract holds an upgrade authorization token as well as the

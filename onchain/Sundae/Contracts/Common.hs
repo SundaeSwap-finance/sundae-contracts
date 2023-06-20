@@ -41,9 +41,6 @@ data Treasury
 -- | Script that holds an approved proposal before it's been used to upgrade the factory
 data Proposal
 
--- | Holds gifts to the treasury, before they've been approved
-data Gift
-
 instance FromJSON TxOutRef where
   parseJSON = withObject "TxOutRef" $ \o -> do
     txid <- o .: "txid"
@@ -323,7 +320,6 @@ data ScooperFeeDatum
 
 data ScooperFeeRedeemer
   = ScooperCollectScooperFees
-  | SpendScooperFeesIntoTreasury
 
 -- | Pool internal state
 data PoolDatum
@@ -405,8 +401,6 @@ newtype FactoryScriptHash = FactoryScriptHash ScriptHash
   deriving stock Prelude.Show
 newtype TreasuryScriptHash = TreasuryScriptHash ScriptHash
   deriving stock Prelude.Show
-newtype GiftScriptHash = GiftScriptHash ScriptHash
-  deriving stock Prelude.Show
 
 newtype FactoryBootCurrencySymbol = FactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
@@ -467,7 +461,7 @@ PlutusTx.makeIsDataIndexed ''ProposalRedeemer [('UpgradePool, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
-PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0), ('SpendScooperFeesIntoTreasury, 1)]
+PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
 PlutusTx.makeIsDataIndexed ''PoolDatum [('PoolDatum, 0)]
 PlutusTx.makeIsDataIndexed ''Deposit [('DepositSingle, 0), ('DepositMixed, 1)]
@@ -482,7 +476,6 @@ PlutusTx.makeLift ''SundaeCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash
 PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
-PlutusTx.makeLift ''GiftScriptHash
 PlutusTx.makeLift ''ScooperFeeHolderScriptHash
 PlutusTx.makeLift ''PoolCurrencySymbol
 PlutusTx.makeLift ''OldPoolCurrencySymbol
@@ -512,9 +505,6 @@ PlutusTx.makeLift ''EscrowScriptHash
 --  type instance DatumType Proposal = UpgradeProposal
 --  type instance RedeemerType Proposal = ()
 --
---instance Scripts.ValidatorTypes Gift where
---  type instance DatumType Gift = ()
---  type instance RedeemerType Gift = ()
 
 -- Here, instead of utilities, to avoid dependency cycle
 {-# inlinable mergeListByKey #-}
