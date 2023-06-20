@@ -398,8 +398,6 @@ newtype OldFactoryBootCurrencySymbol = OldFactoryBootCurrencySymbol CurrencySymb
   deriving newtype (FromJSON, ToJSON)
 newtype TreasuryBootCurrencySymbol = TreasuryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
-newtype SundaeCurrencySymbol = SundaeCurrencySymbol CurrencySymbol
-  deriving stock Prelude.Show
 newtype OldPoolCurrencySymbol = OldPoolCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype PoolCurrencySymbol = PoolCurrencySymbol CurrencySymbol
@@ -414,10 +412,6 @@ newtype EscrowScriptHash = EscrowScriptHash ScriptHash
 
 factoryToken :: TokenName
 factoryToken = TokenName "factory"
-treasuryToken :: TokenName
-treasuryToken = TokenName "treasury"
-sundaeToken :: TokenName
-sundaeToken = TokenName "SUNDAE"
 
 -- Asset name can be 28 bytes; 19 bytes reserved for the week number;
 -- That gives us ~5.3e45 weeks to work with.  We should be good :)
@@ -461,7 +455,6 @@ PlutusTx.makeIsDataIndexed ''EscrowDatum [('EscrowDatum, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 1)]
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
-PlutusTx.makeLift ''SundaeCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash
 PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
@@ -505,11 +498,6 @@ mergeListByKey cs = go cs []
     | r == r' = valueInList r tl (Just (v', c')) acc
     | otherwise = valueInList r tl res (x : acc)
   valueInList r (x : tl) res@(Just _) acc = valueInList r tl res (x : acc)
-
--- The maximum indivisible supply of Sundae; 2B total tokens, each of which can be split into 1m sprinkles
-{-# inlinable sundaeMaxSupply #-}
-sundaeMaxSupply :: Integer
-sundaeMaxSupply = 2_000_000_000 * 1_000_000
 
 -- Every UTXO in cardano must come with a minimum amount of ADA to prevent dust attacks;
 -- We've been calling this the "rider".

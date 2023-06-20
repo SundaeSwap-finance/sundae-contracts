@@ -26,7 +26,7 @@ import Data.Coerce (coerce)
 
 import Codec.Serialise (deserialise)
 
-import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, treasuryToken, sundaeToken, TreasuryBootCurrencySymbol(..), SundaeCurrencySymbol(..), PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
 
 import Sundae.Utilities (Coin(..))
 
@@ -58,11 +58,7 @@ txOutRefFromStr txid txix =
 
 data AllScripts = AllScripts
   { factoryBootMintScr :: SerialisedScript
-  , treasuryBootMintScr :: SerialisedScript
-  , sundaeMintScr :: SerialisedScript
   , factoryBootCS :: FactoryBootCurrencySymbol
-  , treasuryBootCS :: TreasuryBootCurrencySymbol
-  , sundaeCS :: SundaeCurrencySymbol
   , factoryScr :: SerialisedScript
   , poolMintScr :: SerialisedScript
   , poolCS :: PoolCurrencySymbol
@@ -73,8 +69,6 @@ data AllScripts = AllScripts
   , escrowScr :: SerialisedScript
   , escrowSH :: EscrowScriptHash
   , factoryAssetClass :: AssetClass
-  , treasuryAssetClass :: AssetClass
-  , sundaeAssetClass :: AssetClass
   } deriving (Generic, Show, ToJSON)
 
 instance ToJSON AssetClass where
@@ -89,8 +83,6 @@ instance ToJSON ScooperFeeHolderScriptHash where
 instance ToJSON PoolScriptHash where
 instance ToJSON PoolCurrencySymbol where
 instance ToJSON TreasuryScriptHash where
-instance ToJSON SundaeCurrencySymbol where
-instance ToJSON TreasuryBootCurrencySymbol where
 instance ToJSON FactoryBootCurrencySymbol where
 
 deriving instance Generic EscrowScriptHash
@@ -98,8 +90,6 @@ deriving instance Generic ScooperFeeHolderScriptHash
 deriving instance Generic PoolScriptHash
 deriving instance Generic PoolCurrencySymbol
 deriving instance Generic TreasuryScriptHash
-deriving instance Generic SundaeCurrencySymbol
-deriving instance Generic TreasuryBootCurrencySymbol
 deriving instance Generic FactoryBootCurrencySymbol
 
 instance ToJSON SerialisedScript where
@@ -181,12 +171,8 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
       , upgradeAuthentication = fromCLIAssetClass $ cliUpgradeAuthentication upgradeSettings
       }
     factoryBootMintScr = factoryBootMintingScript convertedFBSettings
-    treasuryBootMintScr = treasuryBootMintingScript convertedTreasuryBootSettings
-    sundaeMintScr = sundaeMintingScript treasuryBootCS
 
     factoryBootCS = mcs factoryBootMintScr
-    treasuryBootCS = mcs treasuryBootMintScr
-    sundaeCS = mcs sundaeMintScr
 
     factoryScr = factoryScript convertedUpgradeSettings factoryBootCS poolSH poolCS
 
@@ -198,8 +184,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     escrowScr = escrowScript poolCS
     escrowSH = vsh escrowScr
     factoryAssetClass = AssetClass (coerce factoryBootCS, factoryToken)
-    treasuryAssetClass = AssetClass (coerce treasuryBootCS, treasuryToken)
-    sundaeAssetClass = AssetClass (coerce sundaeCS, sundaeToken)
   in AllScripts {..}
   where
   mcs script = coerce $ Plutus.ScriptHash (toBuiltin (hashScript script))

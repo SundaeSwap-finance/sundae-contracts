@@ -42,8 +42,6 @@ data Step
   | ToScript Address Value Data
   | ReferenceInput Address Value Data
   | PoolMint Value Cond BuiltinByteString
-  | TreasuryBootMint Value Cond
-  | SundaeMint Value Cond
   | FactoryBootMint Value Cond FactoryBootMintRedeemer
   | CustomInterval (Interval POSIXTime)
   | CustomSignatories [PubKeyHash]
@@ -183,14 +181,6 @@ factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
 
-treasuryBootMint :: SerialisedScript
-treasuryBootMint =
-  Sundae.treasuryBootMintingScript testTreasuryBootSettings
-
-sundaeMint :: SerialisedScript
-sundaeMint =
-  Sundae.sundaeMintingScript treasuryBootCS
-
 upgradeSettings :: UpgradeSettings
 upgradeSettings = UpgradeSettings 0 (AssetClass ("", ""))
 
@@ -204,14 +194,6 @@ poolCS =
 
 poolSH :: PoolScriptHash
 poolSH = vsh testPool
-
-treasuryBootCS :: TreasuryBootCurrencySymbol
-treasuryBootCS =
-  TreasuryBootCurrencySymbol $ currencySymbolOf treasuryBootMint
-
-sundaeCS :: SundaeCurrencySymbol
-sundaeCS =
-  SundaeCurrencySymbol $ currencySymbolOf sundaeMint
 
 toCoin :: ByteString -> AssetClass
 toCoin str = AssetClass (currencySymbol str, tokenName str)
@@ -306,10 +288,6 @@ runStep steps = do
     escrowContract poolCS datum redeemer ctx
   runFactoryBootMint redeemer ctx =
     factoryBootMintingContract testFactoryBootSettings redeemer ctx
-  runTreasuryBootMint ctx =
-    treasuryBootMintingContract testTreasuryBootSettings () ctx
-  runSundaeMint ctx =
-    sundaeMintingContract treasuryBootCS () ctx
   runPoolMint redeemer ctx =
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
@@ -335,16 +313,6 @@ runStep steps = do
       wentThrough <- handleErrors $ runFactoryBootMint redeemer (ScriptContext info (Minting $ coerce factoryBootCS))
       let passes = runCond cond wentThrough
       passes @? "factory boot mint failure"
-  exec info (_, TreasuryBootMint _ cond) = do
-    pure $ do
-      wentThrough <- handleErrors $ runTreasuryBootMint (ScriptContext info (Minting $ coerce treasuryBootCS))
-      let passes = runCond cond wentThrough
-      passes @? "treasury boot mint failure"
-  exec info (_, SundaeMint _ cond) = do
-    pure $ do
-      wentThrough <- handleErrors $ runSundaeMint (ScriptContext info (Minting $ coerce sundaeCS))
-      let passes = runCond cond wentThrough
-      passes @? "treasury mint failure"
   exec _ _ = Nothing
   mkDatumHash :: ToData a => a -> DatumHash
   mkDatumHash x = DatumHash (toBuiltin (Hash.blake2b_256 (LBS.toStrict (serialise (toData x)))))
@@ -385,10 +353,6 @@ runStep steps = do
       PoolMint v _ _->
         info & tiMint %~ (<> v)
       FactoryBootMint v _ _ ->
-        info & tiMint %~ (<> v)
-      TreasuryBootMint v _ ->
-        info & tiMint %~ (<> v)
-      SundaeMint v _ ->
         info & tiMint %~ (<> v)
       CustomInterval v ->
         info & tiValidRange .~ v
