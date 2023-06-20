@@ -269,13 +269,11 @@ instance Eq FactoryDatum where
 
 -- | Action on factory script
 data FactoryRedeemer
-  = MakeProposal
-  | IssueScooperLicense PubKeyHash
+  = IssueScooperLicense PubKeyHash
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  MakeProposal == MakeProposal = True
   IssueScooperLicense pkh == IssueScooperLicense pkh' = pkh == pkh'
   _ == _ = False
 
@@ -456,7 +454,7 @@ PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal,
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperUpgradeProposal [('ScooperUpgradeProposal, 0)]
 PlutusTx.makeIsDataIndexed ''UpgradeProposal [('UpgradeScripts, 0), ('UpgradeScooperSet, 1)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('MakeProposal, 1), ('UpgradeScooperSet, 2), ('IssueScooperLicense, 3)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('UpgradeScooperSet, 1), ('IssueScooperLicense, 2)]
 PlutusTx.makeIsDataIndexed ''ProposalRedeemer [('UpgradePool, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
 PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]

@@ -64,27 +64,6 @@ factoryContract
   debug "valid range too large to be useful"
     (validRangeSize txInfoValidRange <= maxValidRangeSize) &&
   case redeemer of
-    MakeProposal
-      | let
-          !proposalInput = uniqueElement' [ i | i <- txInfoInputs, assetClassValueContains (txOutValue $ txInInfoResolved i) upgradeAuthentication ]
-          Just (proposal :: UpgradeProposal) = datumOf txInfo (txInInfoResolved proposalInput)
-      ->
-        debug "proposal applies to wrong factory"
-          (txOutAddress ownInput == scriptHashAddress (proposedOldFactory proposal)) &&
-        debug "making a proposal does not allow minting"
-          (txInfoMint == mempty) &&
-        case proposal of
-          UpgradeScripts scriptProp ->
-            debug "proposal already ongoing or adopted"
-              (proposalState == NoProposal) &&
-            debug "new datum incorrect: should only update proposalState to PendingProposal"
-              (isDatumUnsafe txInfo ownOutput (datum { proposalState = PendingProposal latest scriptProp }))
-          UpgradeScooperSet (ScooperUpgradeProposal {..}) ->
-            debug "minting a scooper with the wrong identifier"
-              (scooperIdent == proposedOldScooperIdent) &&
-            debug "datum not updated correctly; should increment scooperIdent, and set the new set of allowed scoopers"
-              (isDatumUnsafe txInfo ownOutput (datum { scooperIdent = succIdent scooperIdent, scooperSet = proposedNewScooperSet}))
-
     IssueScooperLicense pkh ->
       debug "scooper key is not a signatory"
         (elem pkh txInfoSignatories) &&
@@ -98,7 +77,6 @@ factoryContract
   where
   !maxValidRangeSize = case redeemer of
     IssueScooperLicense _ -> fourDaysMillis
-    _ -> hourMillis
   UpperBound (Finite !latest) _ = ivTo txInfoValidRange
   txInfo@TxInfo{..} = scriptContextTxInfo ctx
   ownOutput = uniqueElement' continuingOutputs
