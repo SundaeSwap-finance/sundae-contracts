@@ -195,10 +195,6 @@ sundaeMint :: SerialisedScript
 sundaeMint =
   Sundae.sundaeMintingScript treasuryBootCS
 
-testTreasury :: SerialisedScript
-testTreasury =
-  Sundae.treasuryScript upgradeSettings treasuryBootCS sundaeCS poolCS
-
 scooperFeeSettings :: ScooperFeeSettings
 scooperFeeSettings = ScooperFeeSettings 0
 
@@ -242,9 +238,6 @@ poolAC poolIdent =
 scooperTokenAC :: Ident -> AssetClass
 scooperTokenAC week =
   AssetClass (coerce factoryBootCS, computeScooperTokenName week)
-
-treasuryHash :: TreasuryScriptHash
-treasuryHash = vsh testTreasury
 
 poolHash :: PoolScriptHash
 poolHash = vsh testPool

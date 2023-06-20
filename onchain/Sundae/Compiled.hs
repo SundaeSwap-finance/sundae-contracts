@@ -65,8 +65,6 @@ data AllScripts = AllScripts
   , treasuryBootCS :: TreasuryBootCurrencySymbol
   , sundaeCS :: SundaeCurrencySymbol
   , factoryScr :: SerialisedScript
-  , treasuryScr :: SerialisedScript
-  , treasurySH :: TreasuryScriptHash
   , poolMintScr :: SerialisedScript
   , poolCS :: PoolCurrencySymbol
   , poolScr :: SerialisedScript
@@ -192,9 +190,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     sundaeCS = mcs sundaeMintScr
 
     factoryScr = factoryScript convertedUpgradeSettings factoryBootCS poolSH poolCS
-    treasuryScr = treasuryScript convertedUpgradeSettings treasuryBootCS sundaeCS poolCS
-    treasurySH :: TreasuryScriptHash
-    treasurySH = vsh treasuryScr
 
     poolMintScr = poolMintingScript factoryBootCS oldPoolCurrencySymbol
     poolCS = mcs poolMintScr
