@@ -32,7 +32,6 @@ import Sundae.Utilities (Coin(..))
 
 import Sundae.Compiled.Factory as X
 import Sundae.Compiled.Mints as X
-import Sundae.Compiled.Others as X
 import Sundae.Compiled.Pool as X
 
 import System.IO.Unsafe (unsafePerformIO)
