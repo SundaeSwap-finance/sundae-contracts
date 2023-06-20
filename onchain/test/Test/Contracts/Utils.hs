@@ -183,10 +183,6 @@ factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
 
-testScooperLicense :: SerialisedScript
-testScooperLicense =
-  Sundae.scooperFeeScript scooperFeeSettings factoryBootCS
-
 treasuryBootMint :: SerialisedScript
 treasuryBootMint =
   Sundae.treasuryBootMintingScript testTreasuryBootSettings
@@ -194,9 +190,6 @@ treasuryBootMint =
 sundaeMint :: SerialisedScript
 sundaeMint =
   Sundae.sundaeMintingScript treasuryBootCS
-
-scooperFeeSettings :: ScooperFeeSettings
-scooperFeeSettings = ScooperFeeSettings 0
 
 upgradeSettings :: UpgradeSettings
 upgradeSettings = UpgradeSettings 0 (AssetClass ("", ""))
@@ -243,7 +236,7 @@ poolHash :: PoolScriptHash
 poolHash = vsh testPool
 
 escrowHash :: EscrowScriptHash
-escrowHash = vsh testScooperLicense
+escrowHash = vsh testEscrow
 
 poolAddress :: Address
 poolAddress = scriptHashToAddress $ vsh testPool
@@ -253,9 +246,6 @@ escrowAddress = scriptHashToAddress $ vsh testEscrow
 
 factoryAddress :: Address
 factoryAddress = scriptHashToAddress $ vsh testFactory
-
-scooperAddress :: Address
-scooperAddress = scriptHashToAddress $ vsh testScooperLicense
 
 scriptHashToAddress :: BuiltinByteString -> Address
 scriptHashToAddress bs = Address (ScriptCredential (ScriptHash bs)) Nothing
