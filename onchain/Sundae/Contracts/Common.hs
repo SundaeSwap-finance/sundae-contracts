@@ -29,17 +29,8 @@ data Factory
 -- | Script that holds all live pools
 data Pool
 
--- | Script that holds scooper licenses
-data ScooperFeeHolder
-
 -- | Script that holds all escrows
 data Escrow
-
--- | Script that adjudicates protocol assets
-data Treasury
-
--- | Script that holds an approved proposal before it's been used to upgrade the factory
-data Proposal
 
 instance FromJSON TxOutRef where
   parseJSON = withObject "TxOutRef" $ \o -> do
@@ -487,21 +478,9 @@ PlutusTx.makeLift ''EscrowScriptHash
 --  type instance DatumType Escrow = EscrowDatum
 --  type instance RedeemerType Escrow = EscrowRedeemer
 --
---instance Scripts.ValidatorTypes ScooperFeeHolder where
---  type instance DatumType ScooperFeeHolder = ScooperFeeDatum
---  type instance RedeemerType ScooperFeeHolder = ScooperFeeRedeemer
---
 --instance Scripts.ValidatorTypes Pool where
 --  type instance DatumType Pool = PoolDatum
 --  type instance RedeemerType Pool = PoolRedeemer
---
---instance Scripts.ValidatorTypes Treasury where
---  type instance DatumType Treasury = TreasuryDatum
---  type instance RedeemerType Treasury = TreasuryRedeemer
---
---instance Scripts.ValidatorTypes Proposal where
---  type instance DatumType Proposal = UpgradeProposal
---  type instance RedeemerType Proposal = ()
 --
 
 -- Here, instead of utilities, to avoid dependency cycle
