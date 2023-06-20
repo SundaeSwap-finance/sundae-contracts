@@ -150,7 +150,10 @@ poolMintingContract
         let
           getIdent (Ident i) = i
           !firstInput = txInInfoOutRef (ins !! 0)
-          !newPoolIdent = blake2b_256 $
+          -- A pool ident is 31 bytes in order to make it fit in the LP / pool
+          -- NFT token names with an extra byte for labeling. So we truncate the
+          -- blake2 hash.
+          !newPoolIdent = dropByteString 1 $ blake2b_256 $
             getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
           !poolOutput = uniqueElement' $
             filter (\case
