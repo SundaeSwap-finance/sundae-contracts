@@ -141,30 +141,3 @@ scooperFeeContract
     , valueContains (txOutValue $ txInInfoResolved txIn) fbcs factoryToken
     , let Just dat = datumOf txInfo (txInInfoResolved txIn)
     ]
-
--- The proposal contract holds an upgrade authorization token as well as the
--- accepted upgrade proposal that token authorizes; as such, its only constraints
--- are that its token isn't stolen, and its datum is not changed.
-{-# inlinable proposalContract #-}
-proposalContract
-  :: UpgradeSettings
-  -> UpgradeProposal
-  -> ()
-  -> ScriptContext
-  -> Bool
-proposalContract UpgradeSettings{..} up () ctx =
-  debug "upgrade authentication token stolen"
-    (assetClassValueContains (txOutValue ownOutput) upgradeAuthentication) &&
-  debug "multiple tokens input from self"
-    (assetClassValueOf ownInputValue upgradeAuthentication == 1) &&
-  debug "upgrade proposal datum changed"
-    (datumOf txInfo ownOutput == Just up)
-  where
-  !ownOutput = uniqueElement' (getContinuingOutputs ctx)
-  txInfo = scriptContextTxInfo ctx
-  !(Just !ownInput) = findOwnInput ctx
-  !ownInputValue = fold
-    [ txOutValue (txInInfoResolved i)
-    | i <- txInfoInputs txInfo
-    , txOutAddress (txInInfoResolved i) == txOutAddress (txInInfoResolved ownInput)
-    ]

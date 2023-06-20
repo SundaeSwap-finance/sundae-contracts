@@ -42,15 +42,3 @@ scooperFeeScript sfs fbcs =
       case x of
         Just x' -> serialiseCompiledCode x'
         Nothing -> Prelude.error "Couldn't compile scooper fee script"
-
-proposalScript
-  :: UpgradeSettings
-  -> SerialisedScript
-proposalScript upgradeSettings =
-    let
-      x = pure $$(PlutusTx.compile [|| proposalContract ||])
-        >>= flip apCode upgradeSettings
-    in
-      case x of
-        Just x' -> serialiseCompiledCode x'
-        Nothing -> Prelude.error "Couldn't compile proposal script"

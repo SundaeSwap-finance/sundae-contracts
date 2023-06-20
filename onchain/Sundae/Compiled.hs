@@ -71,7 +71,6 @@ data AllScripts = AllScripts
   , poolCS :: PoolCurrencySymbol
   , poolScr :: SerialisedScript
   , poolSH :: PoolScriptHash
-  , proposalScr :: SerialisedScript
   , scooperFeeHolderScr :: SerialisedScript
   , scooperFeeHolderSH :: ScooperFeeHolderScriptHash
   , escrowScr :: SerialisedScript
@@ -201,8 +200,6 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     poolCS = mcs poolMintScr
     poolScr = poolScript factoryBootCS poolCS escrowSH
     poolSH = vsh poolScr
-
-    proposalScr = proposalScript convertedUpgradeSettings
 
     escrowScr = escrowScript poolCS
     escrowSH = vsh escrowScr
