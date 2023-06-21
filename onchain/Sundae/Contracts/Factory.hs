@@ -5,8 +5,6 @@ import PlutusTx.Prelude
 import PlutusLedgerApi.V3
 import PlutusLedgerApi.V1.Value
 
-import qualified PlutusTx.AssocMap as Map
-
 import Sundae.Contracts.Common
 import Sundae.Utilities
 
@@ -41,43 +39,25 @@ import Sundae.Utilities
 --
 {-# inlinable factoryContract #-}
 factoryContract
-  :: UpgradeSettings
-  -> FactoryBootCurrencySymbol
-  -> PoolScriptHash
-  -> PoolCurrencySymbol
+  :: FactoryBootCurrencySymbol
   -> FactoryDatum
   -> FactoryRedeemer
   -> ScriptContext
   -> Bool
 factoryContract
-  UpgradeSettings {..}
   (FactoryBootCurrencySymbol fbcs)
-  (PoolScriptHash poolScriptHash)
-  (PoolCurrencySymbol pcs)
-  datum@FactoryDatum {..}
-  redeemer
+  datum
+  FactoryRedeemer
   ctx =
   debug "factory token not spent back"
     (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
   debug "factory output not equal to input factory"
     (ownInputValue == txOutValue ownOutput) &&
-  debug "valid range too large to be useful"
-    (validRangeSize txInfoValidRange <= maxValidRangeSize) &&
-  case redeemer of
-    IssueScooperLicense pkh ->
-      debug "scooper key is not a signatory"
-        (elem pkh txInfoSignatories) &&
-      debug "signer is not a registered scooper"
-        (elem pkh scooperSet) &&
-      debug "datum altered"
-        (rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
-      debug "minting other things than scooper tokens"
-        (txInfoMint == mempty ||
-          onlyHas txInfoMint fbcs (computeScooperTokenName (intToIdent $ getWeek $ toWeek latest)) (const True))
+  debug "datum altered"
+    (rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
+  debug "minting tokens"
+    (txInfoMint == mempty)
   where
-  !maxValidRangeSize = case redeemer of
-    IssueScooperLicense _ -> fourDaysMillis
-  UpperBound (Finite !latest) _ = ivTo txInfoValidRange
   txInfo@TxInfo{..} = scriptContextTxInfo ctx
   ownOutput = uniqueElement' continuingOutputs
   !continuingOutputs = getContinuingOutputs ctx

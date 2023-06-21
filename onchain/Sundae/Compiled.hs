@@ -174,7 +174,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 
     factoryBootCS = mcs factoryBootMintScr
 
-    factoryScr = factoryScript convertedUpgradeSettings factoryBootCS poolSH poolCS
+    factoryScr = factoryScript factoryBootCS
 
     poolMintScr = poolMintingScript factoryBootCS oldPoolCurrencySymbol
     poolCS = mcs poolMintScr

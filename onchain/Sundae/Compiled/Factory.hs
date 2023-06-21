@@ -11,19 +11,13 @@ import Sundae.Contracts.Factory
 import Sundae.Utilities
 
 factoryScript
-  :: UpgradeSettings
-  -> FactoryBootCurrencySymbol
-  -> PoolScriptHash
-  -> PoolCurrencySymbol
+  :: FactoryBootCurrencySymbol
   -> SerialisedScript
-factoryScript settings fbcs psh pcs =
+factoryScript fbcs =
   let
     x =
       pure $$(PlutusTx.compile [|| factoryContract ||])
-        >>= flip apCode settings
         >>= flip apCode fbcs
-        >>= flip apCode psh
-        >>= flip apCode pcs
   in
     case x of
       Just x' -> serialiseCompiledCode x'

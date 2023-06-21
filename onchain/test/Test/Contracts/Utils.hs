@@ -163,7 +163,7 @@ testScoopFee = 2_500_000
 
 testFactory :: SerialisedScript
 testFactory =
-  Sundae.factoryScript upgradeSettings factoryBootCS poolHash poolCS
+  Sundae.factoryScript factoryBootCS
 
 testPoolMint :: SerialisedScript
 testPoolMint =
@@ -180,9 +180,6 @@ testEscrow =
 factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
-
-upgradeSettings :: UpgradeSettings
-upgradeSettings = UpgradeSettings 0 (AssetClass ("", ""))
 
 factoryBootCS :: FactoryBootCurrencySymbol
 factoryBootCS =
@@ -291,7 +288,7 @@ runStep steps = do
   runPoolMint redeemer ctx =
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
-    factoryContract upgradeSettings factoryBootCS poolHash poolCS
+    factoryContract factoryBootCS
   handleErrors = handle (\(_ :: SomeException) -> pure False) . evaluate
   runCond = \case
     Pass -> id
