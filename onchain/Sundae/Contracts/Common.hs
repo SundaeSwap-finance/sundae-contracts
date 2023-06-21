@@ -29,17 +29,8 @@ data Factory
 -- | Script that holds all live pools
 data Pool
 
--- | Script that holds scooper licenses
-data ScooperFeeHolder
-
 -- | Script that holds all escrows
 data Escrow
-
--- | Script that adjudicates protocol assets
-data Treasury
-
--- | Script that holds an approved proposal before it's been used to upgrade the factory
-data Proposal
 
 instance FromJSON TxOutRef where
   parseJSON = withObject "TxOutRef" $ \o -> do
@@ -164,70 +155,6 @@ instance ToJSON SwapFees where
   toJSON (SwapFees r) =
     toJSON (Prelude.fromRational (toGHC r) :: Prelude.Double)
 
-data UpgradeProposal
-  = UpgradeScripts !ScriptUpgradeProposal
-  | UpgradeScooperSet !ScooperUpgradeProposal
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
-data ScriptUpgradeProposal
-  = ScriptUpgradeProposal
-  { _scriptProposedOldFactory :: !ScriptHash
-  , proposedNewFactory :: !ScriptHash
-  , proposedNewFactoryBoot :: !CurrencySymbol
-  , proposedNewPool :: !ScriptHash
-  , proposedNewPoolMint :: !CurrencySymbol
-  , proposedOldToNewLiquidityRatio :: !Rational
-  , proposedOldTreasury :: !ScriptHash
-  , proposedNewTreasury :: !ScriptHash
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
-data ScooperUpgradeProposal
-  = ScooperUpgradeProposal
-  { _scoopProposedOldFactory :: !ScriptHash
-  , proposedOldScooperIdent :: !Ident
-  , proposedNewScooperSet :: ![PubKeyHash]
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData)--, ToJSON, FromJSON)
-
--- Plutus compiler doesn't like multiple record constructors
-{-# inlinable proposedOldFactory #-}
-proposedOldFactory :: UpgradeProposal -> ScriptHash
-proposedOldFactory (UpgradeScripts p) = _scriptProposedOldFactory p
-proposedOldFactory (UpgradeScooperSet p) = _scoopProposedOldFactory p
-
-instance Eq UpgradeProposal where
-  {-# inlinable (==) #-}
-  UpgradeScripts p == UpgradeScripts p' = p == p'
-  UpgradeScooperSet p == UpgradeScooperSet p' = p == p'
-  _ == _ = False
-
-instance Eq ScriptUpgradeProposal where
-  {-# inlinable (==) #-}
-  ScriptUpgradeProposal oldFactory newFactory newFactoryBoot newPool newPoolMint newLiquidityRatio oldTreasury newTreasury ==
-    ScriptUpgradeProposal oldFactory' newFactory' newFactoryBoot' newPool' newPoolMint' newLiquidityRatio' oldTreasury' newTreasury'
-      = oldFactory == oldFactory' &&
-        newFactory == newFactory' &&
-        newFactoryBoot == newFactoryBoot' &&
-        newPool == newPool' &&
-        newPoolMint == newPoolMint' &&
-        newLiquidityRatio == newLiquidityRatio' &&
-        oldTreasury == oldTreasury' &&
-        newTreasury == newTreasury'
-
-instance Eq ScooperUpgradeProposal where
-  {-# inlinable (==) #-}
-  ScooperUpgradeProposal oldFactory oldScooperIdent newScooperSet ==
-    ScooperUpgradeProposal oldFactory' oldScooperIdent' newScooperSet'
-      = oldFactory == oldFactory' &&
-        oldScooperIdent == oldScooperIdent' &&
-        newScooperSet == newScooperSet'
-
-instance ToJSON ScriptUpgradeProposal where
-instance FromJSON ScriptUpgradeProposal where
 instance ToJSON POSIXTime where
 instance FromJSON POSIXTime where
 instance ToJSON CurrencySymbol where
@@ -235,23 +162,9 @@ instance FromJSON CurrencySymbol where
 instance ToJSON ScriptHash where
 instance FromJSON ScriptHash where
 
-data ProposalState
-  = NoProposal
-  | PendingProposal !POSIXTime !ScriptUpgradeProposal
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  deriving anyclass (NFData, ToJSON, FromJSON)
-
-instance Eq ProposalState where
-  {-# inlinable (==) #-}
-  NoProposal == NoProposal = True
-  PendingProposal start proposal == PendingProposal start' proposal' =
-    start == start' && proposal == proposal'
-  _ == _ = False
-
 -- | Factory keeps track of the identifier for a new pool.
 data FactoryDatum = FactoryDatum
   { nextPoolIdent :: !Ident
-  , proposalState :: !ProposalState
   , scooperIdent :: !Ident
   , scooperSet :: ![PubKeyHash]
   -- permissible staking credentials for pool
@@ -262,20 +175,18 @@ data FactoryDatum = FactoryDatum
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum nextPoolIdent' currentProposal' scooperIdent' scooperSet' poolStakingCredSet' ==
-    FactoryDatum nextPoolIdent'' currentProposal'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
-      nextPoolIdent' == nextPoolIdent'' && currentProposal' == currentProposal'' &&
+  FactoryDatum nextPoolIdent' scooperIdent' scooperSet' poolStakingCredSet' ==
+    FactoryDatum nextPoolIdent'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
+      nextPoolIdent' == nextPoolIdent'' &&
       scooperIdent' == scooperIdent'' && scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
 data FactoryRedeemer
-  = MakeProposal
-  | IssueScooperLicense PubKeyHash
+  = IssueScooperLicense PubKeyHash
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  MakeProposal == MakeProposal = True
   IssueScooperLicense pkh == IssueScooperLicense pkh' = pkh == pkh'
   _ == _ = False
 
@@ -286,27 +197,6 @@ data FactoryBootMintRedeemer
 data PoolMintRedeemer
   = MintLP BuiltinByteString -- Mint LP for the given pool ident
   | CreatePool AssetClass AssetClass
-
-newtype ProposalRedeemer = UpgradePool BuiltinByteString
-  deriving stock Generic
-  --deriving newtype (ToJSON, FromJSON)
-
-data TreasuryDatum = TreasuryDatum
-  { issuedSundae :: Integer
-  , treasuryProposalState :: ProposalState
-  }
-  deriving stock (Prelude.Show, Prelude.Eq, Prelude.Ord, Generic)
-  --deriving anyclass (NFData, ToJSON, FromJSON)
-
-instance Eq TreasuryDatum where
-  {-# inlinable (==) #-}
-  TreasuryDatum issued propState == TreasuryDatum issued' propState' =
-    issued == issued' && propState == propState'
-
-data TreasuryRedeemer
-  = MakeTreasuryProposal
-  | UpgradeTreasury
-  | SpendIntoTreasury
 
 data ScooperFeeSettings
   = ScooperFeeSettings
@@ -409,8 +299,6 @@ newtype OldFactoryBootCurrencySymbol = OldFactoryBootCurrencySymbol CurrencySymb
   deriving newtype (FromJSON, ToJSON)
 newtype TreasuryBootCurrencySymbol = TreasuryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
-newtype SundaeCurrencySymbol = SundaeCurrencySymbol CurrencySymbol
-  deriving stock Prelude.Show
 newtype OldPoolCurrencySymbol = OldPoolCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
 newtype PoolCurrencySymbol = PoolCurrencySymbol CurrencySymbol
@@ -425,10 +313,6 @@ newtype EscrowScriptHash = EscrowScriptHash ScriptHash
 
 factoryToken :: TokenName
 factoryToken = TokenName "factory"
-treasuryToken :: TokenName
-treasuryToken = TokenName "treasury"
-sundaeToken :: TokenName
-sundaeToken = TokenName "SUNDAE"
 
 -- Asset name can be 28 bytes; 19 bytes reserved for the week number;
 -- That gives us ~5.3e45 weeks to work with.  We should be good :)
@@ -451,15 +335,8 @@ PlutusTx.makeLift ''TreasuryBootSettings
 PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
-PlutusTx.makeIsDataIndexed ''ScriptUpgradeProposal [('ScriptUpgradeProposal, 0)]
-PlutusTx.makeIsDataIndexed ''ProposalState [('NoProposal, 0), ('PendingProposal, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''ScooperUpgradeProposal [('ScooperUpgradeProposal, 0)]
-PlutusTx.makeIsDataIndexed ''UpgradeProposal [('UpgradeScripts, 0), ('UpgradeScooperSet, 1)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('MakeProposal, 1), ('UpgradeScooperSet, 2), ('IssueScooperLicense, 3)]
-PlutusTx.makeIsDataIndexed ''ProposalRedeemer [('UpgradePool, 0)]
-PlutusTx.makeIsDataIndexed ''TreasuryDatum [('TreasuryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''TreasuryRedeemer [('MakeTreasuryProposal, 0), ('UpgradeTreasury, 1), ('SpendIntoTreasury, 2)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('IssueScooperLicense, 1)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
@@ -472,7 +349,6 @@ PlutusTx.makeIsDataIndexed ''EscrowDatum [('EscrowDatum, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 1)]
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
-PlutusTx.makeLift ''SundaeCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash
 PlutusTx.makeLift ''PoolScriptHash
 PlutusTx.makeLift ''TreasuryScriptHash
@@ -489,21 +365,9 @@ PlutusTx.makeLift ''EscrowScriptHash
 --  type instance DatumType Escrow = EscrowDatum
 --  type instance RedeemerType Escrow = EscrowRedeemer
 --
---instance Scripts.ValidatorTypes ScooperFeeHolder where
---  type instance DatumType ScooperFeeHolder = ScooperFeeDatum
---  type instance RedeemerType ScooperFeeHolder = ScooperFeeRedeemer
---
 --instance Scripts.ValidatorTypes Pool where
 --  type instance DatumType Pool = PoolDatum
 --  type instance RedeemerType Pool = PoolRedeemer
---
---instance Scripts.ValidatorTypes Treasury where
---  type instance DatumType Treasury = TreasuryDatum
---  type instance RedeemerType Treasury = TreasuryRedeemer
---
---instance Scripts.ValidatorTypes Proposal where
---  type instance DatumType Proposal = UpgradeProposal
---  type instance RedeemerType Proposal = ()
 --
 
 -- Here, instead of utilities, to avoid dependency cycle
@@ -528,11 +392,6 @@ mergeListByKey cs = go cs []
     | r == r' = valueInList r tl (Just (v', c')) acc
     | otherwise = valueInList r tl res (x : acc)
   valueInList r (x : tl) res@(Just _) acc = valueInList r tl res (x : acc)
-
--- The maximum indivisible supply of Sundae; 2B total tokens, each of which can be split into 1m sprinkles
-{-# inlinable sundaeMaxSupply #-}
-sundaeMaxSupply :: Integer
-sundaeMaxSupply = 2_000_000_000 * 1_000_000
 
 -- Every UTXO in cardano must come with a minimum amount of ADA to prevent dust attacks;
 -- We've been calling this the "rider".

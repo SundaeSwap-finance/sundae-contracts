@@ -42,8 +42,6 @@ data Step
   | ToScript Address Value Data
   | ReferenceInput Address Value Data
   | PoolMint Value Cond BuiltinByteString
-  | TreasuryBootMint Value Cond
-  | SundaeMint Value Cond
   | FactoryBootMint Value Cond FactoryBootMintRedeemer
   | CustomInterval (Interval POSIXTime)
   | CustomSignatories [PubKeyHash]
@@ -183,25 +181,6 @@ factoryBootMint :: SerialisedScript
 factoryBootMint =
   Sundae.factoryBootMintingScript testFactoryBootSettings
 
-testScooperLicense :: SerialisedScript
-testScooperLicense =
-  Sundae.scooperFeeScript scooperFeeSettings factoryBootCS
-
-treasuryBootMint :: SerialisedScript
-treasuryBootMint =
-  Sundae.treasuryBootMintingScript testTreasuryBootSettings
-
-sundaeMint :: SerialisedScript
-sundaeMint =
-  Sundae.sundaeMintingScript treasuryBootCS
-
-testTreasury :: SerialisedScript
-testTreasury =
-  Sundae.treasuryScript upgradeSettings treasuryBootCS sundaeCS poolCS
-
-scooperFeeSettings :: ScooperFeeSettings
-scooperFeeSettings = ScooperFeeSettings 0
-
 upgradeSettings :: UpgradeSettings
 upgradeSettings = UpgradeSettings 0 (AssetClass ("", ""))
 
@@ -215,14 +194,6 @@ poolCS =
 
 poolSH :: PoolScriptHash
 poolSH = vsh testPool
-
-treasuryBootCS :: TreasuryBootCurrencySymbol
-treasuryBootCS =
-  TreasuryBootCurrencySymbol $ currencySymbolOf treasuryBootMint
-
-sundaeCS :: SundaeCurrencySymbol
-sundaeCS =
-  SundaeCurrencySymbol $ currencySymbolOf sundaeMint
 
 toCoin :: ByteString -> AssetClass
 toCoin str = AssetClass (currencySymbol str, tokenName str)
@@ -243,14 +214,11 @@ scooperTokenAC :: Ident -> AssetClass
 scooperTokenAC week =
   AssetClass (coerce factoryBootCS, computeScooperTokenName week)
 
-treasuryHash :: TreasuryScriptHash
-treasuryHash = vsh testTreasury
-
 poolHash :: PoolScriptHash
 poolHash = vsh testPool
 
 escrowHash :: EscrowScriptHash
-escrowHash = vsh testScooperLicense
+escrowHash = vsh testEscrow
 
 poolAddress :: Address
 poolAddress = scriptHashToAddress $ vsh testPool
@@ -260,9 +228,6 @@ escrowAddress = scriptHashToAddress $ vsh testEscrow
 
 factoryAddress :: Address
 factoryAddress = scriptHashToAddress $ vsh testFactory
-
-scooperAddress :: Address
-scooperAddress = scriptHashToAddress $ vsh testScooperLicense
 
 scriptHashToAddress :: BuiltinByteString -> Address
 scriptHashToAddress bs = Address (ScriptCredential (ScriptHash bs)) Nothing
@@ -323,10 +288,6 @@ runStep steps = do
     escrowContract poolCS datum redeemer ctx
   runFactoryBootMint redeemer ctx =
     factoryBootMintingContract testFactoryBootSettings redeemer ctx
-  runTreasuryBootMint ctx =
-    treasuryBootMintingContract testTreasuryBootSettings () ctx
-  runSundaeMint ctx =
-    sundaeMintingContract treasuryBootCS () ctx
   runPoolMint redeemer ctx =
     poolMintingContract factoryBootCS (OldPoolCurrencySymbol $ CurrencySymbol "") poolCS poolSH redeemer ctx
   runFactory =
@@ -352,16 +313,6 @@ runStep steps = do
       wentThrough <- handleErrors $ runFactoryBootMint redeemer (ScriptContext info (Minting $ coerce factoryBootCS))
       let passes = runCond cond wentThrough
       passes @? "factory boot mint failure"
-  exec info (_, TreasuryBootMint _ cond) = do
-    pure $ do
-      wentThrough <- handleErrors $ runTreasuryBootMint (ScriptContext info (Minting $ coerce treasuryBootCS))
-      let passes = runCond cond wentThrough
-      passes @? "treasury boot mint failure"
-  exec info (_, SundaeMint _ cond) = do
-    pure $ do
-      wentThrough <- handleErrors $ runSundaeMint (ScriptContext info (Minting $ coerce sundaeCS))
-      let passes = runCond cond wentThrough
-      passes @? "treasury mint failure"
   exec _ _ = Nothing
   mkDatumHash :: ToData a => a -> DatumHash
   mkDatumHash x = DatumHash (toBuiltin (Hash.blake2b_256 (LBS.toStrict (serialise (toData x)))))
@@ -402,10 +353,6 @@ runStep steps = do
       PoolMint v _ _->
         info & tiMint %~ (<> v)
       FactoryBootMint v _ _ ->
-        info & tiMint %~ (<> v)
-      TreasuryBootMint v _ ->
-        info & tiMint %~ (<> v)
-      SundaeMint v _ ->
         info & tiMint %~ (<> v)
       CustomInterval v ->
         info & tiValidRange .~ v
