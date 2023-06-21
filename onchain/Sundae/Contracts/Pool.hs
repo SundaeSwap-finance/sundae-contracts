@@ -75,8 +75,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   in
     debug "must have escrows"
       (not $ null escrows) &&
-    debug "valid range too large"
-      (validRangeSize (txInfoValidRange txInfo) <= hourMillis) &&
     debug "issued amount or locked rewards in new datum incorrect"
       (datumOf txInfo poolOutput ==
         Just (datum

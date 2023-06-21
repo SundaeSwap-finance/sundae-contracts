@@ -162,7 +162,6 @@ testByCoin title coins@(AB coin1 coin2) =
     , changingCoins
     , changingIdent
     , changingSwapFees
-    , unboundedValidRangeUpwards
     , unboundedValidRangeDownwards
     , unboundedValidRangeBothWays
     , mintingPoolToken
@@ -547,13 +546,6 @@ testByCoin title coins@(AB coin1 coin2) =
     testValidScoop
     mkScoopTest validScoopParams
       { editNewPoolDatum = pool'swapFees .~ SwapFees (Plutus.unsafeRatio 1 2)
-      , poolCond = Fail
-      }
-
-  unboundedValidRangeUpwards = testCase "Should fail with an upward-unbounded valid range" $ do
-    testValidScoop
-    mkScoopTest validScoopParams
-      { editValidRange = \i -> Interval (ivFrom i) (UpperBound PosInf True)
       , poolCond = Fail
       }
 
