@@ -95,7 +95,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ scoopers _ -> elem scooperPkh scoopers) &&
+        FactoryDatum scoopers _ -> elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
@@ -103,7 +103,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       ) &&
     debug "staking key must be allowed"
       (case factoryReferenceDatum of
-        FactoryDatum _ _ _ stakerKeySet ->
+        FactoryDatum _ stakerKeySet ->
           case poolOutput of
             TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
             TxOut{txOutAddress=Address _ Nothing} -> True

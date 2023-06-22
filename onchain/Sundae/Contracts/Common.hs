@@ -162,11 +162,8 @@ instance FromJSON CurrencySymbol where
 instance ToJSON ScriptHash where
 instance FromJSON ScriptHash where
 
--- | Factory keeps track of the identifier for a new pool.
 data FactoryDatum = FactoryDatum
-  { nextPoolIdent :: !Ident
-  , scooperIdent :: !Ident
-  , scooperSet :: ![PubKeyHash]
+  { scooperSet :: ![PubKeyHash]
   -- permissible staking credentials for pool
   , poolStakingCredSet :: ![StakingCredential]
   }
@@ -175,20 +172,18 @@ data FactoryDatum = FactoryDatum
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum nextPoolIdent' scooperIdent' scooperSet' poolStakingCredSet' ==
-    FactoryDatum nextPoolIdent'' scooperIdent'' scooperSet'' poolStakingCredSet'' =
-      nextPoolIdent' == nextPoolIdent'' &&
-      scooperIdent' == scooperIdent'' && scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
+  FactoryDatum scooperSet' poolStakingCredSet' ==
+    FactoryDatum scooperSet'' poolStakingCredSet'' =
+      scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
 data FactoryRedeemer
-  = IssueScooperLicense PubKeyHash
+  = FactoryRedeemer
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  IssueScooperLicense pkh == IssueScooperLicense pkh' = pkh == pkh'
-  _ == _ = False
+  _ == _ = True
 
 data FactoryBootMintRedeemer
   = MakeFactory
@@ -336,7 +331,7 @@ PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('CreatePool, 0), ('IssueScooperLicense, 1)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('FactoryRedeemer, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
@@ -461,14 +456,6 @@ legalSwapFees = SwapFees <$> [1 % 2000, 3 % 1000, 1 % 100]
 hourMillis :: Integer
 hourMillis = 3_600_000
 
--- We bound scooper license issuance transactions by four days so that licenses
--- can be issued early enough before the week changes to avoid service
--- interruptions.
--- 1000 * 60 * 60 * 24 * 4 = 345_600_000
-{-# inlinable fourDaysMillis #-}
-fourDaysMillis :: Integer
-fourDaysMillis = 345_600_000
-
 -- In order to allow governance to revoke access to a list of scoopers, we expire the tokens on regular intervals
 {-# inlinable scooperLicenseExpiryDelayWeeks #-}
 scooperLicenseExpiryDelayWeeks :: Integer
@@ -485,12 +472,6 @@ computeInitialLiquidityTokens amtA amtB =
     Exactly n -> n
     Approximately n -> n
     Imaginary -> error ()
-
-{-# inlinable validRangeSize #-}
-validRangeSize :: Interval POSIXTime -> Integer
-validRangeSize (Interval (LowerBound (Finite down) _) (UpperBound (Finite up) _)) =
-  case up - down of POSIXTime t -> t
-validRangeSize _ = error ()
 
 {-# inlinable toPoolNft #-}
 toPoolNft :: CurrencySymbol -> BuiltinByteString -> AssetClass
