@@ -60,10 +60,12 @@ executable compiler
     , base
     , base16-bytestring
     , bytestring
+    , containers
     , directory
     , filepath
     , onchain
     , optparse-applicative
     , plutus-ledger-api
+    , text
   ghc-options:
     -rtsopts
