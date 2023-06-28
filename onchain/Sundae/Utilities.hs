@@ -446,7 +446,7 @@ apCode
   => PlutusTx.CompiledCode (a -> b)
   -> a
   -> Maybe (PlutusTx.CompiledCode b)
-apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCodeDef arg
+apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCode (Core.Version 1 0 0) arg
 
 {-# inlinable onlyHas #-}
 onlyHas :: Value -> CurrencySymbol -> TokenName -> (Integer -> Bool) -> Bool
