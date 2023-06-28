@@ -5,7 +5,7 @@ import PlutusTx.Prelude
 import PlutusTx.Sqrt
 import PlutusTx.Numeric
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V2.Contexts (findOwnInput)
 

@@ -20,7 +20,7 @@ import System.FilePath
 import Sundae.Contracts.Common
 import Sundae.Compiled
 
-import PlutusLedgerApi.V3 qualified as Plutus
+import PlutusLedgerApi.V2 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), assetClass)
 
 data Format = Raw | Hex | Json

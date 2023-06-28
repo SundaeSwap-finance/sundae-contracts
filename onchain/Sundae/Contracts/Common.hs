@@ -11,7 +11,7 @@ import Data.ByteString.Base16 qualified as Base16
 import Data.Text.Encoding qualified as Text
 
 import PlutusLedgerApi.V1.Value
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 
 import qualified PlutusTx
 import qualified PlutusTx.AssocMap as Map
@@ -342,6 +342,7 @@ PlutusTx.makeIsDataIndexed ''EscrowDestination [('EscrowDestination, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowAddress [('EscrowAddress, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowDatum [('EscrowDatum, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 1)]
+PlutusTx.makeIsDataIndexed ''PoolMintRedeemer [('MintLP, 0), ('CreatePool, 1)]
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash

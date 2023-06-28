@@ -3,7 +3,7 @@ module Sundae.Contracts.Mints where
 import PlutusTx.Prelude
 import PlutusTx.Builtins
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 
 import qualified PlutusTx.AssocMap as Map
 

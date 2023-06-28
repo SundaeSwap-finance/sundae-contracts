@@ -3,13 +3,13 @@
 -- | Wrappers for compiled scripts
 module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts, testEvalEscrowScr, hashScript) where
 
-import PlutusLedgerApi.V3 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
+import PlutusLedgerApi.V2 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
 import PlutusLedgerApi.Common (mkDynEvaluationContext, evaluateScriptCounting, PlutusLedgerLanguage(..))
 import PlutusCore.Evaluation.Machine.ExBudgetingDefaults
 import PlutusLedgerApi.Common (ProtocolVersion(..), VerboseMode(..))
 import Data.Default (def)
 import Data.Either (fromRight)
-import PlutusLedgerApi.V3 qualified as Plutus
+import PlutusLedgerApi.V2 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), CurrencySymbol(..))
 import PlutusLedgerApi.V1.Value qualified as Plutus
 import Data.Text
@@ -195,10 +195,10 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 hashScript :: SerialisedScript -> BS.ByteString
 hashScript script =
   let
-    -- Our scripts are plutus V3
-    babbageV3ScriptPrefixTag = "\x03"
+    -- Our scripts are plutus V2
+    babbageV2ScriptPrefixTag = "\x02"
   in
-    Hash.blake2b_256 (babbageV3ScriptPrefixTag <> SBS.fromShort script)
+    Hash.blake2b_256 (babbageV2ScriptPrefixTag <> SBS.fromShort script)
 
 testEvalEscrowScr :: IO (Plutus.LogOutput, Either Plutus.EvaluationError Plutus.ExBudget)
 testEvalEscrowScr = do
@@ -309,7 +309,7 @@ testEvalEscrowScr = do
         }
   let out@(logOutput, result) =
         evaluateScriptCounting
-          PlutusV3
+          PlutusV2
           (ProtocolVersion 9 0)
           Verbose
           ec

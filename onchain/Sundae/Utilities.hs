@@ -26,7 +26,7 @@ import Data.Text.Encoding qualified as Encoding
 
 import qualified System.Random as Random
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V2.Contexts
 
 {-# inlinable scriptHashAddress #-}

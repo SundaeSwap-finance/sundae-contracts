@@ -2,7 +2,7 @@ module Sundae.Contracts.Factory where
 
 import PlutusTx.Prelude
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V1.Value
 
 import Sundae.Contracts.Common
