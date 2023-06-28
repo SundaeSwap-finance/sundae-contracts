@@ -22,13 +22,11 @@ factoryBootMintingScript fbs =
       Nothing -> Prelude.error "Couldn't compile factory boot minting script"
 
 -- | Pool minting script
-poolMintingScript :: FactoryBootCurrencySymbol -> OldPoolCurrencySymbol -> SerialisedScript
-poolMintingScript fbcs opcs =
+poolMintingScript :: SerialisedScript
+poolMintingScript =
   let
     x =
       pure $$(PlutusTx.compile [|| poolMintingContract ||])
-        >>= flip apCode fbcs
-        >>= flip apCode opcs
   in
     case x of
       Just x' -> serialiseCompiledCode x'

@@ -71,11 +71,6 @@ const factoryAddress = dummy.utils.validatorToAddress({
   script: scriptsHex["factory-validator"]
 });
 
-const poolMintingPolicyId = dummy.utils.mintingPolicyToId({
-  type: "PlutusV2",
-  script: scriptsHex["pool-mint"]
-});
-
 const userPrivateKey = generatePrivateKey();
 const userAddress = await dummy.selectWalletFromPrivateKey(userPrivateKey).wallet.address();
 const scooperPrivateKey = generatePrivateKey();
@@ -135,10 +130,14 @@ const createFactoryHash = await createFactory();
 const ok = await emulator.awaitTx(createFactoryHash);
 console.log(ok);
 
+/*
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
   type: "all",
   scripts: [],
 });
+*/
+// Using a plutus script doesn't seem to work
+const dummyMintingPolicy = { type: "PlutusV2", script: scriptsHex["pool-mint"] };
 
 const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
 
@@ -255,9 +254,27 @@ const initialPoolDatumHex = new TextDecoder().decode(encode(initialPoolDatum));
 
 console.log("initialPoolDatum (hex): ", initialPoolDatumHex);
 
+const poolMint = { type: "PlutusV2", script: scriptsHex["pool-mint"] };
+const poolMintingPolicyId = lucid.utils.mintingPolicyToId(poolMint);
+
 console.log("poolMintingPolicyId: ", poolMintingPolicyId);
 console.log("scriptsHex: ", scriptsHex);
 
+async function dummyMintPoolNft(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .mintAssets({
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n,
+    })
+    .validTo(emulator.now() + 30000)
+    .attachMintingPolicy(dummyMintingPolicy)
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+await dummyMintPoolNft();
+
+/*
 async function createPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .payToContract(
@@ -268,7 +285,7 @@ async function createPool(): Promise<TxHash> {
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
         [toUnit(poolMintingPolicyId, newPoolNftTokenName)]: 1n
       })
-    .attachMintingPolicy({ type: "PlutusV2", script: scriptsHex["pool-mint"] })
+    .attachMintingPolicy(poolMint)
     .mintAssets({ [toUnit(poolMintingPolicyId, newPoolNftTokenName)]: 1n })
     .validTo(emulator.now() + 30000)
     .complete();
@@ -277,3 +294,4 @@ async function createPool(): Promise<TxHash> {
 }
 
 await createPool();
+*/
