@@ -1,4 +1,5 @@
 import {
+  Blockfrost,
   Emulator,
   fromText,
   generatePrivateKey,
@@ -64,6 +65,9 @@ async function mintDummyTokens(): Promise<TxHash> {
     }, poolMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(dummyMintingPolicy)
+    .payToAddress(userAddress, {
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n
+    })
     .complete();
   const signedTx = await tx.sign().complete();
   return signedTx.submit();
