@@ -10,6 +10,11 @@ import {
   Utils
 } from "https://deno.land/x/lucid@0.10.6/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
+import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
+
+const flags = parse(Deno.args, {
+  string: ["scriptsFile"]
+});
 
 const dummy = await Lucid.new(undefined, "Custom");
 
@@ -41,9 +46,9 @@ const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
 });
 */
 
-const poolMint = "4701000022120011";
-
-//"584d01010033222222800245209b4e9e9af27b5dfa4d383be20535b94b16f4c0aa00ddc4b1ea4391396518bb500048811c000000000000000000000000000000000000000000000000000000000001";
+const s = await Deno.readTextFile(flags.scriptsFile);
+const scriptsJson = JSON.parse(s);
+const poolMint = scriptsJson["pool-mint"];
 
 // Using a plutus script doesn't seem to work
 const dummyMintingPolicy = { type: "PlutusV2", script: poolMint };

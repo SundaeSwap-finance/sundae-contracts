@@ -163,7 +163,9 @@ instance ToJSON ScriptHash where
 instance FromJSON ScriptHash where
 
 data FactoryDatum = FactoryDatum
-  { scooperSet :: ![PubKeyHash]
+  { poolScriptHash :: ScriptHash
+  , poolCurrencySymbol :: CurrencySymbol
+  , scooperSet :: ![PubKeyHash]
   -- permissible staking credentials for pool
   , poolStakingCredSet :: ![StakingCredential]
   }
@@ -172,9 +174,12 @@ data FactoryDatum = FactoryDatum
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum scooperSet' poolStakingCredSet' ==
-    FactoryDatum scooperSet'' poolStakingCredSet'' =
-      scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
+  FactoryDatum poolSH' poolCS' scooperSet' poolStakingCredSet' ==
+    FactoryDatum poolSH'' poolCS'' scooperSet'' poolStakingCredSet'' =
+      poolSH' == poolSH'' &&
+      poolCS' == poolCS'' &&
+      scooperSet' == scooperSet'' &&
+      poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
 data FactoryRedeemer
@@ -480,3 +485,8 @@ toPoolNft cs poolIdent = assetClass cs (computePoolTokenName poolIdent)
 
 makeLenses ''PoolDatum
 makeLenses ''EscrowDatum
+
+isFactory :: CurrencySymbol -> TxOut -> Bool
+isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
+  where
+  factoryNft = assetClass fbcs factoryToken

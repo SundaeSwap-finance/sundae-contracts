@@ -59,13 +59,12 @@ data OrderedEscrow = OrderedEscrow
 {-# inlinable poolContract #-}
 poolContract
   :: FactoryBootCurrencySymbol
-  -> PoolCurrencySymbol
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
+poolContract (FactoryBootCurrencySymbol fbcs) _
   datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
@@ -86,16 +85,16 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     debug "issued amount does not match minted amount"
       ( if newCirculatingLP == oldCirculatingLP
         then null (flattenValue' (txInfoMint txInfo))
-        else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
+        else onlyHas (txInfoMint txInfo) poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputFunds) &&
+      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputFunds coinA == newAmtA &&
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
-        FactoryDatum scoopers _ -> elem scooperPkh scoopers) &&
+        FactoryDatum _ _ scoopers _ -> elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
@@ -103,7 +102,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       ) &&
     debug "staking key must be allowed"
       (case factoryReferenceDatum of
-        FactoryDatum _ stakerKeySet ->
+        FactoryDatum _ _ _ stakerKeySet ->
           case poolOutput of
             TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
             TxOut{txOutAddress=Address _ Nothing} -> True
@@ -124,6 +123,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     case datumOf txInfo (txInInfoResolved factoryReference) of
       Just fac -> fac
       Nothing -> traceError "factory reference must have a factory datum"
+  !(FactoryDatum _poolSH !poolCS _ _) = factoryReferenceDatum
   scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
   scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
   scooperNFTExists sym tn ((TxInInfo _ ot) : tl)
@@ -155,7 +155,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     | otherwise = atLeastOneSpending addr dh val count tl
   !txInfo = scriptContextTxInfo ctx
   liquidityAssetClass =
-    AssetClass (pcs, computeLiquidityTokenName poolIdent)
+    AssetClass (poolCS, computeLiquidityTokenName poolIdent)
   !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
   !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
   !escrows =
@@ -215,11 +215,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
       valueOfAC v liquidityAssetClass >= amt && amt >= 1
     EscrowSwap (giveCoin, amt) _ ->
       valueOfAC v giveCoin >= amt && amt >= 1
-
-isFactory :: CurrencySymbol -> TxOut -> Bool
-isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
-  where
-  factoryNft = assetClass fbcs factoryToken
 
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool

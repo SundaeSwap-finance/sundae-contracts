@@ -10,6 +10,10 @@ import qualified PlutusTx.AssocMap as Map
 import Sundae.Contracts.Common
 import Sundae.Utilities
 
+import PlutusLedgerApi.V2
+import PlutusLedgerApi.V1.Value
+import PlutusLedgerApi.V2.Contexts (findOwnInput)
+
 ownCurrencySymbol :: ScriptContext -> CurrencySymbol
 ownCurrencySymbol (ScriptContext _ purpose) =
   case purpose of
@@ -66,17 +70,11 @@ factoryBootMintingContract fbs redeemer ctx = case redeemer of
 {-# inlinable poolMintingContract #-}
 poolMintingContract
   :: FactoryBootCurrencySymbol
-  -> OldPoolCurrencySymbol
-  -> PoolCurrencySymbol
-  -> PoolScriptHash
   -> PoolMintRedeemer
   -> ScriptContext
   -> ()
 poolMintingContract
   (FactoryBootCurrencySymbol fbcs)
-  (OldPoolCurrencySymbol oldPcs)
-  (PoolCurrencySymbol pcs)
-  (PoolScriptHash poolScriptHash)
   redeemer
   (ScriptContext txInfo purpose) = check $
     case redeemer of
@@ -85,8 +83,6 @@ poolMintingContract
           poolTokenName = computePoolTokenName poolIdent
           allowsToSpend !v =
             if valueContains v ocs poolTokenName then
-              True
-            else if valueContains v oldPcs poolTokenName then
               True
             else
               valueContains v fbcs factoryToken
@@ -115,8 +111,8 @@ poolMintingContract
           !poolOutput = uniqueElement' $
             filter (\case
               TxOut{txOutAddress, txOutValue}
-                | valueContains txOutValue pcs (computePoolTokenName newPoolIdent)
-                , txOutAddress == scriptHashAddress poolScriptHash -> True
+                | valueContains txOutValue ocs (computePoolTokenName newPoolIdent)
+                , txOutAddress == scriptHashAddress poolSH -> True
               _ -> False
               ) (txInfoOutputs txInfo)
           !poolOutputValue = txOutValue poolOutput
@@ -130,7 +126,7 @@ poolMintingContract
           (coinA < coinB) &&
         debug "minted something other than: a single pool token + correct amount of initial liquidity" (
           txInfoMint txInfo == Value (
-            Map.singleton pcs $ Map.fromList
+            Map.singleton ocs $ Map.fromList
               [ (computePoolTokenName newPoolIdent, 1)
               , (computeLiquidityTokenName newPoolIdent, initialLiquidityTokens)
               ]
@@ -138,7 +134,7 @@ poolMintingContract
         debug "liquidity and/or pool NFT not spent to pool"
           ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
             valueOfAC poolOutputValueSansRider coinB >= 1 &&
-            hasLimitedNft 3 (toPoolNft pcs newPoolIdent) poolOutputValueSansRider ) &&
+            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) &&
         debug "pool datum not properly initialized"
           (case datumOf txInfo poolOutput of
             Just PoolDatum{..} ->
@@ -151,3 +147,13 @@ poolMintingContract
   where
   Minting ocs = purpose
   ins = txInfoInputs txInfo
+  !factoryReference = uniqueElement'
+    [ o
+    | o <- txInfoReferenceInputs txInfo
+    , isFactory fbcs (txInInfoResolved o)
+    ]
+  !factoryReferenceDatum =
+    case datumOf txInfo (txInInfoResolved factoryReference) of
+      Just fac -> fac
+      Nothing -> traceError "factory reference must have a factory datum"
+  !(FactoryDatum !poolSH _poolCS _ _) = factoryReferenceDatum
