@@ -28,7 +28,7 @@ poolMintingScript
 poolMintingScript fbcs =
   let
     x =
-      pure $$(PlutusTx.compile [|| \fbcs' -> poolMintingContract fbcs' ||])
+      pure $$(PlutusTx.compile [|| \fbcs' red ctx -> poolMintingContract fbcs' red ctx ||])
         >>= flip apCode fbcs
   in
     case x of

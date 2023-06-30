@@ -486,6 +486,7 @@ toPoolNft cs poolIdent = assetClass cs (computePoolTokenName poolIdent)
 makeLenses ''PoolDatum
 makeLenses ''EscrowDatum
 
+{-# inlinable isFactory #-}
 isFactory :: CurrencySymbol -> TxOut -> Bool
 isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
   where

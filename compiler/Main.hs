@@ -32,6 +32,7 @@ data CompilationSettingsSource = StdIn | InFile FilePath
 data Script
     = FactoryMint
     | FactoryValidator
+    | FactoryBootCS
     | PoolMint
     | PoolValidator
     | EscrowValidator
@@ -78,6 +79,7 @@ getConfig = O.execParser $ O.info parser $ mconcat
         pTarget :: O.Parser CompilationTarget
         pTarget
             =     (O.flag' (Script FactoryValidator) (O.long "factory" <> O.help "compile the factory script"))
+            O.<|> (O.flag' (Script FactoryBootCS) (O.long "factory-boot-cs" <> O.help "compile the factory boot currency symbol"))
             O.<|> (O.flag' (Script FactoryMint) (O.long "factory-mint" <> O.help "compile the factory mint script"))
             O.<|> (O.flag' (Script PoolValidator) (O.long "pool" <> O.help "compile the pool script"))
             O.<|> (O.flag' (Script PoolMint) (O.long "pool-mint" <> O.help "compile the pool mint script"))
@@ -184,6 +186,7 @@ main = do
                 infoForTarget = \case
                   FactoryMint -> ("factory-mint", doStrip strip $ Short.fromShort factoryMintScript)
                   FactoryValidator -> ("factory-validator", doStrip strip $ Short.fromShort factoryValidatorScript)
+                  FactoryBootCS -> ("factory-boot-cs", Plutus.fromBuiltin @Plutus.BuiltinByteString $ coerce factoryCurrencySymbol)
                   PoolMint -> ("pool-mint", doStrip strip $ Short.fromShort poolMintScript)
                   PoolValidator -> ("pool-validator", doStrip strip $ Short.fromShort poolValidatorScript)
                   EscrowValidator -> ("escrow-validator", doStrip strip $ Short.fromShort escrowValidatorScript)
