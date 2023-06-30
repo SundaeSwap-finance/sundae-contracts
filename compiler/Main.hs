@@ -140,7 +140,7 @@ main = do
                 factoryValidatorScript = factoryScript factoryCurrencySymbol
 
                 -- Pool related scripts
-                poolMintScript = poolMintingScript factoryCurrencySymbol
+                poolMintScript = poolMintingScript
                 poolCurrencySymbol = makeCurrencySymbol poolMintScript :: PoolCurrencySymbol
                 poolValidatorScript = poolScript factoryCurrencySymbol escrowScriptHash
 

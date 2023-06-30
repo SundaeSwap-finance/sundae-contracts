@@ -176,7 +176,7 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 
     factoryScr = factoryScript factoryBootCS
 
-    poolMintScr = poolMintingScript factoryBootCS
+    poolMintScr = poolMintingScript
     poolCS = mcs poolMintScr
     poolScr = poolScript factoryBootCS escrowSH
     poolSH = vsh poolScr

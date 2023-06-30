@@ -23,13 +23,11 @@ factoryBootMintingScript fbs =
 
 -- | Pool minting script
 poolMintingScript
-  :: FactoryBootCurrencySymbol
-  -> SerialisedScript
-poolMintingScript fbcs =
+  :: SerialisedScript
+poolMintingScript =
   let
     x =
-      pure $$(PlutusTx.compile [|| \fbcs' -> poolMintingContract fbcs' ||])
-        >>= flip apCode fbcs
+      pure $$(PlutusTx.compile [|| poolMintingContract ||])
   in
     case x of
       Just x' -> serialiseCompiledCode x'
