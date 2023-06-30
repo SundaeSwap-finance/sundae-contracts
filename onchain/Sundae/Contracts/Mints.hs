@@ -8,7 +8,7 @@ import qualified PlutusTx.AssocMap as Map
 import Sundae.Contracts.Common
 import Sundae.Utilities
 
-import PlutusLedgerApi.V2
+import PlutusLedgerApi.V1
 
 ownCurrencySymbol :: ScriptContext -> CurrencySymbol
 ownCurrencySymbol (ScriptContext _ purpose) =
@@ -72,17 +72,6 @@ poolMintingContract
 poolMintingContract
   (FactoryBootCurrencySymbol fbcs)
   redeemer
-  (ScriptContext txInfo purpose) = check $ True
+  (ScriptContext txInfo purpose) = check $ length x == 1
   where
-  {-
-  factoryReference = uniqueElement'
-    [ o
-    | o <- txInfoReferenceInputs txInfo
-    , isFactory fbcs (txInInfoResolved o)
-    ]
-  factoryReferenceDatum =
-    case datumOf txInfo (txInInfoResolved factoryReference) of
-      Just fac -> fac
-      Nothing -> traceError "factory reference must have a factory datum"
-  (FactoryDatum _poolSH poolCS _ _) = factoryReferenceDatum
-  -}
+  x = txInfoInputs txInfo
