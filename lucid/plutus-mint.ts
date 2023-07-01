@@ -52,7 +52,7 @@ const scriptsJson = JSON.parse(s);
 const poolMint = scriptsJson["pool-mint"];
 
 // Using a plutus script doesn't seem to work
-const dummyMintingPolicy = { type: "PlutusV1", script: poolMint };
+const dummyMintingPolicy = { type: "PlutusV2", script: poolMint };
 
 const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
 
