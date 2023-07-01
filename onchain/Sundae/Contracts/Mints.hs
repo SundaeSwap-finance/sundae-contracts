@@ -65,11 +65,17 @@ factoryBootMintingContract fbs redeemer ctx = case redeemer of
 --    in the scripts that hold those to check that we don't mint anything unexpected.
 {-# inlinable poolMintingContract #-}
 poolMintingContract
-  :: BuiltinData
-  -> BuiltinData
+  :: FactoryBootCurrencySymbol
+  -> BuiltinData -- PoolMintRedeemer
+  -> BuiltinData -- ScriptContext
   -> ()
 poolMintingContract
+  (FactoryBootCurrencySymbol fbcs)
   redeemer
-  (unsafeFromBuiltinData -> ScriptContext txInfo purpose) = check $ length x == 2
+  rawCtx = check $ length ins == 1
   where
-  x = txInfoInputs txInfo
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      unsafeDataAsList -> ins,
+      _, _, _, _, _, _, _, _, _
+    ])), unsafeFromBuiltinData -> !(Minting ocs)])) = rawCtx
