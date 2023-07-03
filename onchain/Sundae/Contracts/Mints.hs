@@ -114,14 +114,11 @@ poolMintingContract
               ) (txInfoOutputs txInfo)
           !poolOutputValue = txOutValue poolOutput
           !poolOutputValueSansRider = sansRider poolOutputValue
-          {-
           !initialLiquidityTokens =
             computeInitialLiquidityTokens
             (valueOfAC poolOutputValueSansRider coinA)
             (valueOfAC poolOutputValueSansRider coinB)
-          -}
         in
-        True {-
         debug "coin pair not in canonical ordering, alphanumeric by policyID and assetName"
           (coinA < coinB) &&
         debug "minted something other than: a single pool token + correct amount of initial liquidity" (
@@ -130,7 +127,7 @@ poolMintingContract
               [ (computePoolTokenName newPoolIdent, 1)
               , (computeLiquidityTokenName newPoolIdent, initialLiquidityTokens)
               ]
-        )) &&
+        )) {-&&
         debug "liquidity and/or pool NFT not spent to pool"
           ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
             valueOfAC poolOutputValueSansRider coinB >= 1 &&

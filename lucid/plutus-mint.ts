@@ -56,7 +56,6 @@ lucid.selectWalletFromPrivateKey(userPrivateKey);
 console.log("User address", userAddress);
 
 const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
-const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
 const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
 console.log("poolPolicyId: ", poolPolicyId);
 const poolScript = { type: "PlutusV2", script: poolValidator };
@@ -193,21 +192,41 @@ poolInputRef = concat(poolInputRef, poolInputTxIx);
 console.log("poolInputRef: ", poolInputRef);
 let newPoolId = C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
 const p = new Uint8Array([0x70]); // 'p'
-newPoolId = concat(p, newPoolId);
-const newPoolIdHex = toHex(newPoolId);
-console.log("newPoolId (hex): ", newPoolIdHex);
+const l = new Uint8Array([0x6c]); // 'l'
+const poolNftName = concat(p, newPoolId);
+const poolLqName = concat(l, newPoolId);
+const poolNftNameHex = toHex(poolNftName);
+const poolLqNameHex = toHex(poolLqName);
+console.log("poolNftName (hex): ", poolNftNameHex);
+console.log("poolLqName (hex): ", poolLqNameHex);
+
+const newPoolDatum = "d87980";
+
+const poolMintRedeemer =
+  "d87a9fd8799f4040ffd8799f" +
+  "581c" + dummyPolicyId +
+  "45" + fromText("DUMMY") +
+  "ffff";
+
+console.log("poolMintRedeemer: ", poolMintRedeemer);
 
 async function mintPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
-      [toUnit(poolPolicyId, newPoolIdHex)]: 1n,
+      [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
+      [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
     }, poolMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(poolMintingPolicy)
     .readFrom([factory])
-    .payToAddress(poolAddress, {
+    .payToAddressWithData(poolAddress, newPoolDatum, {
+      "lovelace": 1_000_000_000n + 2_000_000n,
+      [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
+    })
+    .payToAddress(userAddress, {
       "lovelace": 2_000_000n,
-      [toUnit(poolPolicyId, newPoolIdHex)]: 1n
+      [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
     })
     .complete();
   const signedTx = await tx.sign().complete();
