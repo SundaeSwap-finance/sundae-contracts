@@ -47,14 +47,16 @@ factoryContract
 factoryContract
   (FactoryBootCurrencySymbol fbcs)
   datum
-  FactoryRedeemer
+  (FactorySetPoolScriptInfo sh cs)
   ctx =
   debug "factory token not spent back"
     (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
   debug "factory output not equal to input factory"
     (ownInputValue == txOutValue ownOutput) &&
   debug "datum altered"
-    (rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
+    (if poolScriptHash datum == ScriptHash mempty && poolCurrencySymbol datum == CurrencySymbol mempty
+      then True -- OK to update things if the pool info hasn't been set yet
+      else rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
   debug "minting tokens"
     (txInfoMint == mempty)
   where

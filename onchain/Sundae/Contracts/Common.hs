@@ -183,12 +183,14 @@ instance Eq FactoryDatum where
 
 -- | Action on factory script
 data FactoryRedeemer
-  = FactoryRedeemer
+  = FactorySetPoolScriptInfo ScriptHash CurrencySymbol
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  _ == _ = True
+  FactorySetPoolScriptInfo sh cs == FactorySetPoolScriptInfo sh' cs' =
+    sh == sh' &&
+    cs == cs'
 
 data FactoryBootMintRedeemer
   = MakeFactory
@@ -336,7 +338,7 @@ PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('FactoryRedeemer, 0)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('FactorySetPoolScriptInfo, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
