@@ -127,11 +127,11 @@ poolMintingContract
               [ (computePoolTokenName newPoolIdent, 1)
               , (computeLiquidityTokenName newPoolIdent, initialLiquidityTokens)
               ]
-        )) {-&&
+        )) &&
         debug "liquidity and/or pool NFT not spent to pool"
           ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
             valueOfAC poolOutputValueSansRider coinB >= 1 &&
-            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) &&
+            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) {-&&
         debug "pool datum not properly initialized"
           (case datumOf txInfo poolOutput of
             Just PoolDatum{..} ->
