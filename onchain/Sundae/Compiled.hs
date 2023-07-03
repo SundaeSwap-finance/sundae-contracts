@@ -9,6 +9,7 @@ import PlutusCore.Evaluation.Machine.ExBudgetingDefaults
 import PlutusLedgerApi.Common (ProtocolVersion(..), VerboseMode(..))
 import Data.Default (def)
 import Data.Either (fromRight)
+import Data.Proxy (Proxy(Proxy))
 import PlutusLedgerApi.V2 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), CurrencySymbol(..))
 import PlutusLedgerApi.V1.Value qualified as Plutus
@@ -23,6 +24,10 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Short qualified as SBS
 import Data.ByteString.Base16 qualified as Base16
 import Data.Coerce (coerce)
+
+import Cardano.Crypto.Hash.Class (HashAlgorithm(digest))
+import Cardano.Crypto.Hash.Blake2b (Blake2b_224)
+
 
 import Codec.Serialise (deserialise)
 
@@ -198,7 +203,7 @@ hashScript script =
     -- Our scripts are plutus V2
     babbageV2ScriptPrefixTag = "\x02"
   in
-    Hash.blake2b_256 (babbageV2ScriptPrefixTag <> SBS.fromShort script)
+    digest (Proxy @Blake2b_224) (babbageV2ScriptPrefixTag <> SBS.fromShort script)
 
 testEvalEscrowScr :: IO (Plutus.LogOutput, Either Plutus.EvaluationError Plutus.ExBudget)
 testEvalEscrowScr = do

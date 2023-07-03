@@ -84,6 +84,7 @@ library
                , base16-bytestring
                , base-compat
                , bytestring
+               , cardano-crypto-class
                , containers
                , data-default
                , deepseq
