@@ -13,6 +13,12 @@ import {
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 
+function assert(p) {
+  if (!p) {
+    throw "Assertion failed!"
+  }
+}
+
 const flags = parse(Deno.args, {
   string: ["scriptsFile"]
 });
@@ -83,10 +89,11 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
   spent: false
 };
 
-// Using a plutus script doesn't seem to work
 const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
 const factoryMintRedeemer = "d87980"; // MakeFactory
-const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
+const factoryPolicyId = scriptsJson["factory-boot-cs"];
+assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
+console.log(`factoryPolicyId: ${factoryPolicyId}`);
 
 // poolSH and poolCS all 0, no scoopers
 const newFactoryDatum = "d8799f58200000000000000000000000000000000000000000000000000000000000000000581c000000000000000000000000000000000000000000000000000000008080ff";

@@ -146,7 +146,7 @@ poolMintingContract
   !factoryReference = uniqueElement'
     [ o
     | o <- txInfoReferenceInputs txInfo
-    -- , isFactory fbcs (txInInfoResolved o)
+    , isFactory fbcs (txInInfoResolved o)
     ]
   !factoryReferenceDatum =
     case datumOf txInfo (txInInfoResolved factoryReference) of
