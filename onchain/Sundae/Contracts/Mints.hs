@@ -108,7 +108,7 @@ poolMintingContract
             filter (\case
               TxOut{txOutAddress, txOutValue}
                 | valueContains txOutValue ocs (computePoolTokenName newPoolIdent)
-                -- , txOutAddress == scriptHashAddress poolSH
+                , txOutAddress == scriptHashAddress poolSH
                 -> True
               _ -> False
               ) (txInfoOutputs txInfo)

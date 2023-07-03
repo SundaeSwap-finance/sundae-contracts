@@ -64,6 +64,7 @@ const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
 console.log("poolScriptHash: ", poolScriptHash);
 
 const factoryAddress = lucid.utils.validatorToAddress({ type: "PlutusV2", script: factoryValidator });
+const poolAddress = lucid.utils.validatorToAddress(poolScript);
 
 // Using a native script works
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
@@ -169,15 +170,13 @@ const okConfigured = await emulator.awaitTx(configuredHash);
 console.log(`configured factory: ${okConfigured}`);
 console.log(configuredHash);
 
-florp();
-
-ref = { txHash: bootedHash, outputIndex: 0 };
+ref = { txHash: configuredHash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 const factory = (await emulator.getUtxosByOutRef([ref]))[0];
 if (!factory) { throw "No factory"; }
 console.log(factory);
 const factoryChange = (await emulator.getUtxosByOutRef([{
-  txHash: bootedHash,
+  txHash: configuredHash,
   outputIndex: 1
 }]))[0];
 if (!factoryChange) { throw "No factory change"; }
@@ -207,7 +206,7 @@ async function mintPool(): Promise<TxHash> {
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(poolMintingPolicy)
     .readFrom([factory])
-    .payToAddress(userAddress, {
+    .payToAddress(poolAddress, {
       "lovelace": 2_000_000n,
       [toUnit(poolPolicyId, newPoolIdHex)]: 1n
     })
