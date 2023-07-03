@@ -82,12 +82,14 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
   },
   spent: false
 };
-console.log(emulator.ledger);
 
 // Using a plutus script doesn't seem to work
 const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
 const factoryMintRedeemer = "d87980"; // MakeFactory
 const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
+
+// poolSH and poolCS all 0, no scoopers
+const newFactoryDatum = "d8799f58200000000000000000000000000000000000000000000000000000000000000000581c000000000000000000000000000000000000000000000000000000008080ff";
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
@@ -99,7 +101,7 @@ async function bootFactory(): Promise<TxHash> {
     }, factoryMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(factoryMintingPolicy)
-    .payToAddress(userAddress, {
+    .payToAddressWithData(userAddress, newFactoryDatum, {
       "lovelace": 2_000_000n,
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     })
@@ -113,7 +115,13 @@ const okBooted = await emulator.awaitTx(bootedHash);
 console.log(`booted factory: ${okBooted}`);
 console.log(bootedHash);
 
-quit();
+console.log(emulator.ledger);
+
+let ref = { txHash: bootedHash, outputIndex: 0 };
+console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+const factory = (await emulator.getUtxosByOutRef([ref]))[0];
+if (!factory) { throw "No factory"; }
+console.log(factory);
 
 // Using a plutus script doesn't seem to work
 const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
@@ -127,7 +135,7 @@ async function mintPool(): Promise<TxHash> {
     }, poolMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(poolMintingPolicy)
-    //.readFrom(factory)
+    .readFrom([factory])
     .payToAddress(userAddress, {
       [toUnit(poolPolicyId, fromText("p"))]: 1n
     })
