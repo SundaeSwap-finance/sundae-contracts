@@ -69,8 +69,20 @@ async function mintDummyTokens(): Promise<TxHash> {
 let mintedHash: TxHash = await mintDummyTokens();
 let okMinted = await emulator.awaitTx(mintedHash);
 console.log(`minted dummy tokens: ${okMinted}`);
-//console.log(emulator.ledger);
 console.log(mintedHash);
+
+emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
+  utxo: {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 0,
+    assets: {
+      "lovelace": 10_000_000n,
+    },
+    address: userAddress,
+  },
+  spent: false
+};
+console.log(emulator.ledger);
 
 // Using a plutus script doesn't seem to work
 const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
@@ -79,6 +91,9 @@ const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
+    .collectFrom([
+      emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"].utxo
+    ])
     .mintAssets({
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     }, factoryMintRedeemer)
@@ -97,6 +112,8 @@ const bootedHash = await bootFactory();
 const okBooted = await emulator.awaitTx(bootedHash);
 console.log(`booted factory: ${okBooted}`);
 console.log(bootedHash);
+
+quit();
 
 // Using a plutus script doesn't seem to work
 const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
