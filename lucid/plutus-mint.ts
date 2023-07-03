@@ -181,9 +181,8 @@ const factoryChange = (await emulator.getUtxosByOutRef([{
 }]))[0];
 if (!factoryChange) { throw "No factory change"; }
 
-//          !newPoolIdent = dropByteString 1 $ blake2b_256 $
-//            getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
-
+// !newPoolIdent = dropByteString 1 $ blake2b_256 $
+//   getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
 const poolInputTxHash = fromHex(factoryChange.txHash);
 const numberSign = new Uint8Array([0x23]);
 const poolInputTxIx = new Uint8Array([0x01]); // ident encoding for output index 1
