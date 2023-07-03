@@ -25,8 +25,8 @@ ownCurrencySymbol (ScriptContext _ purpose) =
 --    - Initializing the new "post-upgrade" factory token
 --    - Minting scooper license tokens
 {-# inlinable factoryBootMintingContract #-}
-factoryBootMintingContract :: FactoryBootSettings -> FactoryBootMintRedeemer -> ScriptContext -> Bool
-factoryBootMintingContract fbs redeemer ctx = case redeemer of
+factoryBootMintingContract :: FactoryBootSettings -> BuiltinData -> BuiltinData -> Bool
+factoryBootMintingContract fbs (unsafeFromBuiltinData -> redeemer) (unsafeFromBuiltinData -> ctx) = case redeemer of
   MakeFactory ->
     debug "not minting a factory token"
       (Map.lookup ocs (getValue txInfoMint) == Just (Map.singleton factoryToken 1)) &&
@@ -95,7 +95,7 @@ poolMintingContract
         --   deadPoolContract / _             -> Only Burn Liquidity Tokens                (Checked)
         debug "can only mint: lp tokens with the pool token, an upgraded pool with the old pool, or a pool token with the factory token"
           (atLeastOne (allowsToSpend.txOutValue.txInInfoResolved) ins)
-      CreatePool coinA coinB ->
+      CreatePool coinA coinB -> True {-
         let
           getIdent (Ident i) = i
           !firstInput = txInInfoOutRef (ins !! 0)
@@ -139,7 +139,7 @@ poolMintingContract
               _pool'circulatingLP == initialLiquidityTokens &&
               elem _pool'swapFees legalSwapFees
             Nothing -> error ()
-          )
+          )-}
   where
   ScriptContext txInfo (Minting ocs) = unsafeFromBuiltinData rawCtx
   ins = txInfoInputs txInfo

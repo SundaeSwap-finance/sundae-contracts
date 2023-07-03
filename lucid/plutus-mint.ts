@@ -20,6 +20,7 @@ const flags = parse(Deno.args, {
 const s = await Deno.readTextFile(flags.scriptsFile);
 const scriptsJson = JSON.parse(s);
 const poolMint = scriptsJson["pool-mint"];
+const factoryMint = scriptsJson["factory-mint"];
 
 const dummy = await Lucid.new(undefined, "Custom");
 
@@ -72,9 +73,34 @@ console.log(`minted dummy tokens: ${okMinted}`);
 console.log(mintedHash);
 
 // Using a plutus script doesn't seem to work
+const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
+const factoryMintRedeemer = "d87980"; // MakeFactory
+const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
+
+async function bootFactory(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .mintAssets({
+      [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+    }, factoryMintRedeemer)
+    .validTo(emulator.now() + 30000)
+    .attachMintingPolicy(factoryMintingPolicy)
+    .payToAddress(userAddress, {
+      "lovelace": 2_000_000n,
+      [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+    })
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+const bootedHash = await bootFactory();
+const okBooted = await emulator.awaitTx(bootedHash);
+console.log(`booted factory: ${okBooted}`);
+console.log(bootedHash);
+
+// Using a plutus script doesn't seem to work
 const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
 const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
-
 const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
 
 async function mintPool(): Promise<TxHash> {
