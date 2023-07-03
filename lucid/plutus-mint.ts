@@ -29,6 +29,7 @@ const flags = parse(Deno.args, {
 const s = await Deno.readTextFile(flags.scriptsFile);
 const scriptsJson = JSON.parse(s);
 const poolValidator = scriptsJson["pool-validator"];
+const factoryValidator = scriptsJson["factory-validator"];
 const poolMint = scriptsJson["pool-mint"];
 const factoryMint = scriptsJson["factory-mint"];
 
@@ -61,6 +62,8 @@ console.log("poolPolicyId: ", poolPolicyId);
 const poolScript = { type: "PlutusV2", script: poolValidator };
 const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
 console.log("poolScriptHash: ", poolScriptHash);
+
+const factoryAddress = lucid.utils.validatorToAddress({ type: "PlutusV2", script: factoryValidator });
 
 // Using a native script works
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
@@ -108,7 +111,7 @@ assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
 console.log(`factoryPolicyId: ${factoryPolicyId}`);
 
 // poolSH = "", poolCS = "", no scoopers
-const newFactoryDatum = "d8799f40408080ff";
+const newFactoryDatum = "d8799f410041008080ff";
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
@@ -120,7 +123,7 @@ async function bootFactory(): Promise<TxHash> {
     }, factoryMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(factoryMintingPolicy)
-    .payToAddressWithData(userAddress, newFactoryDatum, {
+    .payToAddressWithData(factoryAddress, newFactoryDatum, {
       "lovelace": 2_000_000n,
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     })
@@ -145,11 +148,14 @@ const configuredFactoryDatum =
   poolPolicyId +
   "8080ff";
 
+const configureFactoryRedeemer = "d87980";
+
 async function configureFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
-    .collectFrom([newFactory])
+    .collectFrom([newFactory], configureFactoryRedeemer)
     .validTo(emulator.now() + 30000)
-    .payToAddressWithData(userAddress, configuredFactoryDatum, {
+    .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
+    .payToAddressWithData(factoryAddress, configuredFactoryDatum, {
       "lovelace": 2_000_000n,
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     })

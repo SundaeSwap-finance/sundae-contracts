@@ -40,15 +40,15 @@ import Sundae.Utilities
 {-# inlinable factoryContract #-}
 factoryContract
   :: FactoryBootCurrencySymbol
-  -> FactoryDatum
-  -> FactoryRedeemer
-  -> ScriptContext
+  -> BuiltinData -- FactoryDatum
+  -> BuiltinData -- FactoryRedeemer
+  -> BuiltinData -- ScriptContext
   -> Bool
 factoryContract
   (FactoryBootCurrencySymbol fbcs)
-  datum
-  (FactorySetPoolScriptInfo sh cs)
-  ctx =
+  (unsafeFromBuiltinData -> (datum :: FactoryDatum))
+  _
+  (unsafeFromBuiltinData -> ctx) =
   debug "factory token not spent back"
     (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
   debug "factory output not equal to input factory"

@@ -183,14 +183,12 @@ instance Eq FactoryDatum where
 
 -- | Action on factory script
 data FactoryRedeemer
-  = FactorySetPoolScriptInfo ScriptHash CurrencySymbol
+  = FactorySetPoolScriptInfo
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
   {-# inlinable (==) #-}
-  FactorySetPoolScriptInfo sh cs == FactorySetPoolScriptInfo sh' cs' =
-    sh == sh' &&
-    cs == cs'
+  _ == _ = True
 
 data FactoryBootMintRedeemer
   = MakeFactory
