@@ -200,7 +200,18 @@ const poolLqNameHex = toHex(poolLqName);
 console.log("poolNftName (hex): ", poolNftNameHex);
 console.log("poolLqName (hex): ", poolLqNameHex);
 
-const newPoolDatum = "d87980";
+const newPoolDatum =
+  "d8799fd8799fd8799f" +
+  "40" + // Empty string for ADA
+  "40" + // Empty string for ADA
+  "ffd8799f" +
+  "581c" + dummyPolicyId +
+  "45" + fromText("DUMMY") +
+  "ffff" +
+  "581f" + toHex(newPoolId) +
+  "1a3b9aca00d8799f011907d0ff0000ff";
+
+console.log("newPoolDatum: ", newPoolDatum);
 
 const poolMintRedeemer =
   "d87a9fd8799f4040ffd8799f" +

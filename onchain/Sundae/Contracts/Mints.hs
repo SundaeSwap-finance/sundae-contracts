@@ -131,7 +131,7 @@ poolMintingContract
         debug "liquidity and/or pool NFT not spent to pool"
           ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
             valueOfAC poolOutputValueSansRider coinB >= 1 &&
-            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) {-&&
+            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) &&
         debug "pool datum not properly initialized"
           (case datumOf txInfo poolOutput of
             Just PoolDatum{..} ->
@@ -140,7 +140,7 @@ poolMintingContract
               _pool'circulatingLP == initialLiquidityTokens &&
               elem _pool'swapFees legalSwapFees
             Nothing -> error ()
-          )-}
+          )
   where
   ScriptContext txInfo (Minting ocs) = unsafeFromBuiltinData rawCtx
   ins = txInfoInputs txInfo
