@@ -95,7 +95,7 @@ poolMintingContract
         --   deadPoolContract / _             -> Only Burn Liquidity Tokens                (Checked)
         debug "can only mint: lp tokens with the pool token, an upgraded pool with the old pool, or a pool token with the factory token"
           (atLeastOne (allowsToSpend.txOutValue.txInInfoResolved) ins)
-      CreatePool coinA coinB -> True {-
+      CreatePool coinA coinB ->
         let
           getIdent (Ident i) = i
           !firstInput = txInInfoOutRef (ins !! 0)
@@ -108,16 +108,20 @@ poolMintingContract
             filter (\case
               TxOut{txOutAddress, txOutValue}
                 | valueContains txOutValue ocs (computePoolTokenName newPoolIdent)
-                , txOutAddress == scriptHashAddress poolSH -> True
+                -- , txOutAddress == scriptHashAddress poolSH
+                -> True
               _ -> False
               ) (txInfoOutputs txInfo)
           !poolOutputValue = txOutValue poolOutput
           !poolOutputValueSansRider = sansRider poolOutputValue
+          {-
           !initialLiquidityTokens =
             computeInitialLiquidityTokens
             (valueOfAC poolOutputValueSansRider coinA)
             (valueOfAC poolOutputValueSansRider coinB)
+          -}
         in
+        True {-
         debug "coin pair not in canonical ordering, alphanumeric by policyID and assetName"
           (coinA < coinB) &&
         debug "minted something other than: a single pool token + correct amount of initial liquidity" (

@@ -8,7 +8,10 @@ import {
   toUnit,
   TxHash,
   C,
-  Utils
+  Utils,
+  fromHex,
+  toHex,
+  concat
 } from "https://deno.land/x/lucid@0.10.6/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
@@ -122,29 +125,50 @@ const okBooted = await emulator.awaitTx(bootedHash);
 console.log(`booted factory: ${okBooted}`);
 console.log(bootedHash);
 
-console.log(emulator.ledger);
-
 let ref = { txHash: bootedHash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 const factory = (await emulator.getUtxosByOutRef([ref]))[0];
 if (!factory) { throw "No factory"; }
 console.log(factory);
+const factoryChange = (await emulator.getUtxosByOutRef([{
+  txHash: bootedHash,
+  outputIndex: 1
+}]))[0];
+if (!factoryChange) { throw "No factory change"; }
 
 // Using a plutus script doesn't seem to work
 const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
 const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
 const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
 
+//          !newPoolIdent = dropByteString 1 $ blake2b_256 $
+//            getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
+
+const poolInputTxHash = fromHex(factoryChange.txHash);
+const numberSign = new Uint8Array([0x23]);
+const poolInputTxIx = new Uint8Array([0x01]); // ident encoding for output index 1
+let poolInputRef = new Uint8Array([]);
+poolInputRef = concat(poolInputRef, poolInputTxHash);
+poolInputRef = concat(poolInputRef, numberSign);
+poolInputRef = concat(poolInputRef, poolInputTxIx);
+console.log("poolInputRef: ", poolInputRef);
+let newPoolId = C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
+const p = new Uint8Array([0x70]); // 'p'
+newPoolId = concat(p, newPoolId);
+const newPoolIdHex = toHex(newPoolId);
+console.log("newPoolId (hex): ", newPoolIdHex);
+
 async function mintPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
-      [toUnit(poolPolicyId, fromText("p"))]: 1n,
+      [toUnit(poolPolicyId, newPoolIdHex)]: 1n,
     }, poolMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(poolMintingPolicy)
     .readFrom([factory])
     .payToAddress(userAddress, {
-      [toUnit(poolPolicyId, fromText("p"))]: 1n
+      "lovelace": 2_000_000n,
+      [toUnit(poolPolicyId, newPoolIdHex)]: 1n
     })
     .complete();
   const signedTx = await tx.sign().complete();
