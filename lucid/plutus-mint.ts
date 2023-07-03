@@ -28,6 +28,7 @@ const flags = parse(Deno.args, {
 
 const s = await Deno.readTextFile(flags.scriptsFile);
 const scriptsJson = JSON.parse(s);
+const poolValidator = scriptsJson["pool-validator"];
 const poolMint = scriptsJson["pool-mint"];
 const factoryMint = scriptsJson["factory-mint"];
 
@@ -52,6 +53,14 @@ const lucid = await Lucid.new(emulator);
 
 lucid.selectWalletFromPrivateKey(userPrivateKey);
 console.log("User address", userAddress);
+
+const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
+const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
+const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
+console.log("poolPolicyId: ", poolPolicyId);
+const poolScript = { type: "PlutusV2", script: poolValidator };
+const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
+console.log("poolScriptHash: ", poolScriptHash);
 
 // Using a native script works
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
@@ -98,8 +107,8 @@ const factoryPolicyId = scriptsJson["factory-boot-cs"];
 assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
 console.log(`factoryPolicyId: ${factoryPolicyId}`);
 
-// poolSH and poolCS all 0, no scoopers
-const newFactoryDatum = "d8799f58200000000000000000000000000000000000000000000000000000000000000000581c000000000000000000000000000000000000000000000000000000008080ff";
+// poolSH = "", poolCS = "", no scoopers
+const newFactoryDatum = "d8799f40408080ff";
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
@@ -127,6 +136,37 @@ console.log(bootedHash);
 
 let ref = { txHash: bootedHash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+const newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
+
+const configuredFactoryDatum =
+  "d8799f581c" +
+  poolScriptHash +
+  "581c" +
+  poolPolicyId +
+  "8080ff";
+
+async function configureFactory(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .collectFrom([newFactory])
+    .validTo(emulator.now() + 30000)
+    .payToAddressWithData(userAddress, configuredFactoryDatum, {
+      "lovelace": 2_000_000n,
+      [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+    })
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+const configuredHash = await configureFactory();
+const okConfigured = await emulator.awaitTx(configuredHash);
+console.log(`configured factory: ${okConfigured}`);
+console.log(configuredHash);
+
+florp();
+
+ref = { txHash: bootedHash, outputIndex: 0 };
+console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 const factory = (await emulator.getUtxosByOutRef([ref]))[0];
 if (!factory) { throw "No factory"; }
 console.log(factory);
@@ -135,11 +175,6 @@ const factoryChange = (await emulator.getUtxosByOutRef([{
   outputIndex: 1
 }]))[0];
 if (!factoryChange) { throw "No factory change"; }
-
-// Using a plutus script doesn't seem to work
-const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
-const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
-const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
 
 //          !newPoolIdent = dropByteString 1 $ blake2b_256 $
 //            getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
