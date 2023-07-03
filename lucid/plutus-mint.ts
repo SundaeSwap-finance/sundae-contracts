@@ -17,6 +17,10 @@ const flags = parse(Deno.args, {
   string: ["scriptsFile"]
 });
 
+const s = await Deno.readTextFile(flags.scriptsFile);
+const scriptsJson = JSON.parse(s);
+const poolMint = scriptsJson["pool-mint"];
+
 const dummy = await Lucid.new(undefined, "Custom");
 
 const userPrivateKey = generatePrivateKey();
@@ -40,29 +44,17 @@ lucid.selectWalletFromPrivateKey(userPrivateKey);
 console.log("User address", userAddress);
 
 // Using a native script works
-/*
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
   type: "all",
   scripts: [],
 });
-*/
-
-const s = await Deno.readTextFile(flags.scriptsFile);
-const scriptsJson = JSON.parse(s);
-const poolMint = scriptsJson["pool-mint"];
-
-// Using a plutus script doesn't seem to work
-const dummyMintingPolicy = { type: "PlutusV2", script: poolMint };
-
 const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
-
-const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
 
 async function mintDummyTokens(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n,
-    }, poolMintRedeemer)
+    })
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(dummyMintingPolicy)
     .payToAddress(userAddress, {
@@ -72,8 +64,36 @@ async function mintDummyTokens(): Promise<TxHash> {
   const signedTx = await tx.sign().complete();
   return signedTx.submit();
 }
-const mintedHash: TxHash = await mintDummyTokens();
-const okMinted = await emulator.awaitTx(mintedHash);
-console.log(okMinted);
-console.log(emulator.ledger);
+
+let mintedHash: TxHash = await mintDummyTokens();
+let okMinted = await emulator.awaitTx(mintedHash);
+console.log(`minted dummy tokens: ${okMinted}`);
+//console.log(emulator.ledger);
+console.log(mintedHash);
+
+// Using a plutus script doesn't seem to work
+const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
+const poolMintRedeemer = "d87a9fd8799f4040ffd8799f4040ffff";
+
+const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
+
+async function mintPool(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .mintAssets({
+      [toUnit(poolPolicyId, fromText("p"))]: 1n,
+    }, poolMintRedeemer)
+    .validTo(emulator.now() + 30000)
+    .attachMintingPolicy(poolMintingPolicy)
+    //.readFrom(factory)
+    .payToAddress(userAddress, {
+      [toUnit(poolPolicyId, fromText("p"))]: 1n
+    })
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+mintedHash = await mintPool();
+okMinted = await emulator.awaitTx(mintedHash);
+console.log(`minted pool: ${okMinted}`);
 console.log(mintedHash);
