@@ -136,7 +136,7 @@ async function bootFactory(): Promise<TxHash> {
     }, factoryMintRedeemer)
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(factoryMintingPolicy)
-    .payToAddressWithData(factoryAddress, newFactoryDatum, {
+    .payToContract(factoryAddress, newFactoryDatum, {
       "lovelace": 2_000_000n,
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     })
@@ -170,7 +170,7 @@ async function configureFactory(): Promise<TxHash> {
     .collectFrom([newFactory], configureFactoryRedeemer)
     .validTo(emulator.now() + 30000)
     .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
-    .payToAddressWithData(factoryAddress, configuredFactoryDatum, {
+    .payToContract(factoryAddress, configuredFactoryDatum, {
       "lovelace": 2_000_000n,
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     })
@@ -257,6 +257,7 @@ async function mintPool(): Promise<TxHash> {
       [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
     })
     .complete();
+  console.log(tx.toString());
   const signedTx = await tx.sign().complete();
   return signedTx.submit();
 }
