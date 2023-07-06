@@ -242,6 +242,7 @@ async function mintPool(): Promise<TxHash> {
     .validTo(emulator.now() + 30000)
     .attachMintingPolicy(poolMintingPolicy)
     .readFrom([factory])
+    .collectFrom([factoryChange])
     .payToAddressWithData(poolAddress, newPoolDatum, {
       "lovelace": 1_000_000_000n + 2_000_000n,
       [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
