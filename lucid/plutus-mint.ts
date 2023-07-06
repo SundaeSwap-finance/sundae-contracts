@@ -152,7 +152,8 @@ console.log(bootedHash);
 
 let ref = { txHash: bootedHash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
-const newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
+let newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
+newFactory.datum = newFactoryDatum;
 
 const configuredFactoryDatum =
   "d8799f581c" +
@@ -183,11 +184,13 @@ const okConfigured = await emulator.awaitTx(configuredHash);
 console.log(`configured factory: ${okConfigured}`);
 console.log(configuredHash);
 
+console.log("ledger after configure: ")
+console.log(emulator.ledger);
+
 ref = { txHash: configuredHash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 const factory = (await emulator.getUtxosByOutRef([ref]))[0];
 if (!factory) { throw "No factory"; }
-console.log(factory);
 const factoryChange = (await emulator.getUtxosByOutRef([{
   txHash: configuredHash,
   outputIndex: 1
@@ -203,7 +206,6 @@ let poolInputRef = new Uint8Array([]);
 poolInputRef = concat(poolInputRef, poolInputTxHash);
 poolInputRef = concat(poolInputRef, numberSign);
 poolInputRef = concat(poolInputRef, poolInputTxIx);
-console.log("poolInputRef: ", poolInputRef);
 let newPoolId = C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
 const p = new Uint8Array([0x70]); // 'p'
 const l = new Uint8Array([0x6c]); // 'l'
@@ -235,8 +237,6 @@ const poolMintRedeemer =
 
 console.log("poolMintRedeemer: ", poolMintRedeemer);
 
-console.log(emulator.ledger);
-
 async function mintPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
@@ -247,7 +247,7 @@ async function mintPool(): Promise<TxHash> {
     .attachMintingPolicy(poolMintingPolicy)
     .readFrom([factory])
     .collectFrom([factoryChange])
-    .payToAddressWithData(poolAddress, newPoolDatum, {
+    .payToContract(poolAddress, newPoolDatum, {
       "lovelace": 1_000_000_000n + 2_000_000n,
       [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
@@ -292,7 +292,7 @@ console.log(`newEscrowDatum: ${newEscrowDatum}`);
 async function listEscrow(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .validTo(emulator.now() + 30000)
-    .payToAddressWithData(escrowAddress, newEscrowDatum, {
+    .payToContract(escrowAddress, newEscrowDatum, {
       "lovelace": 4_500_000n + 10_000_000n,
     })
     .complete();
@@ -355,7 +355,7 @@ async function scoopPool(): Promise<TxHash> {
       "lovelace": 2_000_000n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_702_095n
     })
-    .payToAddressWithData(poolAddress, scoopedPoolDatum, {
+    .payToContract(poolAddress, scoopedPoolDatum, {
       "lovelace": 1_020_000_000n + 2_000_000n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
     })
