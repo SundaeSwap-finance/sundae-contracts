@@ -11,7 +11,8 @@ import {
   Utils,
   fromHex,
   toHex,
-  concat
+  concat,
+  toPublicKey
 } from "https://deno.land/x/lucid@0.10.6/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
@@ -30,15 +31,20 @@ const s = await Deno.readTextFile(flags.scriptsFile);
 const scriptsJson = JSON.parse(s);
 const poolValidator = scriptsJson["pool-validator"];
 const factoryValidator = scriptsJson["factory-validator"];
+const escrowValidator = scriptsJson["escrow-validator"];
 const poolMint = scriptsJson["pool-mint"];
 const factoryMint = scriptsJson["factory-mint"];
 
 const dummy = await Lucid.new(undefined, "Custom");
 
 const userPrivateKey = generatePrivateKey();
+const userPublicKey = toPublicKey(userPrivateKey);
+console.log(userPublicKey);
+const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+console.log("userPkh", userPkh.to_hex());
 const userAddress = await dummy.selectWalletFromPrivateKey(userPrivateKey).wallet.address();
 
-const accounts = 
+const accounts =
   [
     {
       address: userAddress,
@@ -61,9 +67,13 @@ console.log("poolPolicyId: ", poolPolicyId);
 const poolScript = { type: "PlutusV2", script: poolValidator };
 const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
 console.log("poolScriptHash: ", poolScriptHash);
+const escrowScript = { type: "PlutusV2", script: escrowValidator };
+const escrowScriptHash = lucid.utils.validatorToScriptHash(escrowScript);
+console.log("escrowScriptHash: ", escrowScriptHash);
 
 const factoryAddress = lucid.utils.validatorToAddress({ type: "PlutusV2", script: factoryValidator });
 const poolAddress = lucid.utils.validatorToAddress(poolScript);
+const escrowAddress = lucid.utils.validatorToAddress(escrowScript);
 
 // Using a native script works
 const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
@@ -221,6 +231,8 @@ const poolMintRedeemer =
 
 console.log("poolMintRedeemer: ", poolMintRedeemer);
 
+console.log(emulator.ledger);
+
 async function mintPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
@@ -248,3 +260,43 @@ mintedHash = await mintPool();
 okMinted = await emulator.awaitTx(mintedHash);
 console.log(`minted pool: ${okMinted}`);
 console.log(mintedHash);
+
+const newEscrowDatum =
+  "d8799fd8799fd8799fd8799fd8799f" +
+  "581c" + userPkh.to_hex() + // destination pkh
+  "ffd87a80ffd87a80ffd87a80ff" +
+  "1a002625a0" + // Scooper fee
+  "d8799fd8799fd8799f" +
+  "40" + // give coin policy id
+  "40" + // give coin token name
+  "ff" +
+  "1a00989680" + // give amount
+  "ffd8799fd8799f" +
+  "581c" + dummyPolicyId + // take coin policy id
+  "45" + fromText("DUMMY") + // take coin token name
+  "ff" +
+  "d87a80ff" + // market order
+  "ffff";
+
+console.log(`newEscrowDatum: ${newEscrowDatum}`);
+
+async function listEscrow(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .validTo(emulator.now() + 30000)
+    .payToAddressWithData(escrowAddress, newEscrowDatum, {
+      "lovelace": 4_500_000n + 10_000_000n,
+    })
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+let listedHash = await listEscrow();
+let okListed = await emulator.awaitTx(listedHash);
+console.log(`listed escrow 1: ${okListed}`);
+console.log(listedHash);
+
+listedHash = await listEscrow();
+okListed = await emulator.awaitTx(listedHash);
+console.log(`listed escrow 2: ${okListed}`);
+console.log(listedHash);
