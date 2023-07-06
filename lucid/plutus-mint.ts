@@ -120,8 +120,11 @@ const factoryPolicyId = scriptsJson["factory-boot-cs"];
 assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
 console.log(`factoryPolicyId: ${factoryPolicyId}`);
 
-// poolSH = "", poolCS = "", no scoopers
-const newFactoryDatum = "d8799f410041008080ff";
+// poolSH = "", poolCS = "", 1 scooper (userPkh)
+const newFactoryDatum =
+  "d8799f41004100" +
+  "81581c" + userPkh.to_hex() + 
+  "80ff";
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
@@ -156,7 +159,8 @@ const configuredFactoryDatum =
   poolScriptHash +
   "581c" +
   poolPolicyId +
-  "8080ff";
+  "81581c" + userPkh.to_hex() +
+  "80ff";
 
 const configureFactoryRedeemer = "d87980";
 
@@ -262,6 +266,10 @@ okMinted = await emulator.awaitTx(mintedHash);
 console.log(`minted pool: ${okMinted}`);
 console.log(mintedHash);
 
+ref = { txHash: mintedHash, outputIndex: 0 };
+console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+const pool = (await emulator.getUtxosByOutRef([ref]))[0];
+
 const newEscrowDatum =
   "d8799fd8799fd8799fd8799fd8799f" +
   "581c" + userPkh.to_hex() + // destination pkh
@@ -293,11 +301,70 @@ async function listEscrow(): Promise<TxHash> {
 }
 
 let listedHash = await listEscrow();
+const escrow1Hash = listedHash;
 let okListed = await emulator.awaitTx(listedHash);
 console.log(`listed escrow 1: ${okListed}`);
 console.log(listedHash);
 
 listedHash = await listEscrow();
+const escrow2Hash = listedHash;
 okListed = await emulator.awaitTx(listedHash);
 console.log(`listed escrow 2: ${okListed}`);
 console.log(listedHash);
+
+ref = { txHash: escrow1Hash, outputIndex: 0 };
+console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+const escrow1 = (await emulator.getUtxosByOutRef([ref]))[0];
+
+ref = { txHash: escrow2Hash, outputIndex: 0 };
+console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+const escrow2 = (await emulator.getUtxosByOutRef([ref]))[0];
+
+const scoopedPoolDatum =
+  "d8799fd8799fd8799f" +
+  "40" + // Empty string for ADA
+  "40" + // Empty string for ADA
+  "ffd8799f" +
+  "581c" + dummyPolicyId +
+  "45" + fromText("DUMMY") +
+  "ffff" +
+  "581f" + toHex(newPoolId) +
+  "1a3b9aca00" + // Liquidity unchanged
+  "d8799f011907d0ff00" +
+  "1a004c4b40" + // New rewards = 5_000_000
+  "ff";
+
+const scoopPoolRedemeer =
+  "d8799f" +
+  "581c" + userPkh.to_hex() +
+  "9f0001ffff";
+
+async function scoopPool(): Promise<TxHash> {
+  const tx = await lucid.newTx()
+    .validTo(emulator.now() + 30000)
+    .collectFrom([escrow1, escrow2])
+    .collectFrom([pool], scoopPoolRedeemer)
+    .readFrom([factory])
+    .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
+    .attachSpendingValidator({ type: "PlutusV2", script: poolValidator })
+    .payToAddress(userAddress, {
+      "lovelace": 2_000_000n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_896_088n
+    })
+    .payToAddress(userAddress, {
+      "lovelace": 2_000_000n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_702_095n
+    })
+    .payToAddressWithData(poolAddress, scoopedPoolDatum, {
+      "lovelace": 1_020_000_000n + 2_000_000n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
+    })
+    .complete();
+  const signedTx = await tx.sign().complete();
+  return signedTx.submit();
+}
+
+const scoopedHash = await scoopPool();
+const okScooped = await emulator.awaitTx(scoopedHash);
+console.log(`scooped pool: ${okScooped}`);
+console.log(scoopedHash);
