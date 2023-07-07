@@ -13,7 +13,7 @@ import {
   toHex,
   concat,
   toPublicKey
-} from "https://deno.land/x/lucid@0.10.6/mod.ts";
+} from "../../lucid/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 
@@ -37,7 +37,8 @@ const factoryMint = scriptsJson["factory-mint"];
 
 const dummy = await Lucid.new(undefined, "Custom");
 
-const userPrivateKey = generatePrivateKey();
+const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
+//generatePrivateKey();
 const userPublicKey = toPublicKey(userPrivateKey);
 console.log(userPublicKey);
 const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
@@ -237,6 +238,11 @@ const poolMintRedeemer =
 
 console.log("poolMintRedeemer: ", poolMintRedeemer);
 
+console.log("datum table", emulator.datumTable);
+
+factory.datum = null;
+factoryChange.datum = null;
+
 async function mintPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .mintAssets({
@@ -335,15 +341,18 @@ const scoopedPoolDatum =
   "1a004c4b40" + // New rewards = 5_000_000
   "ff";
 
-const scoopPoolRedemeer =
+const scoopPoolRedeemer =
   "d8799f" +
   "581c" + userPkh.to_hex() +
   "9f0001ffff";
 
+const escrowScoopRedeemer = "d87980"; // Scoop!
+
 async function scoopPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .validTo(emulator.now() + 30000)
-    .collectFrom([escrow1, escrow2])
+    .collectFrom([escrow1], escrowScoopRedeemer)
+    .collectFrom([escrow2], escrowScoopRedeemer)
     .collectFrom([pool], scoopPoolRedeemer)
     .readFrom([factory])
     .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
@@ -369,3 +378,5 @@ const scoopedHash = await scoopPool();
 const okScooped = await emulator.awaitTx(scoopedHash);
 console.log(`scooped pool: ${okScooped}`);
 console.log(scoopedHash);
+
+console.log(emulator.ledger);
