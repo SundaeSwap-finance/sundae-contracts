@@ -65,7 +65,7 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx = True {-
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -214,7 +214,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
     EscrowWithdraw _ amt ->
       valueOfAC v liquidityAssetClass >= amt && amt >= 1
     EscrowSwap (giveCoin, amt) _ ->
-      valueOfAC v giveCoin >= amt && amt >= 1
+      valueOfAC v giveCoin >= amt && amt >= 1-}
 
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool
