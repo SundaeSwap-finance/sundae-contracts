@@ -141,6 +141,9 @@ console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 let newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
 newFactory.datum = newFactoryDatum;
 
+console.log("ledger after boot: ")
+console.log(emulator.ledger);
+
 const configuredFactoryDatum =
   "d8799f581c" +
   poolScriptHash +
@@ -342,6 +345,7 @@ const escrowScoopRedeemer = "d87980"; // Scoop!
 
 async function scoopPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
+    .validFrom(emulator.now())
     .validTo(emulator.now() + 30000)
     .collectFrom([escrow1], escrowScoopRedeemer)
     .collectFrom([escrow2], escrowScoopRedeemer)
@@ -358,7 +362,7 @@ async function scoopPool(): Promise<TxHash> {
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_702_095n
     })
     .payToContract(poolAddress, scoopedPoolDatum, {
-      "lovelace": 1_020_000_000n + 2_000_000n,
+      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
     })
     .complete();
