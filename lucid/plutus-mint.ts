@@ -103,18 +103,6 @@ let okMinted = await emulator.awaitTx(mintedHash);
 console.log(`minted dummy tokens: ${okMinted}`);
 console.log(mintedHash);
 
-emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
-  utxo: {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 0,
-    assets: {
-      "lovelace": 10_000_000n,
-    },
-    address: userAddress,
-  },
-  spent: false
-};
-
 const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
 const factoryMintRedeemer = "d87980"; // MakeFactory
 const factoryPolicyId = scriptsJson["factory-boot-cs"];
@@ -129,9 +117,6 @@ const newFactoryDatum =
 
 async function bootFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
-    .collectFrom([
-      emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"].utxo
-    ])
     .mintAssets({
       [toUnit(factoryPolicyId, fromText("factory"))]: 1n
     }, factoryMintRedeemer)
