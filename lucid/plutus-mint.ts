@@ -161,8 +161,10 @@ const configuredFactoryDatum =
   poolScriptHash +
   "581c" +
   poolPolicyId +
-  "81581c" + userPkh.to_hex() +
-  "80ff";
+  "9f581c" + userPkh.to_hex() +
+  "ff80ff";
+
+console.log("configured factory datum: " + configuredFactoryDatum)
 
 const configureFactoryRedeemer = "d87980";
 

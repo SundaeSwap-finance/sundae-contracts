@@ -146,7 +146,6 @@ poolMintingContract
   where
   ScriptContext txInfo (Minting ocs) = unsafeFromBuiltinData rawCtx
   ins = txInfoInputs txInfo
-  {-
   !factoryReference = uniqueElement'
     [ o
     | o <- txInfoReferenceInputs txInfo
@@ -154,7 +153,6 @@ poolMintingContract
     ]
   !factoryReferenceDatum =
     case datumOf txInfo (txInInfoResolved factoryReference) of
-      Just fac -> fac
+      Just fac -> (fac :: FactoryDatum)
       Nothing -> traceError "factory reference must have a factory datum"
   !(FactoryDatum !poolSH _poolCS _ _) = factoryReferenceDatum
-  -}
