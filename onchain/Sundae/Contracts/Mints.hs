@@ -97,7 +97,6 @@ poolMintingContract
           (atLeastOne (allowsToSpend.txOutValue.txInInfoResolved) ins)
       CreatePool coinA coinB ->
         let
-          {-
           getIdent (Ident i) = i
           !firstInput = txInInfoOutRef (ins !! 0)
           -- A pool ident is 31 bytes in order to make it fit in the LP / pool
@@ -119,10 +118,9 @@ poolMintingContract
             computeInitialLiquidityTokens
             (valueOfAC poolOutputValueSansRider coinA)
             (valueOfAC poolOutputValueSansRider coinB)
-          -}
         in
         debug "coin pair not in canonical ordering, alphanumeric by policyID and assetName"
-          (coinA < coinB) {- &&
+          (coinA < coinB) &&
         debug "minted something other than: a single pool token + correct amount of initial liquidity" (
           txInfoMint txInfo == Value (
             Map.singleton ocs $ Map.fromList
@@ -142,7 +140,7 @@ poolMintingContract
               _pool'circulatingLP == initialLiquidityTokens &&
               elem _pool'swapFees legalSwapFees
             Nothing -> error ()
-          )-}
+          )
   where
   ScriptContext txInfo (Minting ocs) = unsafeFromBuiltinData rawCtx
   ins = txInfoInputs txInfo
