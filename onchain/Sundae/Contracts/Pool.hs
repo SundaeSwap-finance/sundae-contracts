@@ -108,7 +108,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
             TxOut{txOutAddress=Address _ Nothing} -> True
       )-}
   where
-  -- !newRewardsAmt = rewards + minimumScooperFee
+  !newRewardsAmt = rewards + minimumScooperFee
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ -> False
@@ -126,13 +126,13 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
   !(FactoryDatum _poolSH !poolCS _ _) = factoryReferenceDatum
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
   !ownInput = scriptInput ctx
-  -- !poolOutput = uniqueElement'
-  --   [ o
-  --   | o <- txInfoOutputs txInfo
-  --   , isScriptAddress o ownScriptHash
-  --   ]
-  -- poolOutputValue = txOutValue poolOutput{-
-  -- !poolOutputFunds = sansAda (newRewardsAmt + riderAmount) poolOutputValue
+  !poolOutput = uniqueElement'
+    [ o
+    | o <- txInfoOutputs txInfo
+    , isScriptAddress o ownScriptHash
+    ]
+  poolOutputValue = txOutValue poolOutput
+  !poolOutputFunds = sansAda (newRewardsAmt + riderAmount) poolOutputValue
   mustSpendTo (EscrowDestination addr dh, val, count) =
     atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
   atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
@@ -151,29 +151,29 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
   !txInfo = scriptContextTxInfo ctx
   liquidityAssetClass =
     AssetClass (poolCS, computeLiquidityTokenName poolIdent)
-  -- !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
-  -- !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
-  -- !escrows =
-  --   [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
-  --    | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
-  --    , let !escrowInValue = txOutValue txOut
-  --    -- Escrows will usually come from the escrow script, but it's OK if they
-  --    -- come from somewhere else as long as the datum is valid. Other scripts
-  --    -- might be useful to provide other conditions for escrows, such as stop
-  --    -- loss orders. So we treat anything that doesn't come from the pool script
-  --    -- as an escrow.
-  --    , not (isScriptAddress txOut ownScriptHash)
-  --    , Just (EscrowDatum ret scoopFee act) <- [datumOf txInfo txOut]
-  --    , scoopFee >= 0
-  --    -- Coin B can never be ADA, because pool coin pairs are lexicographically
-  --    -- ordered when we create a pool, so we only check A here
-  --    -- NOTE: this enforces that the escrow *always* has at least 2 ada on the rider,
-  --    -- meaning you can't under-spend your rider and get 2ADA back
-  --    , valueOf (sansAmountA escrowInValue act) adaSymbol adaToken >= scoopFee + riderAmount
-  --    , if checkAction escrowInValue act
-  --      then True
-  --      else die "escrow incorrect"
-  --    ]
+  !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
+  !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
+  !escrows =
+    [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
+     | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
+     , let !escrowInValue = txOutValue txOut
+     -- Escrows will usually come from the escrow script, but it's OK if they
+     -- come from somewhere else as long as the datum is valid. Other scripts
+     -- might be useful to provide other conditions for escrows, such as stop
+     -- loss orders. So we treat anything that doesn't come from the pool script
+     -- as an escrow.
+     , not (isScriptAddress txOut ownScriptHash)
+     , Just (EscrowDatum ret scoopFee act) <- [datumOf txInfo txOut]
+     , scoopFee >= 0
+     -- Coin B can never be ADA, because pool coin pairs are lexicographically
+     -- ordered when we create a pool, so we only check A here
+     -- NOTE: this enforces that the escrow *always* has at least 2 ada on the rider,
+     -- meaning you can't under-spend your rider and get 2ADA back
+     , valueOf (sansAmountA escrowInValue act) adaSymbol adaToken >= scoopFee + riderAmount
+     , if checkAction escrowInValue act
+       then True
+       else die "escrow incorrect"
+     ]
   oldValue = txOutValue ownInput
   ownScriptHash =
     case ownInput of
@@ -200,16 +200,16 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
   -- Normally, the amount of ada in the pool should be able to asymptotically approach 0 as the price of ADA goes up
   -- With the added rider, it asymptotically approaches 2; if we don't subtract off the rider, then
   -- There might be a hard limit on how much the pool can be traded
-  -- !oldValueSansRider = sansAda (rewards + riderAmount) oldValue
-  -- checkAction !(sansRider -> v) = \case
-  --   EscrowDeposit _ (DepositMixed (AB amtA amtB)) ->
-  --     valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
-  --   EscrowDeposit _ (DepositSingle coin amt) ->
-  --     valueOfAC v (coins $$ coin) >= amt && amt >= 1
-  --   EscrowWithdraw _ amt ->
-  --     valueOfAC v liquidityAssetClass >= amt && amt >= 1
-  --   EscrowSwap (giveCoin, amt) _ ->
-  --     valueOfAC v giveCoin >= amt && amt >= 1
+  !oldValueSansRider = sansAda (rewards + riderAmount) oldValue
+  checkAction !(sansRider -> v) = \case
+    EscrowDeposit _ (DepositMixed (AB amtA amtB)) ->
+      valueOfAC v coinA >= amtA && valueOfAC v coinB >= amtB && amtA >= 1 && amtB >= 1
+    EscrowDeposit _ (DepositSingle coin amt) ->
+      valueOfAC v (coins $$ coin) >= amt && amt >= 1
+    EscrowWithdraw _ amt ->
+      valueOfAC v liquidityAssetClass >= amt && amt >= 1
+    EscrowSwap (giveCoin, amt) _ ->
+      valueOfAC v giveCoin >= amt && amt >= 1
 
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool
