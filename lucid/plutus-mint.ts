@@ -153,8 +153,12 @@ console.log("configured factory datum: " + configuredFactoryDatum)
 
 const configureFactoryRedeemer = "d87980";
 
+// Spend all our utxos when configuring to guarantee deterministic evaluation
+let myUtxos = await lucid.utxosAt(userAddress);
+
 async function configureFactory(): Promise<TxHash> {
   const tx = await lucid.newTx()
+    .collectFrom(myUtxos)
     .collectFrom([newFactory], configureFactoryRedeemer)
     .validTo(emulator.now() + 30000)
     .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
@@ -184,6 +188,7 @@ const factoryChange = (await emulator.getUtxosByOutRef([{
   outputIndex: 1
 }]))[0];
 if (!factoryChange) { throw "No factory change"; }
+factory.datum = configuredFactoryDatum;
 
 // !newPoolIdent = dropByteString 1 $ blake2b_256 $
 //   getTxId (txOutRefId firstInput) <> "#" <> getIdent (intToIdent (txOutRefIdx firstInput))
