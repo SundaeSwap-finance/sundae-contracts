@@ -87,7 +87,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputFunds coinA == newAmtA &&
-        valueOfAC poolOutputFunds coinB == newAmtB){- &&
+        valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
         FactoryDatum _ _ scoopers _ -> elem scooperPkh scoopers) &&
@@ -102,7 +102,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
           case poolOutput of
             TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
             TxOut{txOutAddress=Address _ Nothing} -> True
-      )-}
+      )
   where
   Just newDatum = datumOf txInfo poolOutput
   !newRewardsAmt = _pool'rewards newDatum
