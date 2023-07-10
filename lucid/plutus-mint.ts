@@ -346,6 +346,12 @@ const scoopPoolRedeemer =
 
 const escrowScoopRedeemer = "d87980"; // Scoop!
 
+// Computed manually
+const escrow1Return = 9_896_088n;
+const escrow2Return = 9_702_095n;
+const scooperFee = 2_500_000n;
+const rider = 2_000_000n;
+
 async function scoopPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .validFrom(emulator.now())
@@ -357,12 +363,12 @@ async function scoopPool(): Promise<TxHash> {
     .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
     .attachSpendingValidator({ type: "PlutusV2", script: poolValidator })
     .payToAddress(userAddress, {
-      "lovelace": 4_000_000n,
-      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_896_088n + 9_702_095n
+      "lovelace": 4_000_000n, // Riders from user's two escrows
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: escrow1Return + escrow2Return,
     })
     .payToContract(poolAddress, scoopedPoolDatum, {
-      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n,
-      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
+      "lovelace": 1_020_000_000n + rider + 2n * scooperFee,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n - (escrow1Return + escrow2Return),
       [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
     })
     .complete();
