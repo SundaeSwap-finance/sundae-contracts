@@ -346,8 +346,6 @@ const scoopPoolRedeemer =
 
 const escrowScoopRedeemer = "d87980"; // Scoop!
 
-const scoopFee = 1_373_450n;
-
 async function scoopPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
     .validFrom(emulator.now())
