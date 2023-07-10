@@ -77,14 +77,14 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       _pool'circulatingLP newDatum == newCirculatingLP &&
       _pool'rewards newDatum >= rewards + minimumScooperFee &&
     debug "extra outputs not spent"
-      (all' mustSpendTo (mergeListByKey cons)) {-&&
+      (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
       ( if newCirculatingLP == oldCirculatingLP
         then null (flattenValue' (txInfoMint txInfo))
         else onlyHas (txInfoMint txInfo) poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
+      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds){- &&
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputFunds coinA == newAmtA &&
         valueOfAC poolOutputFunds coinB == newAmtB) &&

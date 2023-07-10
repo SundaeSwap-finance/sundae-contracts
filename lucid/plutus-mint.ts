@@ -365,6 +365,7 @@ async function scoopPool(): Promise<TxHash> {
     .payToContract(poolAddress, scoopedPoolDatum, {
       "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n - scoopFee,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
+      [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
     })
     .complete();
   const signedTx = await tx.sign().complete();
