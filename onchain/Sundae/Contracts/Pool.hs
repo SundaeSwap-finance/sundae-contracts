@@ -65,23 +65,19 @@ poolContract
   -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx = True {-
+  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
       doEscrows poolIdent coinA coinB swapFees init
         (escrow . escrowWithFee <$> sortOn index (zipWith OrderedEscrow order escrows))
-  in True
+  in
     debug "must have escrows"
       (not $ null escrows) &&
-    debug "issued amount or locked rewards in new datum incorrect"
-      (datumOf txInfo poolOutput ==
-        Just (datum
-          { _pool'circulatingLP = newCirculatingLP
-          , _pool'rewards = newRewardsAmt
-          })) &&
+      _pool'circulatingLP newDatum == newCirculatingLP &&
+      _pool'rewards newDatum >= rewards + minimumScooperFee &&
     debug "extra outputs not spent"
-      (all' mustSpendTo (mergeListByKey cons)) &&
+      (all' mustSpendTo (mergeListByKey cons)) {-&&
     debug "issued amount does not match minted amount"
       ( if newCirculatingLP == oldCirculatingLP
         then null (flattenValue' (txInfoMint txInfo))
@@ -108,6 +104,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
             TxOut{txOutAddress=Address _ Nothing} -> True
       )-}
   where
+  Just newDatum = datumOf txInfo poolOutput
   !newRewardsAmt = rewards + minimumScooperFee
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of

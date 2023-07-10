@@ -336,12 +336,17 @@ const scoopedPoolDatum =
   "1a004c4b40" + // New rewards = 5_000_000
   "ff";
 
+console.log("newPoolDatum: " + newPoolDatum);
+console.log("scoopedPoolDatum: " + scoopedPoolDatum);
+
 const scoopPoolRedeemer =
   "d8799f" +
   "581c" + userPkh.to_hex() +
   "9f0001ffff";
 
 const escrowScoopRedeemer = "d87980"; // Scoop!
+
+const scoopFee = 1_373_450n;
 
 async function scoopPool(): Promise<TxHash> {
   const tx = await lucid.newTx()
@@ -354,15 +359,11 @@ async function scoopPool(): Promise<TxHash> {
     .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
     .attachSpendingValidator({ type: "PlutusV2", script: poolValidator })
     .payToAddress(userAddress, {
-      "lovelace": 2_000_000n,
-      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_896_088n
-    })
-    .payToAddress(userAddress, {
-      "lovelace": 2_000_000n,
-      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_702_095n
+      "lovelace": 4_000_000n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_896_088n + 9_702_095n
     })
     .payToContract(poolAddress, scoopedPoolDatum, {
-      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n,
+      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n - scoopFee,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
     })
     .complete();
