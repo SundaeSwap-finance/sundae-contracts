@@ -84,10 +84,10 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
         else onlyHas (txInfoMint txInfo) poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds){- &&
+      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputFunds coinA == newAmtA &&
-        valueOfAC poolOutputFunds coinB == newAmtB) &&
+        valueOfAC poolOutputFunds coinB == newAmtB){- &&
     debug "must be a licensed scooper"
       (case factoryReferenceDatum of
         FactoryDatum _ _ scoopers _ -> elem scooperPkh scoopers) &&
@@ -105,7 +105,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       )-}
   where
   Just newDatum = datumOf txInfo poolOutput
-  !newRewardsAmt = rewards + minimumScooperFee
+  !newRewardsAmt = _pool'rewards newDatum
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ -> False

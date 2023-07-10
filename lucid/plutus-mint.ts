@@ -363,7 +363,7 @@ async function scoopPool(): Promise<TxHash> {
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 9_896_088n + 9_702_095n
     })
     .payToContract(poolAddress, scoopedPoolDatum, {
-      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n - scoopFee,
+      "lovelace": 1_020_000_000n + 2_000_000n + 5_000_000n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 980_401_817n,
       [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
     })
