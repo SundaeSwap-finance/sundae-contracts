@@ -92,19 +92,16 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       (valueOfAC poolOutputFunds coinA == newAmtA &&
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
-      (case factoryReferenceDatum of
-        FactoryDatum _ _ scoopers _ -> elem scooperPkh scoopers) &&
+      (elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
         else True
       ) &&
     debug "staking key must be allowed"
-      (case factoryReferenceDatum of
-        FactoryDatum _ _ _ stakerKeySet ->
-          case poolOutput of
-            TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
-            TxOut{txOutAddress=Address _ Nothing} -> True
+      (case poolOutput of
+        TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
+        TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
   Just newDatum = datumOf txInfo poolOutput
@@ -123,7 +120,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
     case datumOf txInfo (txInInfoResolved factoryReference) of
       Just fac -> fac
       Nothing -> traceError "factory reference must have a factory datum"
-  !(FactoryDatum _poolSH !poolCS _ _) = factoryReferenceDatum
+  !(FactoryDatum _poolSH !poolCS !scoopers !stakerKeySet) = factoryReferenceDatum
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
 
   !ownInput = scriptInput ctx
