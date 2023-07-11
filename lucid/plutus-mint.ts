@@ -37,6 +37,7 @@ const scriptsJson = JSON.parse(s);
 const poolValidator = scriptsJson["pool-validator"];
 const factoryValidator = scriptsJson["factory-validator"];
 const escrowValidator = scriptsJson["escrow-validator"];
+const steakValidator = scriptsJson["steak-validator"];
 const poolMint = scriptsJson["pool-mint"];
 const factoryMint = scriptsJson["factory-mint"];
 
@@ -77,11 +78,15 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
   const escrowScript: Script = { type: "PlutusV2", script: escrowValidator };
   const escrowScriptHash = lucid.utils.validatorToScriptHash(escrowScript);
   //console.log("escrowScriptHash: ", escrowScriptHash);
+  const steakScript: Script = { type: "PlutusV2", script: steakValidator };
+  const steakScriptHash = lucid.utils.validatorToScriptHash(steakScript);
 
   const factoryScript: Script = { type: "PlutusV2", script: factoryValidator };
   const factoryAddress = lucid.utils.validatorToAddress(factoryScript);
   const poolAddress = lucid.utils.validatorToAddress(poolScript);
   const escrowAddress = lucid.utils.validatorToAddress(escrowScript);
+
+  const steakAddress = lucid.utils.validatorToRewardAddress(steakScript);
 
   // Using a native script works
   const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
@@ -363,7 +368,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "9f" + orderString +
     "ffff";
 
-  const escrowScoopRedeemer = "d8799f01ff"; // Scoop!
+  const escrowScoopRedeemer = "d87980"; // Scoop!
 
   const scooperFee = 2_500_000n;
   const rider = 2_000_000n;
@@ -382,6 +387,8 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
       .readFrom([factory])
       .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
       .attachSpendingValidator({ type: "PlutusV2", script: poolValidator })
+      .attachSpendingValidator({ type: "PlutusV2", script: steakValidator })
+      .withdraw(steakAddress, 0, "00")
       .payToAddress(userAddress, {
         "lovelace": escrowsCount * rider,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: totalReturn,

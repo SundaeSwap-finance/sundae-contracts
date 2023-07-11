@@ -221,30 +221,30 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
 --    EscrowCancel - cancel the order, returning the funds
 {-# inlinable escrowContract #-}
 escrowContract
-  :: PoolCurrencySymbol
+  :: SteakScriptHash
   -> BuiltinData -- EscrowDatum
   -> BuiltinData -- EscrowRedeemer
   -> BuiltinData -- ScriptContext
   -> Bool
 escrowContract
-  (PoolCurrencySymbol pcs)
+  (SteakScriptHash steakScriptHash)
   (unsafeFromBuiltinData -> escrow_datum)
   (unsafeFromBuiltinData -> redeemer)
   rawCtx =
     case redeemer of
-      EscrowScoop poolIndex ->
-        escrowScoop poolIndex
+      EscrowScoop ->
+        escrowScoop
       EscrowCancel ->
         escrowCancel
   where
-  escrowScoop poolIndex =
-    debug "no pool token at specified index"
-      (hasPoolToken (txOutValue (unsafeFromBuiltinData (outs !! poolIndex))))
-    where
-    hasPoolToken :: Value -> Bool
-    hasPoolToken v = any isPoolNft (flattenValue v)
-    isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
-    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
+  escrowScoop =
+    debug "must invoke steak contract"
+      (case withdrawals of
+        [] -> False
+        ((w, _):_) ->
+          case unsafeFromBuiltinData w of
+            StakingHash (ScriptCredential s) -> s == steakScriptHash
+            _ -> False)
   escrowCancel =
     debug "the canceller did not sign the transaction"
       (atLeastOne (\x -> atLeastOne (\a -> unsafeFromBuiltinData a == x) signatories) pkhs)
@@ -253,12 +253,32 @@ escrowContract
     pkhs = escrowPubKeyHashes escrow_addr
   (unsafeDataAsConstr -> (_, [
     (unsafeDataAsConstr -> (_, [
+      _, _, _, _, _, _,
+      unsafeDataAsMap -> withdrawals,
       _,
-      _,
-      unsafeDataAsList -> outs,
-      _, _, _, _, _,
       unsafeDataAsList -> signatories,
       _, _, _
+    ])), _])) = rawCtx
+
+{-# inlinable steakContract #-}
+steakContract
+  :: PoolCurrencySymbol
+  -> BuiltinData
+  -> BuiltinData
+  -> Bool
+steakContract (PoolCurrencySymbol pcs) _ rawCtx =
+  debug "no pool nft found"
+    (atLeastOne (hasPoolToken . txOutValue . unsafeFromBuiltinData) outs)
+  where
+  hasPoolToken :: Value -> Bool
+  hasPoolToken v = any isPoolNft (flattenValue v)
+  isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
+  isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      _, _,
+      unsafeDataAsList -> outs,
+      _, _, _, _, _, _, _, _, _
     ])), _])) = rawCtx
 
 data ScoopResult = ScoopResult

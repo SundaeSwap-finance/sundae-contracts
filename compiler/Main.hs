@@ -36,6 +36,7 @@ data Script
     | PoolMint
     | PoolValidator
     | EscrowValidator
+    | SteakValidator
     deriving (Enum, Bounded)
 
 data CompilationTarget = All | Script Script
@@ -144,8 +145,11 @@ main = do
                 poolCurrencySymbol = makeCurrencySymbol poolMintScript :: PoolCurrencySymbol
                 poolValidatorScript = poolScript factoryCurrencySymbol escrowScriptHash
 
+                steakValidatorScript = steakScript poolCurrencySymbol
+                steakScriptHash = makeValidatorScriptHash steakValidatorScript
+
                 -- Escrow related scripts
-                escrowValidatorScript = escrowScript poolCurrencySymbol
+                escrowValidatorScript = escrowScript steakScriptHash
                 escrowScriptHash = makeValidatorScriptHash escrowValidatorScript
 
                 encodeMany :: Map.Map String BS8.ByteString -> BS8.ByteString
@@ -190,6 +194,7 @@ main = do
                   PoolMint -> ("pool-mint", doStrip strip $ Short.fromShort poolMintScript)
                   PoolValidator -> ("pool-validator", doStrip strip $ Short.fromShort poolValidatorScript)
                   EscrowValidator -> ("escrow-validator", doStrip strip $ Short.fromShort escrowValidatorScript)
+                  SteakValidator -> ("steak-validator", doStrip strip $ Short.fromShort steakValidatorScript)
 
                 targets :: CompilationTarget -> [(String, BS8.ByteString)]
                 targets = \case

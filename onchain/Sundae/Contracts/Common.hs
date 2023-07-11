@@ -283,13 +283,15 @@ instance Eq EscrowAction where
 -- | Escrow redeemer
 data EscrowRedeemer
   -- ^ scooper collects escrow actions to execute them on pool
-  = EscrowScoop Integer
+  = EscrowScoop
   -- ^ user withdraws their escrow
   | EscrowCancel
 
 newtype FactoryScriptHash = FactoryScriptHash ScriptHash
   deriving stock Prelude.Show
 newtype TreasuryScriptHash = TreasuryScriptHash ScriptHash
+  deriving stock Prelude.Show
+newtype SteakScriptHash = SteakScriptHash ScriptHash
   deriving stock Prelude.Show
 
 newtype FactoryBootCurrencySymbol = FactoryBootCurrencySymbol CurrencySymbol
@@ -357,6 +359,7 @@ PlutusTx.makeLift ''ScooperFeeHolderScriptHash
 PlutusTx.makeLift ''PoolCurrencySymbol
 PlutusTx.makeLift ''OldPoolCurrencySymbol
 PlutusTx.makeLift ''EscrowScriptHash
+PlutusTx.makeLift ''SteakScriptHash
 
 --instance Scripts.ValidatorTypes Factory where
 --  type instance DatumType Factory = FactoryDatum

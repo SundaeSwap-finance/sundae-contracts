@@ -18,7 +18,6 @@ import Prelude
 import GHC.Generics
 import Data.Aeson
 import Data.Text.Encoding qualified as Text
-import Data.ByteString.Hash qualified as Hash
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Short qualified as SBS
@@ -31,7 +30,7 @@ import Cardano.Crypto.Hash.Blake2b (Blake2b_224)
 
 import Codec.Serialise (deserialise)
 
-import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (SteakScriptHash(..), EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
 
 import Sundae.Utilities (Coin(..))
 
@@ -74,6 +73,8 @@ data AllScripts = AllScripts
   , escrowScr :: SerialisedScript
   , escrowSH :: EscrowScriptHash
   , factoryAssetClass :: AssetClass
+  , steakScr :: SerialisedScript
+  , steakSH :: SteakScriptHash
   } deriving (Generic, Show, ToJSON)
 
 instance ToJSON AssetClass where
@@ -89,6 +90,7 @@ instance ToJSON PoolScriptHash where
 instance ToJSON PoolCurrencySymbol where
 instance ToJSON TreasuryScriptHash where
 instance ToJSON FactoryBootCurrencySymbol where
+instance ToJSON SteakScriptHash where
 
 deriving instance Generic EscrowScriptHash
 deriving instance Generic ScooperFeeHolderScriptHash
@@ -96,6 +98,7 @@ deriving instance Generic PoolScriptHash
 deriving instance Generic PoolCurrencySymbol
 deriving instance Generic TreasuryScriptHash
 deriving instance Generic FactoryBootCurrencySymbol
+deriving instance Generic SteakScriptHash
 
 instance ToJSON SerialisedScript where
   toJSON s = String $ Text.decodeUtf8 $ Base16.encode (SBS.fromShort s)
@@ -185,8 +188,10 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
     poolCS = mcs poolMintScr
     poolScr = poolScript factoryBootCS escrowSH
     poolSH = vsh poolScr
+    steakScr = steakScript poolCS
+    steakSH = vsh steakScr
 
-    escrowScr = escrowScript poolCS
+    escrowScr = escrowScript steakSH
     escrowSH = vsh escrowScr
     factoryAssetClass = AssetClass (coerce factoryBootCS, factoryToken)
   in AllScripts {..}
@@ -240,7 +245,7 @@ testEvalEscrowScr = do
     coinB = AssetClass (coerce $ poolCS scriptsExample, Plutus.TokenName "p \NUL")
     escrowAction = EscrowSwap (coinA, 1000000) (coinB, Nothing)
     datum = EscrowDatum escrowAddress 2500000 escrowAction
-    redeemer = EscrowScoop 1
+    redeemer = EscrowScoop
     context =
       Plutus.ScriptContext
         { scriptContextTxInfo =

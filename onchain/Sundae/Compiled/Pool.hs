@@ -30,14 +30,27 @@ poolScript fbcs esh =
       Nothing -> Prelude.error "Couldn't compile pool script"
 
 escrowScript
-  :: PoolCurrencySymbol
+  :: SteakScriptHash
   -> SerialisedScript
-escrowScript pcs =
+escrowScript ssh =
   let
     x =
-      pure $$(PlutusTx.compile [|| \pcs' d r ctx -> check $ escrowContract pcs' d r ctx ||])
-        >>= flip apCode pcs
+      pure $$(PlutusTx.compile [|| \ssh' d r ctx -> check $ escrowContract ssh' d r ctx ||])
+        >>= flip apCode ssh
   in
     case x of
       Just x' -> serialiseCompiledCode x'
       Nothing -> Prelude.error "Couldn't compile escrow script"
+
+steakScript
+  :: PoolCurrencySymbol
+  -> SerialisedScript
+steakScript pcs =
+  let
+    x =
+      pure $$(PlutusTx.compile [|| \pcs' r ctx -> check $ steakContract pcs' r ctx ||])
+        >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile steak script"
