@@ -138,25 +138,6 @@ rawDatumOf txInfo txOut =
     OutputDatum _ -> Nothing
     NoOutputDatum -> Nothing
 
-{-# inlinable lookupDatumHash #-}
-lookupDatumHash :: Map DatumHash Datum -> OutputDatum -> Maybe Datum
-lookupDatumHash m outputDatum =
-  case outputDatum of
-    OutputDatumHash d -> Map.lookup d m
-    OutputDatum _ -> Nothing
-    NoOutputDatum -> Nothing
-
-{-# inlinable lookupDatumHash' #-}
-lookupDatumHash' :: FromData a => Map DatumHash Datum -> OutputDatum -> Maybe a
-lookupDatumHash' m outputDatum =
-  case outputDatum of
-    OutputDatumHash d ->
-      case Map.lookup d m of
-        Just dat -> fromBuiltinData (getDatum dat)
-        Nothing -> Nothing
-    OutputDatum _ -> Nothing
-    NoOutputDatum -> Nothing
-
 txOutDatumHash :: TxOut -> Maybe DatumHash
 txOutDatumHash txOut =
   case txOutDatum txOut of
@@ -488,14 +469,6 @@ getScriptInput [] _ = traceError "script input not found !!!"
 getScriptInput ((TxInInfo tref ot) : tl) o_ref
   | tref == o_ref = ot
   | otherwise = getScriptInput tl o_ref
-
-{-# INLINEABLE getScriptInput' #-}
-getScriptInput' :: [BuiltinData] -> TxOutRef -> TxOut
-getScriptInput' [] _ = traceError "script input not found !!!"
-getScriptInput' ((unsafeFromBuiltinData -> TxInInfo tref ot) : tl) o_ref
-  | tref == o_ref = ot
-  | otherwise = getScriptInput' tl o_ref
-
 
 {-# INLINEABLE isScriptAddress #-}
 isScriptAddress :: TxOut -> ScriptHash -> Bool
