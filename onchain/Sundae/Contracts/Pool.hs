@@ -78,7 +78,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
     debug "must have escrows"
       (not $ null escrows) &&
       _pool'circulatingLP newDatum == newCirculatingLP &&
-      _pool'rewards newDatum >= rewards + minimumScooperFee &&
+      newRewardsAmt >= rewards + minimumScooperFee &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
@@ -104,7 +104,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
         TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
-  Just newDatum = datumOf txInfo poolOutput
+  Just !newDatum = datumOf txInfo poolOutput
   !newRewardsAmt = _pool'rewards newDatum
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
