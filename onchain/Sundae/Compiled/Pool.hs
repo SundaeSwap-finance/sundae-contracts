@@ -18,7 +18,7 @@ poolScript fbcs esh =
   let
     x =
       pure $$(PlutusTx.compile [|| \fbcs' esh' datum redeemer ctx ->
-        check $ poolContract fbcs' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+        check $ poolContract fbcs' esh' datum redeemer ctx ||])
         >>= flip apCode fbcs
         >>= flip apCode esh
   in
@@ -32,7 +32,7 @@ escrowScript
 escrowScript pcs =
   let
     x =
-      pure $$(PlutusTx.compile [|| \pcs' d r p -> check $ escrowContract pcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData p) ||])
+      pure $$(PlutusTx.compile [|| \pcs' d r ctx -> check $ escrowContract pcs' d r ctx ||])
         >>= flip apCode pcs
   in
     case x of

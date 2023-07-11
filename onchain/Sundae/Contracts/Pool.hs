@@ -11,6 +11,7 @@ import PlutusLedgerApi.V2.Contexts (findOwnInput)
 
 import qualified PlutusTx.AssocMap as Map
 import PlutusTx.Ratio
+import PlutusTx.Builtins
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
@@ -60,12 +61,14 @@ data OrderedEscrow = OrderedEscrow
 poolContract
   :: FactoryBootCurrencySymbol
   -> EscrowScriptHash
-  -> PoolDatum
-  -> PoolRedeemer
-  -> ScriptContext
+  -> BuiltinData -- PoolDatum
+  -> BuiltinData -- PoolRedeemer
+  -> BuiltinData -- ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
+  (unsafeFromBuiltinData -> datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards))
+  (unsafeFromBuiltinData -> PoolScoop scooperPkh order)
+  (unsafeFromBuiltinData -> ctx) =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -122,6 +125,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       Nothing -> traceError "factory reference must have a factory datum"
   !(FactoryDatum _poolSH !poolCS _ _) = factoryReferenceDatum
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
+
   !ownInput = scriptInput ctx
   !poolOutput = uniqueElement'
     [ o
@@ -221,13 +225,15 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
 {-# inlinable escrowContract #-}
 escrowContract
   :: PoolCurrencySymbol
-  -> EscrowDatum
-  -> EscrowRedeemer
-  -> ScriptContext
+  -> BuiltinData -- EscrowDatum
+  -> BuiltinData -- EscrowRedeemer
+  -> BuiltinData -- ScriptContext
   -> Bool
 escrowContract
   (PoolCurrencySymbol pcs)
-  escrow_datum redeemer (ScriptContext tx_info _) =
+  (unsafeFromBuiltinData -> escrow_datum)
+  (unsafeFromBuiltinData -> redeemer)
+  rawCtx =
     case redeemer of
       EscrowScoop ->
         escrowScoop
@@ -236,7 +242,7 @@ escrowContract
   where
   escrowScoop =
     debug "no pool token output present"
-      (atLeastOne (hasPoolToken . txOutValue) (txInfoOutputs $ tx_info))
+      (atLeastOne (hasPoolToken . txOutValue . unsafeFromBuiltinData) outs)
     where
     hasPoolToken :: Value -> Bool
     hasPoolToken v = any isPoolNft (flattenValue v)
@@ -244,10 +250,19 @@ escrowContract
     isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
   escrowCancel =
     debug "the canceller did not sign the transaction"
-      (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)
+      (atLeastOne (\x -> atLeastOne (\a -> unsafeFromBuiltinData a == x) signatories) pkhs)
     where
     !(EscrowDatum escrow_addr _ _) = escrow_datum
     pkhs = escrowPubKeyHashes escrow_addr
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      _,
+      _,
+      unsafeDataAsList -> outs,
+      _, _, _, _, _,
+      unsafeDataAsList -> signatories,
+      _, _, _
+    ])), _])) = rawCtx
 
 data ScoopResult = ScoopResult
   { poolCons :: ![(EscrowDestination, ABL Integer)]
