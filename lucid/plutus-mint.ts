@@ -1,5 +1,6 @@
 import {
   Blockfrost,
+  Script,
   Emulator,
   fromText,
   generatePrivateKey,
@@ -17,7 +18,9 @@ import {
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 
-function assert(p) {
+import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
+
+function assert(p: boolean) {
   if (!p) {
     throw "Assertion failed!"
   }
@@ -27,6 +30,9 @@ const flags = parse(Deno.args, {
   string: ["scriptsFile"]
 });
 
+if (flags.scriptsFile == undefined) {
+  throw "no scripts file";
+}
 const s = await Deno.readTextFile(flags.scriptsFile);
 const scriptsJson = JSON.parse(s);
 const poolValidator = scriptsJson["pool-validator"];
@@ -62,17 +68,18 @@ const lucid = await Lucid.new(emulator);
 lucid.selectWalletFromPrivateKey(userPrivateKey);
 console.log("User address", userAddress);
 
-const poolMintingPolicy = { type: "PlutusV2", script: poolMint };
+const poolMintingPolicy: Script = { type: "PlutusV2", script: poolMint };
 const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
 console.log("poolPolicyId: ", poolPolicyId);
-const poolScript = { type: "PlutusV2", script: poolValidator };
+const poolScript: Script = { type: "PlutusV2", script: poolValidator };
 const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
 console.log("poolScriptHash: ", poolScriptHash);
-const escrowScript = { type: "PlutusV2", script: escrowValidator };
+const escrowScript: Script = { type: "PlutusV2", script: escrowValidator };
 const escrowScriptHash = lucid.utils.validatorToScriptHash(escrowScript);
 console.log("escrowScriptHash: ", escrowScriptHash);
 
-const factoryAddress = lucid.utils.validatorToAddress({ type: "PlutusV2", script: factoryValidator });
+const factoryScript: Script = { type: "PlutusV2", script: factoryValidator };
+const factoryAddress = lucid.utils.validatorToAddress(factoryScript);
 const poolAddress = lucid.utils.validatorToAddress(poolScript);
 const escrowAddress = lucid.utils.validatorToAddress(escrowScript);
 
@@ -103,7 +110,7 @@ let okMinted = await emulator.awaitTx(mintedHash);
 console.log(`minted dummy tokens: ${okMinted}`);
 console.log(mintedHash);
 
-const factoryMintingPolicy = { type: "PlutusV2", script: factoryMint };
+const factoryMintingPolicy: Script = { type: "PlutusV2", script: factoryMint };
 const factoryMintRedeemer = "d87980"; // MakeFactory
 const factoryPolicyId = scriptsJson["factory-boot-cs"];
 assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
@@ -321,6 +328,81 @@ const escrow1 = (await emulator.getUtxosByOutRef([ref]))[0];
 ref = { txHash: escrow2Hash, outputIndex: 0 };
 console.log(`get ${ref.txHash}#${ref.outputIndex}`);
 const escrow2 = (await emulator.getUtxosByOutRef([ref]))[0];
+
+type ABL = {
+  a: bigint;
+  b: bigint;
+  liq: bigint;
+}
+
+enum Coin {
+  CoinA,
+  CoinB,
+}
+
+type SwapFees = {
+  numerator: bigint;
+  denominator: bigint;
+}
+
+function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL): [bigint, ABL] {
+  const diff = swapFees.denominator - swapFees.numerator;
+  if (coin == Coin.CoinA) {
+    const takes = (pool.b * gives * diff) / (pool.a * swapFees.denominator + gives * diff);
+    if (pool.b > takes) {
+      const newPool = {
+        a: pool.a + gives,
+        b: pool.b - takes,
+        liq: pool.liq,
+      };
+      return [takes, newPool];
+    } else {
+      throw "Can't do swap";
+    }
+  } else if (coin == Coin.CoinB) {
+    const takes = (pool.a * gives * diff) / (pool.b * swapFees.denominator + gives * diff);
+    if (pool.a > takes) {
+      const newPool = {
+        a: pool.a - takes,
+        b: pool.b + gives,
+        liq: pool.liq,
+      };
+      return [takes, newPool];
+    } else {
+      throw "Can't do swap";
+    }
+  } else {
+    throw "Invalid coin";
+  }
+}
+
+Deno.test("doSwap", () => {
+  let pool: ABL = {
+    a: 1_000_000_000n,
+    b: 1_000_000_000n,
+    liq: 1_000_000_000n,
+  };
+  let takes: bigint = 0n;
+  const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
+  [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
+  assertEquals(takes, 9_896_088n);
+  [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
+  assertEquals(takes, 9_702_095n);
+});
+
+let escrowTakes: bigint[] = [];
+let poolABL: ABL = {
+  a: 1_000_000_000n,
+  b: 1_000_000_000n,
+  liq: 1_000_000_000n,
+};
+let takes: bigint = 0n;
+const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
+for (let i = 0; i < 10; i++) {
+  [takes, poolABL] = doSwap(Coin.CoinA, 10_000_000n, swapFees, poolABL);
+  escrowTakes.push(takes);
+}
+console.log(escrowTakes);
 
 const scoopedPoolDatum =
   "d8799fd8799fd8799f" +
