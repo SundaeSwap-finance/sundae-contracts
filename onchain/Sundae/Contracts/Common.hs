@@ -283,7 +283,7 @@ instance Eq EscrowAction where
 -- | Escrow redeemer
 data EscrowRedeemer
   -- ^ scooper collects escrow actions to execute them on pool
-  = EscrowScoop
+  = EscrowScoop Integer
   -- ^ user withdraws their escrow
   | EscrowCancel
 

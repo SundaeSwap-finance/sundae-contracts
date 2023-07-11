@@ -232,14 +232,14 @@ escrowContract
   (unsafeFromBuiltinData -> redeemer)
   rawCtx =
     case redeemer of
-      EscrowScoop ->
-        escrowScoop
+      EscrowScoop poolIndex ->
+        escrowScoop poolIndex
       EscrowCancel ->
         escrowCancel
   where
-  escrowScoop =
-    debug "no pool token output present"
-      (atLeastOne (hasPoolToken . txOutValue . unsafeFromBuiltinData) outs)
+  escrowScoop poolIndex =
+    debug "no pool token at specified index"
+      (hasPoolToken (txOutValue (unsafeFromBuiltinData (outs !! poolIndex))))
     where
     hasPoolToken :: Value -> Bool
     hasPoolToken v = any isPoolNft (flattenValue v)

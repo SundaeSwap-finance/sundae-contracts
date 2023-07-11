@@ -363,7 +363,7 @@ for (let escrowsCount = 1n; escrowsCount < 10n; escrowsCount++) {
     "9f" + orderString +
     "ffff";
 
-  const escrowScoopRedeemer = "d87980"; // Scoop!
+  const escrowScoopRedeemer = "d8799f01ff"; // Scoop!
 
   const scooperFee = 2_500_000n;
   const rider = 2_000_000n;

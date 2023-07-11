@@ -240,7 +240,7 @@ testEvalEscrowScr = do
     coinB = AssetClass (coerce $ poolCS scriptsExample, Plutus.TokenName "p \NUL")
     escrowAction = EscrowSwap (coinA, 1000000) (coinB, Nothing)
     datum = EscrowDatum escrowAddress 2500000 escrowAction
-    redeemer = EscrowScoop
+    redeemer = EscrowScoop 1
     context =
       Plutus.ScriptContext
         { scriptContextTxInfo =
