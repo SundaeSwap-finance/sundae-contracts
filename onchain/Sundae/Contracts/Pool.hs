@@ -68,7 +68,7 @@ poolContract
 poolContract (FactoryBootCurrencySymbol fbcs) _
   (unsafeFromBuiltinData -> datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards))
   (unsafeFromBuiltinData -> PoolScoop scooperPkh order)
-  (unsafeFromBuiltinData -> ctx) =
+  rawCtx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -83,8 +83,8 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
       ( if newCirculatingLP == oldCirculatingLP
-        then null (flattenValue' (txInfoMint txInfo))
-        else onlyHas (txInfoMint txInfo) poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
+        then null (flattenValue' mint)
+        else onlyHas mint poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
       (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
@@ -107,35 +107,35 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
             TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
-  Just newDatum = datumOf txInfo poolOutput
+  Just newDatum = lookupDatumHash' datums (txOutDatum poolOutput)
   !newRewardsAmt = _pool'rewards newDatum
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ -> False
       _ -> True
-  !(LowerBound (Finite earliest) _) = ivFrom (txInfoValidRange txInfo)
+  !(LowerBound (Finite earliest) _) = ivFrom validRange
   !factoryReference = uniqueElement'
-    [ o
-    | o <- txInfoReferenceInputs txInfo
-    , isFactory fbcs (txInInfoResolved o)
+    [ oo
+    | o <- refIns
+    , let oo = unsafeFromBuiltinData o
+    , isFactory fbcs (txInInfoResolved oo)
     ]
   !factoryReferenceDatum =
-    case datumOf txInfo (txInInfoResolved factoryReference) of
+    case lookupDatumHash' datums (txOutDatum (txInInfoResolved factoryReference)) of
       Just fac -> fac
       Nothing -> traceError "factory reference must have a factory datum"
   !(FactoryDatum _poolSH !poolCS _ _) = factoryReferenceDatum
-  UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
-
-  !ownInput = scriptInput ctx
+  UpperBound (Finite latest) _ = ivTo validRange
+  !ownInput = getScriptInput ins o_ref
   !poolOutput = uniqueElement'
     [ o
-    | o <- txInfoOutputs txInfo
+    | o <- outs
     , isScriptAddress o ownScriptHash
     ]
   poolOutputValue = txOutValue poolOutput
   !poolOutputFunds = sansAda (newRewardsAmt + riderAmount) poolOutputValue
   mustSpendTo (EscrowDestination addr dh, val, count) =
-    atLeastOneSpending addr dh val count (txInfoOutputs txInfo)
+    atLeastOneSpending addr dh val count outs
   atLeastOneSpending :: Address -> Maybe DatumHash -> ABL Integer -> Integer -> [TxOut] -> Bool
   atLeastOneSpending _ _ _ _ [] = False
   atLeastOneSpending addr dh val count ((o@TxOut{txOutAddress, txOutValue}) : tl)
@@ -149,14 +149,13 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
     , val $$ CoinB <= valueOfAC txOutSansRider coinB
     , liquidity val <= valueOfAC txOutSansRider liquidityAssetClass = True
     | otherwise = atLeastOneSpending addr dh val count tl
-  !txInfo = scriptContextTxInfo ctx
   liquidityAssetClass =
     AssetClass (poolCS, computeLiquidityTokenName poolIdent)
   !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
-  !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
+  !minimumScooperFee = max 0 (totalScooperFee - valueOf txFee adaSymbol adaToken)
   !escrows =
     [ EscrowWithFee scoopFee (fromEscrowAddress ret, act)
-     | TxInInfo {txInInfoResolved = txOut} <- txInfoInputs txInfo
+     | TxInInfo {txInInfoResolved = txOut} <- ins
      , let !escrowInValue = txOutValue txOut
      -- Escrows will usually come from the escrow script, but it's OK if they
      -- come from somewhere else as long as the datum is valid. Other scripts
@@ -164,7 +163,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
      -- loss orders. So we treat anything that doesn't come from the pool script
      -- as an escrow.
      , not (isScriptAddress txOut ownScriptHash)
-     , Just (EscrowDatum ret scoopFee act) <- [datumOf txInfo txOut]
+     , Just (EscrowDatum ret scoopFee act) <- [lookupDatumHash' datums (txOutDatum txOut)]
      , scoopFee >= 0
      -- Coin B can never be ADA, because pool coin pairs are lexicographically
      -- ordered when we create a pool, so we only check A here
@@ -211,6 +210,20 @@ poolContract (FactoryBootCurrencySymbol fbcs) _
       valueOfAC v liquidityAssetClass >= amt && amt >= 1
     EscrowSwap (giveCoin, amt) _ ->
       valueOfAC v giveCoin >= amt && amt >= 1
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      unsafeFromBuiltinData -> ins,
+      unsafeDataAsList -> refIns,
+      unsafeFromBuiltinData -> outs,
+      unsafeFromBuiltinData -> txFee,
+      unsafeFromBuiltinData -> mint,
+      _, _,
+      unsafeFromBuiltinData -> validRange,
+      _,
+      _,
+      unsafeFromBuiltinData -> (datums :: Map DatumHash Datum), _
+    ])), unsafeFromBuiltinData -> Spending o_ref])) = rawCtx
+
 
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool
