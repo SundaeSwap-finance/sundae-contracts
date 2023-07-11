@@ -18,7 +18,10 @@ poolScript fbcs esh =
   let
     x =
       pure $$(PlutusTx.compile [|| \fbcs' esh' datum redeemer ctx ->
-        check $ poolContract fbcs' esh' datum redeemer ctx ||])
+        check $ poolContract fbcs' esh'
+          (PlutusTx.unsafeFromBuiltinData datum)
+          (PlutusTx.unsafeFromBuiltinData redeemer)
+          (PlutusTx.unsafeFromBuiltinData ctx) ||])
         >>= flip apCode fbcs
         >>= flip apCode esh
   in

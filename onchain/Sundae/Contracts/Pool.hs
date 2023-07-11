@@ -61,14 +61,14 @@ data OrderedEscrow = OrderedEscrow
 poolContract
   :: FactoryBootCurrencySymbol
   -> EscrowScriptHash
-  -> BuiltinData -- PoolDatum
-  -> BuiltinData -- PoolRedeemer
-  -> BuiltinData -- ScriptContext
+  -> PoolDatum
+  -> PoolRedeemer
+  -> ScriptContext
   -> Bool
 poolContract (FactoryBootCurrencySymbol fbcs) _
-  (unsafeFromBuiltinData -> datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards))
-  (unsafeFromBuiltinData -> PoolScoop scooperPkh order)
-  (unsafeFromBuiltinData -> ctx) =
+  (datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards))
+  (PoolScoop scooperPkh order)
+  ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
