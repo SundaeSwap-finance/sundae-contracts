@@ -50,7 +50,7 @@ const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
 //console.log("userPkh", userPkh.to_hex());
 const userAddress = await dummy.selectWalletFromPrivateKey(userPrivateKey).wallet.address();
 
-for (let escrowsCount = 1n; escrowsCount < 10n; escrowsCount++) {
+for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
   const accounts =
     [
       {
