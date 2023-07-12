@@ -5,12 +5,15 @@ module Main (main) where
 import Options.Applicative qualified as O
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
-import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as BL
-import Data.ByteString.Short qualified as BS
+import Data.ByteString.Short qualified as Short
 import Data.ByteString.Base16 qualified as Hex
+import Data.Map qualified as Map
+import Data.Text.Encoding qualified as Text
 import Data.Coerce (coerce, Coercible)
-import Data.Foldable (traverse_)
+import Data.Foldable (for_)
+import Data.String (fromString)
 import System.Directory
 import System.FilePath
 
@@ -24,15 +27,20 @@ data Format = Raw | Hex | Json
 
 data CompilationSettingsSource = StdIn | InFile FilePath
 
-data CompilationTarget
+data Script
     = FactoryMint
     | FactoryValidator
     | PoolMint
     | PoolValidator
     | EscrowValidator
-    | All
+    deriving (Enum, Bounded)
 
-data Destination = OutFile FilePath | StdOut
+data CompilationTarget = All | Script Script
+
+data Destination
+  = OutDirectory FilePath
+  | OutFile FilePath
+  | StdOut
 
 data CompileConfig = CompileConfig
     { compileTarget :: CompilationTarget
@@ -65,11 +73,11 @@ getConfig = O.execParser $ O.info parser $ mconcat
 
         pTarget :: O.Parser CompilationTarget
         pTarget
-            =     (O.flag' FactoryValidator (O.long "factory" <> O.help "compile the factory script"))
-            O.<|> (O.flag' FactoryMint (O.long "factory-mint" <> O.help "compile the factory mint script"))
-            O.<|> (O.flag' PoolValidator (O.long "pool" <> O.help "compile the pool script"))
-            O.<|> (O.flag' PoolMint (O.long "pool-mint" <> O.help "compile the pool mint script"))
-            O.<|> (O.flag' EscrowValidator (O.long "escrow" <> O.help "compile the escrow script"))
+            =     (O.flag' (Script FactoryValidator) (O.long "factory" <> O.help "compile the factory script"))
+            O.<|> (O.flag' (Script FactoryMint) (O.long "factory-mint" <> O.help "compile the factory mint script"))
+            O.<|> (O.flag' (Script PoolValidator) (O.long "pool" <> O.help "compile the pool script"))
+            O.<|> (O.flag' (Script PoolMint) (O.long "pool-mint" <> O.help "compile the pool mint script"))
+            O.<|> (O.flag' (Script EscrowValidator) (O.long "escrow" <> O.help "compile the escrow script"))
             O.<|> (O.flag' All (O.long "all" <> O.help "compile the all scripts"))
 
         pSettings :: O.Parser CompilationSettingsSource
@@ -120,53 +128,60 @@ main = do
                 -- Factory related scripts
                 factoryMintScript = factoryBootMintingScript settings
                 factoryCurrencySymbol = makeCurrencySymbol factoryMintScript :: FactoryBootCurrencySymbol
-                factoryValidatorScript = factoryScript upgradeSettings factoryCurrencySymbol poolScriptHash poolCurrencySymbol
+                factoryValidatorScript = factoryScript factoryCurrencySymbol
 
                 -- Pool related scripts
                 poolMintScript = poolMintingScript factoryCurrencySymbol oldPoolCurrencySymbol
                 poolCurrencySymbol = makeCurrencySymbol poolMintScript :: PoolCurrencySymbol
                 poolValidatorScript = poolScript factoryCurrencySymbol poolCurrencySymbol escrowScriptHash
-                poolScriptHash = makeValidatorScriptHash poolValidatorScript
 
                 -- Escrow related scripts
                 escrowValidatorScript = escrowScript poolCurrencySymbol
                 escrowScriptHash = makeValidatorScriptHash escrowValidatorScript
 
-                encode = case format of
-                    Raw -> id
-                    Hex -> Hex.encode
+                encodeMany :: Map.Map String BS8.ByteString -> BS8.ByteString
+                encodeMany = case format of
+                  Raw -> BS8.intercalate "\n" . Map.elems
+                  Hex -> BS8.intercalate "\n" . map Hex.encode . Map.elems
+                  Json -> BL.toStrict . Aeson.encode . Map.map (Text.decodeUtf8 . Hex.encode)
 
-                targetDirectory = case destination of
-                    StdOut -> ""
-                    OutFile file -> (dropFileName file)
+                encode :: Aeson.Key -> BS8.ByteString -> BS8.ByteString
+                encode name script = case format of
+                  Raw -> script
+                  Hex -> Hex.encode script
+                  Json -> BL.toStrict . Aeson.encode . Aeson.object $
+                    [ (name, Aeson.String $ Text.decodeUtf8 $ Hex.encode script)
+                    ]
 
-                targetFilename = case destination of
-                    StdOut -> ""
-                    OutFile file -> takeFileName file
+                infoForTarget :: Script -> (String, BS8.ByteString)
+                infoForTarget = \case
+                  FactoryMint -> ("factory-mint", Short.fromShort factoryMintScript)
+                  FactoryValidator -> ("factory-validator", Short.fromShort factoryValidatorScript)
+                  PoolMint -> ("pool-mint", Short.fromShort poolMintScript)
+                  PoolValidator -> ("pool-validator", Short.fromShort poolValidatorScript)
+                  EscrowValidator -> ("escrow-validator", Short.fromShort escrowValidatorScript)
 
-                -- This is a little messy:
-                --  In the case of a single-script compilation, --out refers to the file we should write (path + filename)
-                --  In the case of a compiling all scripts, --out should refer to a directory, with appropriate filenames appended
-                -- I struggled with how to do this for a bit, but settled on this:
-                --  We use targetDirectory above, which always gets the directory to save to (make sure you end with a trailing slash for --all)
-                --  then, for --all we can pass in specific filenames as part of the tuple, and for individual scripts, we can use targetFilename from above
-                -- Feel free to restructure if you see a better way
-                output (filename, scr) = case destination of
-                    StdOut -> BS.putStrLn scr
-                    OutFile file -> do
-                        let path = targetDirectory ++ filename
-                        createDirectoryIfMissing True targetDirectory
-                        BS.writeFile path scr
+                targets :: CompilationTarget -> [(String, BS8.ByteString)]
+                targets = \case
+                  Script s -> [infoForTarget s]
+                  All -> map infoForTarget [minBound..maxBound]
 
-            traverse_ (\(f, scr) -> output $ (f, encode . BS.fromShort $ scr)) $ case target of
-                All -> [ ("factory-mint", factoryMintScript)
-                       , ("factory", factoryValidatorScript)
-                       , ("pool-mint", poolMintScript)
-                       , ("pool", poolValidatorScript)
-                       , ("escrow", escrowValidatorScript)
-                       ]
-                FactoryMint -> [(targetFilename, factoryMintScript)]
-                FactoryValidator -> [(targetFilename, factoryValidatorScript)]
-                PoolMint -> [(targetFilename, poolMintScript)]
-                PoolValidator -> [(targetFilename, poolValidatorScript)]
-                EscrowValidator -> [(targetFilename, escrowValidatorScript)]
+                output :: [(String, BS8.ByteString)] -> Destination -> IO ()
+                output files = \case
+                  OutDirectory file -> do
+                    let targetDirectory = dropFileName file
+                    createDirectoryIfMissing True targetDirectory
+                    for_ files \(f, scr) -> do
+                      let path = targetDirectory ++ f
+                      BS.writeFile path (encode (fromString f) scr)
+                  OutFile file -> BS.writeFile file (encodeMany (Map.fromList files))
+                  StdOut -> BS8.putStrLn (encodeMany (Map.fromList files))
+
+            -- If --out was passed, but target is All, use OutDirectory instead
+            -- of OutFile. We can't do this in the parser itself since it's not
+            -- in a monad, but explicitly distinguishing OutFile and
+            -- OutDirectory in the destination type lets us decouple encoding
+            -- and output
+            output (targets target) $ case (target, destination) of
+              (All, OutFile f) -> OutDirectory f
+              (_, other) -> other
