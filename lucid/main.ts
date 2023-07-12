@@ -19,6 +19,14 @@ import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 import { ABL, Coin, SwapFees, doSwap } from "./cpp.ts";
 
+const verbose = false ;
+
+function log(...args) {
+  if (verbose) {
+    console.log(...args);
+  }
+}
+
 function assert(p: boolean) {
   if (!p) {
     throw "Assertion failed!"
@@ -46,9 +54,9 @@ const dummy = await Lucid.new(undefined, "Custom");
 const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
 //generatePrivateKey();
 const userPublicKey = toPublicKey(userPrivateKey);
-//console.log(userPublicKey);
+log(userPublicKey);
 const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
-//console.log("userPkh", userPkh.to_hex());
+log("userPkh", userPkh.to_hex());
 const userAddress = await dummy.selectWalletFromPrivateKey(userPrivateKey).wallet.address();
 
 for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
@@ -67,17 +75,17 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
   const lucid = await Lucid.new(emulator);
 
   lucid.selectWalletFromPrivateKey(userPrivateKey);
-  //console.log("User address", userAddress);
+  log("User address", userAddress);
 
   const poolMintingPolicy: Script = { type: "PlutusV2", script: poolMint };
   const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
-  //console.log("poolPolicyId: ", poolPolicyId);
+  log("poolPolicyId: ", poolPolicyId);
   const poolScript: Script = { type: "PlutusV2", script: poolValidator };
   const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
-  //console.log("poolScriptHash: ", poolScriptHash);
+  log("poolScriptHash: ", poolScriptHash);
   const escrowScript: Script = { type: "PlutusV2", script: escrowValidator };
   const escrowScriptHash = lucid.utils.validatorToScriptHash(escrowScript);
-  //console.log("escrowScriptHash: ", escrowScriptHash);
+  log("escrowScriptHash: ", escrowScriptHash);
   const steakScript: Script = { type: "PlutusV2", script: steakValidator };
   const steakScriptHash = lucid.utils.validatorToScriptHash(steakScript);
 
@@ -112,19 +120,19 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
 
   let mintedHash: TxHash = await mintDummyTokens();
   let okMinted = await emulator.awaitTx(mintedHash);
-  //console.log(`minted dummy tokens: ${okMinted}`);
-  //console.log(mintedHash);
+  log(`minted dummy tokens: ${okMinted}`);
+  log(mintedHash);
 
   const factoryMintingPolicy: Script = { type: "PlutusV2", script: factoryMint };
   const factoryMintRedeemer = "d87980"; // MakeFactory
   const factoryPolicyId = scriptsJson["factory-boot-cs"];
   assert(factoryPolicyId == lucid.utils.mintingPolicyToId(factoryMintingPolicy));
-  //console.log(`factoryPolicyId: ${factoryPolicyId}`);
+  log(`factoryPolicyId: ${factoryPolicyId}`);
 
   // poolSH = "", poolCS = "", 1 scooper (userPkh)
   const newFactoryDatum =
     "d8799f41004100" +
-    "81581c" + userPkh.to_hex() + 
+    "81581c" + userPkh.to_hex() +
     "80ff";
 
   async function bootFactory(): Promise<TxHash> {
@@ -134,7 +142,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
       }, factoryMintRedeemer)
       .validTo(emulator.now() + 30000)
       .attachMintingPolicy(factoryMintingPolicy)
-      .payToContract(factoryAddress, newFactoryDatum, {
+      .payToContract(factoryAddress, { inline: newFactoryDatum }, {
         "lovelace": 2_000_000n,
         [toUnit(factoryPolicyId, fromText("factory"))]: 1n
       })
@@ -145,16 +153,16 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
 
   const bootedHash = await bootFactory();
   const okBooted = await emulator.awaitTx(bootedHash);
-  //console.log(`booted factory: ${okBooted}`);
-  //console.log(bootedHash);
+  log(`booted factory: ${okBooted}`);
+  log(bootedHash);
 
   let ref = { txHash: bootedHash, outputIndex: 0 };
-  //console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+  log(`get ${ref.txHash}#${ref.outputIndex}`);
   let newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
   newFactory.datum = newFactoryDatum;
 
-  //console.log("ledger after boot: ")
-  //console.log(emulator.ledger);
+  log("ledger after boot: ")
+  log(emulator.ledger);
 
   const configuredFactoryDatum =
     "d8799f581c" +
@@ -164,7 +172,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "9f581c" + userPkh.to_hex() +
     "ff80ff";
 
-  //console.log("configured factory datum: " + configuredFactoryDatum)
+  log("configured factory datum: " + configuredFactoryDatum)
 
   const configureFactoryRedeemer = "d87980";
 
@@ -177,7 +185,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
       .collectFrom([newFactory], configureFactoryRedeemer)
       .validTo(emulator.now() + 30000)
       .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
-      .payToContract(factoryAddress, configuredFactoryDatum, {
+      .payToContract(factoryAddress, { inline: configuredFactoryDatum }, {
         "lovelace": 2_000_000n,
         [toUnit(factoryPolicyId, fromText("factory"))]: 1n
       })
@@ -188,14 +196,14 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
 
   const configuredHash = await configureFactory();
   const okConfigured = await emulator.awaitTx(configuredHash);
-  //console.log(`configured factory: ${okConfigured}`);
-  //console.log(configuredHash);
+  log(`configured factory: ${okConfigured}`);
+  log(configuredHash);
 
-  //console.log("ledger after configure: ")
-  //console.log(emulator.ledger);
+  log("ledger after configure: ")
+  log(emulator.ledger);
 
   ref = { txHash: configuredHash, outputIndex: 0 };
-  //console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+  log(`get ${ref.txHash}#${ref.outputIndex}`);
   const factory = (await emulator.getUtxosByOutRef([ref]))[0];
   if (!factory) { throw "No factory"; }
   const factoryChange = (await emulator.getUtxosByOutRef([{
@@ -221,8 +229,8 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
   const poolLqName = concat(l, newPoolId);
   const poolNftNameHex = toHex(poolNftName);
   const poolLqNameHex = toHex(poolLqName);
-  //console.log("poolNftName (hex): ", poolNftNameHex);
-  //console.log("poolLqName (hex): ", poolLqNameHex);
+  log("poolNftName (hex): ", poolNftNameHex);
+  log("poolLqName (hex): ", poolLqNameHex);
 
   const newPoolDatum =
     "d8799fd8799fd8799f" +
@@ -235,7 +243,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "581f" + toHex(newPoolId) +
     "1a3b9aca00d8799f011907d0ff0000ff";
 
-  //console.log("newPoolDatum: ", newPoolDatum);
+  log("newPoolDatum: ", newPoolDatum);
 
   const poolMintRedeemer =
     "d87a9fd8799f4040ffd8799f" +
@@ -243,12 +251,14 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "45" + fromText("DUMMY") +
     "ffff";
 
-  //console.log("poolMintRedeemer: ", poolMintRedeemer);
+  log("poolMintRedeemer: ", poolMintRedeemer);
 
-  //console.log("datum table", emulator.datumTable);
+  log(emulator.ledger);
 
-  factory.datum = null;
-  factoryChange.datum = null;
+  assert(factory.datum == configuredFactoryDatum);
+  assert(factoryChange.datum == null);
+
+  log("datum table", emulator.datumTable);
 
   async function mintPool(): Promise<TxHash> {
     const tx = await lucid.newTx()
@@ -260,7 +270,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
       .attachMintingPolicy(poolMintingPolicy)
       .readFrom([factory])
       .collectFrom([factoryChange])
-      .payToContract(poolAddress, newPoolDatum, {
+      .payToContract(poolAddress, { inline: newPoolDatum }, {
         "lovelace": 1_000_000_000n + 2_000_000n,
         [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
@@ -270,18 +280,18 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
         [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
       })
       .complete();
-    //console.log(tx.toString());
+    log(tx.toString());
     const signedTx = await tx.sign().complete();
     return signedTx.submit();
   }
 
   mintedHash = await mintPool();
   okMinted = await emulator.awaitTx(mintedHash);
-  //console.log(`minted pool: ${okMinted}`);
-  //console.log(mintedHash);
+  log(`minted pool: ${okMinted}`);
+  log(mintedHash);
 
   ref = { txHash: mintedHash, outputIndex: 0 };
-  //console.log(`get ${ref.txHash}#${ref.outputIndex}`);
+  log(`get ${ref.txHash}#${ref.outputIndex}`);
   const pool = (await emulator.getUtxosByOutRef([ref]))[0];
 
   const newEscrowDatum =
@@ -301,12 +311,12 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "d87a80ff" + // market order
     "ffff";
 
-  //console.log(`newEscrowDatum: ${newEscrowDatum}`);
+  log(`newEscrowDatum: ${newEscrowDatum}`);
 
   async function listEscrow(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .validTo(emulator.now() + 30000)
-      .payToContract(escrowAddress, newEscrowDatum, {
+      .payToContract(escrowAddress, { inline: newEscrowDatum }, {
         "lovelace": 4_500_000n + 10_000_000n,
       })
       .complete();
@@ -319,7 +329,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     let listedHash = await listEscrow();
     const escrowHash = listedHash;
     let okListed = await emulator.awaitTx(listedHash);
-    //console.log(`listed escrow ${i}: ${okListed}`);
+    log(`listed escrow ${i}: ${okListed}`);
     ref = { txHash: escrowHash, outputIndex: 0 };
     const escrow = (await emulator.getUtxosByOutRef([ref]))[0];
     listedEscrows.push(escrow);
@@ -337,7 +347,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     [takes, poolABL] = doSwap(Coin.CoinA, 10_000_000n, swapFees, poolABL);
     escrowTakes.push(takes);
   }
-  //console.log(escrowTakes);
+  log(escrowTakes);
 
   const totalRewards = 2_500_000n * escrowsCount;
 
@@ -355,8 +365,8 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
     "1a" + totalRewards.toString(16).padStart(8, '0') +
     "ff";
 
-  //console.log("newPoolDatum: " + newPoolDatum);
-  //console.log("scoopedPoolDatum: " + scoopedPoolDatum);
+  log("newPoolDatum: " + newPoolDatum);
+  log("scoopedPoolDatum: " + scoopedPoolDatum);
 
   let orderString = "";
   for (let i = 0n; i < escrowsCount; i++) {
@@ -393,7 +403,7 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
         "lovelace": escrowsCount * rider,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: totalReturn,
       })
-      .payToContract(poolAddress, scoopedPoolDatum, {
+      .payToContract(poolAddress, { inline: scoopedPoolDatum }, {
         "lovelace":
           1_000_000_000n +
           escrowsCount * 10_000_000n +
@@ -410,8 +420,8 @@ for (let escrowsCount = 1n; escrowsCount < 20n; escrowsCount++) {
 
   const scoopedHash = await scoopPool();
   const okScooped = await emulator.awaitTx(scoopedHash);
-  //console.log(`scooped pool: ${okScooped}`);
-  //console.log(scoopedHash);
+  log(`scooped pool: ${okScooped}`);
+  log(scoopedHash);
 
-  //console.log(emulator.ledger);
+  log(emulator.ledger);
 }

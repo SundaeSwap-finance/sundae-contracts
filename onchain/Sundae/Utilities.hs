@@ -135,7 +135,7 @@ rawDatumOf :: TxInfo -> TxOut -> Maybe Datum
 rawDatumOf txInfo txOut =
   case txOutDatum txOut of
     OutputDatumHash d -> Map.lookup d $ txInfoData txInfo
-    OutputDatum _ -> Nothing
+    OutputDatum d -> Just d
     NoOutputDatum -> Nothing
 
 txOutDatumHash :: TxOut -> Maybe DatumHash
