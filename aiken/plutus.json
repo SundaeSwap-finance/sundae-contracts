@@ -1,0 +1,273 @@
+{
+  "preamble": {
+    "title": "sundae/contracts",
+    "description": "Experimental port of SundaeSwap to Aiken",
+    "version": "0.0.0",
+    "plutusVersion": "v2",
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "order.spend",
+      "datum": {
+        "title": "datum",
+        "schema": {
+          "$ref": "#/definitions/types~1order~1OrderDatum"
+        }
+      },
+      "redeemer": {
+        "title": "redeemer",
+        "schema": {
+          "$ref": "#/definitions/types~1order~1OrderRedeemer"
+        }
+      },
+      "compiledCode": "5908810100003232323232323232323232322223232533300a32533300b3370e9002000899991911198019bac3300b300d3300b300d001480012010375c66016601a0049002180080091129998090010a501323253330103371e00400629444ccc01401400400cc05800cdd7180a0010010020a99980599b87480080044c8c8cccc8c8888c8c8c98cc040c0480052002301900130103253330133370e9000180900088008a9980a2492a4578706563746564206f6e20696e636f727265637420636f6e7374727563746f722076617269616e742e00163300437586601c60206601c60200029000240040046002002444a666028004298103d87a80001323253330123370e0069000099ba548000cc05c0092f5c0266600a00a00266e0400d200230180033016002004001006375a602400260120062c60120042930b190029991919119299980719b87480000044c8c8c8c8c8c94ccc060c06c0084c8c9263253330163370e9000000899191919299980f18108010991924c64a66603866e1d200000115333020301a003149854cc07524011d4578706563746564206e6f206669656c647320666f7220436f6e73747200161533301c3370e900100089919299981118128010a4c2a6603e9201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c604600260340062a66603866e1d20040011323253330223025002149854cc07d2401334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e20657870656374656400163023001301a003153301d4912b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016301a00232533301b3370e9000000899191919299981198130010991924c64a66604266e1d2000001132325333027302a002132498c94ccc090cdc3a400000226464a666054605a00426493180d8008a99813a481334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016302b0013022002153330243370e90010008991919191919299981718188010a4c2a660569201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375a605e002605e0046eb4c0b4004c0b4008dd6981580098110010a99812a4812b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016302200115330244901334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e20657870656374656400163028001301f003153330213370e90010008a999812980f8018a4c2a6604492011d4578706563746564206e6f206669656c647320666f7220436f6e737472001615330224912b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016301f00230140031533020491334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e20657870656374656400163024001302400230220013019004153301c4912b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e7400163019003153301b4901334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016301f001301f002301d001301400515330174912b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e74001630140043300a0052323232498cc0340048c8c926375a60380046eb8c068004dd5980c8011bae301700115330154901334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c60320026032004602e002602e0046eacc054004c03000854cc03d2412b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300c001232533300d3370e9000000899192999809980b0010a4c2a66020921334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c602800260160042a66601a66e1d20020011323253330133016002149854cc0412401334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c602800260160042a6601c9212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300b0013001001222533301000214984c8ccc010010c05000c008c004c048008010c800cc94ccc024cdc3a40000022a66601a600e0062930a9980524811d4578706563746564206e6f206669656c647320666f7220436f6e7374720016153330093370e900100089919299980798090010a4c2a660189201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375a6020002600e0062a66601266e1d20040011533300d3007003149854cc02924011d4578706563746564206e6f206669656c647320666f7220436f6e7374720016153300a4912b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300700233001001480008888cccc01ccdc38008018069199980280299b8000448008c03c0040080088c018dd5000918021baa0015734ae7155ceaab9e5573eae815d0aba21",
+      "hash": "357d3c71a77d3b3adff5383d42bbe9db08c04dd6f4103a44f8eee763"
+    }
+  ],
+  "definitions": {
+    "ByteArray": {
+      "dataType": "bytes"
+    },
+    "Data": {
+      "title": "Data",
+      "description": "Any Plutus data."
+    },
+    "Int": {
+      "dataType": "integer"
+    },
+    "Option$aiken/transaction/credential/Referenced$aiken/transaction/credential/Credential": {
+      "title": "Optional",
+      "anyOf": [
+        {
+          "title": "Some",
+          "description": "An optional value.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/aiken~1transaction~1credential~1Referenced$aiken~1transaction~1credential~1Credential"
+            }
+          ]
+        },
+        {
+          "title": "None",
+          "description": "Nothing.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "aiken/dict/Dict$ByteArray_Int": {
+      "title": "Dict",
+      "description": "An opaque `Dict`. The type is opaque because the module maintains some\n invariant, namely: there's only one occurrence of a given key in the dictionary.\n\n Note that the `key` parameter is a phantom-type, and only present as a\n means of documentation. Keys can be any type, yet will need to comparable\n to use functions like `insert`.\n\n See for example:\n\n ```aiken\n pub type Value =\n   Dict<PolicyId, Dict<AssetName, Int>>\n ```",
+      "dataType": "map",
+      "keys": {
+        "$ref": "#/definitions/ByteArray"
+      },
+      "values": {
+        "$ref": "#/definitions/Int"
+      }
+    },
+    "aiken/transaction/Datum": {
+      "title": "Datum",
+      "description": "An output `Datum`.",
+      "anyOf": [
+        {
+          "title": "NoDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "DatumHash",
+          "description": "A datum referenced by its hash digest.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "$ref": "#/definitions/ByteArray"
+            }
+          ]
+        },
+        {
+          "title": "InlineDatum",
+          "description": "A datum completely inlined in the output.",
+          "dataType": "constructor",
+          "index": 2,
+          "fields": [
+            {
+              "$ref": "#/definitions/Data"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/credential/Address": {
+      "title": "Address",
+      "description": "A Cardano `Address` typically holding one or two credential references.\n\n Note that legacy bootstrap addresses (a.k.a. 'Byron addresses') are\n completely excluded from Plutus contexts. Thus, from an on-chain\n perspective only exists addresses of type 00, 01, ..., 07 as detailed\n in [CIP-0019 :: Shelley Addresses](https://github.com/cardano-foundation/CIPs/tree/master/CIP-0019/#shelley-addresses).",
+      "anyOf": [
+        {
+          "title": "Address",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "payment_credential",
+              "$ref": "#/definitions/aiken~1transaction~1credential~1Credential"
+            },
+            {
+              "title": "stake_credential",
+              "$ref": "#/definitions/Option$aiken~1transaction~1credential~1Referenced$aiken~1transaction~1credential~1Credential"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/credential/Credential": {
+      "title": "Credential",
+      "description": "A general structure for representing an on-chain `Credential`.\n\n Credentials are always one of two kinds: a direct public/private key\n pair, or a script (native or Plutus).",
+      "anyOf": [
+        {
+          "title": "VerificationKeyCredential",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/ByteArray"
+            }
+          ]
+        },
+        {
+          "title": "ScriptCredential",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "$ref": "#/definitions/ByteArray"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/credential/Referenced$aiken/transaction/credential/Credential": {
+      "title": "Referenced",
+      "description": "Represent a type of object that can be represented either inline (by hash)\n or via a reference (i.e. a pointer to an on-chain location).\n\n This is mainly use for capturing pointers to a stake credential\n registration certificate in the case of so-called pointer addresses.",
+      "anyOf": [
+        {
+          "title": "Inline",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "$ref": "#/definitions/aiken~1transaction~1credential~1Credential"
+            }
+          ]
+        },
+        {
+          "title": "Pointer",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "title": "slot_number",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "transaction_index",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "certificate_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/value/Value": {
+      "title": "Value",
+      "description": "A multi-asset output `Value`. Contains tokens indexed by [PolicyId](#PolicyId) and [AssetName](#AssetName).\n\n This type maintain some invariants by construction; in particular, a `Value` will never contain a\n zero quantity of a particular token.",
+      "dataType": "map",
+      "keys": {
+        "$ref": "#/definitions/ByteArray"
+      },
+      "values": {
+        "$ref": "#/definitions/aiken~1dict~1Dict$ByteArray_Int"
+      }
+    },
+    "types/order/Destination": {
+      "title": "Destination",
+      "anyOf": [
+        {
+          "title": "Destination",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "address",
+              "$ref": "#/definitions/aiken~1transaction~1credential~1Address"
+            },
+            {
+              "title": "datum",
+              "$ref": "#/definitions/aiken~1transaction~1Datum"
+            }
+          ]
+        }
+      ]
+    },
+    "types/order/OrderDatum": {
+      "title": "OrderDatum",
+      "anyOf": [
+        {
+          "title": "OrderDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "scooper_fee",
+              "$ref": "#/definitions/aiken~1transaction~1value~1Value"
+            },
+            {
+              "title": "destination",
+              "$ref": "#/definitions/types~1order~1Destination"
+            },
+            {
+              "title": "owner",
+              "$ref": "#/definitions/ByteArray"
+            }
+          ]
+        }
+      ]
+    },
+    "types/order/OrderRedeemer": {
+      "title": "OrderRedeemer",
+      "anyOf": [
+        {
+          "title": "Scoop",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "Match",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": [
+            {
+              "title": "factory_input_idx",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        },
+        {
+          "title": "Cancel",
+          "dataType": "constructor",
+          "index": 2,
+          "fields": []
+        }
+      ]
+    }
+  }
+}

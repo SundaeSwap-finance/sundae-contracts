@@ -1,0 +1,19 @@
+name = "sundae/contracts"
+version = "0.0.0"
+license = "Apache-2.0"
+description = "Experimental port of SundaeSwap to Aiken"
+
+[repository]
+user = "sundae"
+project = "contracts"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "main"
+source = "github"
+
+[[dependencies]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
+source = "github"
