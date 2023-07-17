@@ -12,6 +12,7 @@ pub type PoolDatum {
 
 pub type PoolRedeemer {
   pool_input: Int,
+  settings_input: Int,
   input_order: List<Int>,
 }
 

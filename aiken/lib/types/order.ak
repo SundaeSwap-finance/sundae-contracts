@@ -33,7 +33,9 @@ pub type Order {
   // A withdrawal of at most this many LP tokens
   Withdrawal { amount: SingletonValue }
   // A zap of at most these assets on either side of the pair
-  Zap { assets: (SingletonValue, SingletonValue) }
+  // Zap { assets: (SingletonValue, SingletonValue) }
+  // Donate some value to the pool
+  Donation { assets: (SingletonValue, SingletonValue) }
 }
 
 // In order to redeem an order, you can either
