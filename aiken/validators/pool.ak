@@ -19,7 +19,7 @@ fn get_sorted_orders(
       expect Some(input) = list.at(inputs, idx)
       expect ScriptCredential(input_script) =
         input.output.address.payment_credential
-      expect True = input_script == shared.order_script_hash
+      expect input_script == shared.order_script_hash
       input.output
     },
   )
@@ -50,7 +50,7 @@ fn swap_takes(
   let (numerator, denominator) = pool_fee
   let difference = denominator - numerator
   if pool_give.1st != order_give.1st {
-    error
+    fail
   } else {
     let takes =
       pool_take.2nd * order_give.2nd * difference / (
@@ -73,7 +73,7 @@ fn do_swap(pool_state: PoolState, input: Output, order: OrderDatum) -> PoolState
   expect order.Swap { offer, min_received } = order.order
   if offer.1st == pool_state.quantity_a.1st {
     if min_received.1st != pool_state.quantity_b.1st {
-      error
+      fail
     } else {
       let (takes, out_value) =
         swap_takes(
@@ -133,7 +133,7 @@ fn do_swap(pool_state: PoolState, input: Output, order: OrderDatum) -> PoolState
       ],
     }
   } else {
-    error
+    fail
   }
 }
 
@@ -145,8 +145,8 @@ fn do_deposit(
   expect order.Deposit { assets } = order.order
   let (asset_a, asset_b) = assets
 
-  expect True = asset_a.1st == pool_state.quantity_a.1st
-  expect True = asset_b.1st == pool_state.quantity_b.1st
+  expect asset_a.1st == pool_state.quantity_a.1st
+  expect asset_b.1st == pool_state.quantity_b.1st
 
   let real_a =
     math.max(
@@ -218,7 +218,7 @@ fn do_withdrawal(
   expect order.Withdrawal { amount } = order.order
   let (lp_token, amount) = amount
 
-  expect True = lp_token == pool_state.quantity_lp.1st
+  expect lp_token == pool_state.quantity_lp.1st
 
   let withdrawn =
     math.max(amount, value.quantity_of(input.value, lp_token.1st, lp_token.2nd))
@@ -266,8 +266,8 @@ fn do_donation(
   datum: OrderDatum,
 ) -> PoolState {
   expect order.Donation { assets } = datum.order
-  expect True = assets.1st.1st == pool_state.quantity_a.1st
-  expect True = assets.2nd.1st == pool_state.quantity_b.1st
+  expect assets.1st.1st == pool_state.quantity_a.1st
+  expect assets.2nd.1st == pool_state.quantity_b.1st
   let remainder =
     shared.to_value(assets.1st)
       |> value.merge(shared.to_value(assets.2nd))
@@ -351,9 +351,9 @@ fn pool_input_to_state(datum: PoolDatum, input: Output, fee: Int) -> PoolState {
 fn check_satisfies_payouts(payouts: List<Payout>, outputs: List<Output>) -> Bool {
   when (payouts, outputs) is {
     ([next_payout, ..rest_payouts], [next_output, ..rest_outputs]) -> {
-      expect True = next_output.address == next_payout.address
-      expect True = next_output.datum == next_payout.datum
-      expect True = next_output.value == next_payout.value
+      expect next_output.address == next_payout.address
+      expect next_output.datum == next_payout.datum
+      expect next_output.value == next_payout.value
       check_satisfies_payouts(rest_payouts, rest_outputs)
     }
     ([], []) -> True
@@ -368,7 +368,7 @@ validator {
     let pool_input = spent_output(ctx)
     // Assume the first output is the pool output
     expect Some(pool_output) = list.head(ctx.transaction.outputs)
-    expect True = pool_output.address == pool_input.address
+    expect pool_output.address == pool_input.address
     expect Some(output_datum) = datum_of(ctx, pool_output)
     expect output_datum: PoolDatum = output_datum
     // Find the reference input with the settings token and it's datum

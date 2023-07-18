@@ -61,7 +61,7 @@ pub fn get_input_with_token(
   token: AssetClass,
 ) -> Output {
   expect Some(input) = list.at(inputs, idx)
-  expect True = value.quantity_of(input.output.value, token.1st, token.2nd) >= 1
+  expect value.quantity_of(input.output.value, token.1st, token.2nd) >= 1
   input.output
 }
 
