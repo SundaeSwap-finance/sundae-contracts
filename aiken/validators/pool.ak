@@ -1,364 +1,33 @@
 use aiken/dict
 use aiken/list
-use aiken/math
-use aiken/transaction.{Datum, Input, Output, ScriptContext}
-use aiken/transaction/credential.{Address, ScriptCredential}
-use aiken/transaction/value.{Value}
-use shared.{Rational, SingletonValue, datum_of, is_after, spent_output}
-use types/order.{OrderDatum}
-use types/pool.{PoolDatum, PoolRedeemer}
+use aiken/transaction.{ScriptContext}
+use aiken/transaction/value.{Value, MintedValue}
+use shared.{datum_of, is_after, spent_output}
+use types/pool.{PoolDatum, PoolRedeemer, pool_token, lp_token_name}
 use types/settings.{SettingsDatum}
+use calculation/process.{pool_input_to_state, process_orders, check_satisfies_payouts}
+use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
 
-fn get_sorted_orders(
-  input_order: List<Int>,
-  inputs: List<Input>,
-) -> List<Output> {
-  list.map(
-    input_order,
-    fn(idx) {
-      expect Some(input) = list.at(inputs, idx)
-      expect ScriptCredential(input_script) =
-        input.output.address.payment_credential
-      expect input_script == shared.order_script_hash
-      input.output
-    },
+fn minted_correct_pool_tokens(settings: SettingsDatum, mint: MintedValue, datum: PoolDatum, outcome: PoolState) -> Bool {
+  let minted_tokens = value.tokens(
+    value.from_minted_value(mint),
+    settings.pool_script_hash,
   )
-}
 
-type Payout {
-  address: Address,
-  datum: Datum,
-  value: Value,
-}
-
-type PoolState {
-  quantity_a: SingletonValue,
-  quantity_b: SingletonValue,
-  quantity_lp: SingletonValue,
-  fee: Rational,
-  rewards: Int,
-  payouts: List<Payout>,
-}
-
-fn swap_takes(
-  pool_give: SingletonValue,
-  pool_take: SingletonValue,
-  pool_fee: Rational,
-  order_give: SingletonValue,
-  input_value: Value,
-) -> (Int, Value) {
-  let (numerator, denominator) = pool_fee
-  let difference = denominator - numerator
-  if pool_give.1st != order_give.1st {
-    fail
+  if datum.circulating_lp == outcome.quantity_lp.2nd {
+    dict.is_empty(minted_tokens)
   } else {
-    let takes =
-      pool_take.2nd * order_give.2nd * difference / (
-        pool_give.2nd * denominator + order_give.2nd * difference
-      )
-    let remainder =
-      value.add(
-        input_value,
-        order_give.1st.1st,
-        order_give.1st.2nd,
-        -order_give.2nd,
-      )
-    let out_value =
-      value.add(remainder, pool_take.1st.1st, pool_take.1st.2nd, takes)
-    (takes, out_value)
+    dict.to_list(minted_tokens) == [
+      (lp_token_name(datum.identifier), outcome.quantity_lp.2nd - datum.circulating_lp),
+    ]
   }
 }
 
-fn do_swap(pool_state: PoolState, input: Output, order: OrderDatum) -> PoolState {
-  expect order.Swap { offer, min_received } = order.order
-  if offer.1st == pool_state.quantity_a.1st {
-    if min_received.1st != pool_state.quantity_b.1st {
-      fail
-    } else {
-      let (takes, out_value) =
-        swap_takes(
-          pool_state.quantity_a,
-          pool_state.quantity_b,
-          pool_state.fee,
-          offer,
-          input.value,
-        )
-      PoolState {
-        quantity_a: (
-          pool_state.quantity_a.1st,
-          pool_state.quantity_a.2nd + offer.2nd,
-        ),
-        quantity_b: (
-          pool_state.quantity_b.1st,
-          pool_state.quantity_b.2nd - takes,
-        ),
-        quantity_lp: pool_state.quantity_lp,
-        fee: pool_state.fee,
-        rewards: pool_state.rewards + order.scooper_fee,
-        payouts: [
-          Payout {
-            address: order.destination.address,
-            datum: order.destination.datum,
-            value: out_value,
-          },
-          ..pool_state.payouts
-        ],
-      }
-    }
-  } else if offer.1st == pool_state.quantity_b.1st {
-    let (takes, out_value) =
-      swap_takes(
-        pool_state.quantity_b,
-        pool_state.quantity_a,
-        pool_state.fee,
-        offer,
-        input.value,
-      )
-    PoolState {
-      quantity_a: (pool_state.quantity_a.1st, pool_state.quantity_a.2nd - takes),
-      quantity_b: (
-        pool_state.quantity_b.1st,
-        pool_state.quantity_b.2nd + offer.2nd,
-      ),
-      quantity_lp: pool_state.quantity_lp,
-      fee: pool_state.fee,
-      rewards: pool_state.rewards + order.scooper_fee,
-      payouts: [
-        Payout {
-          address: order.destination.address,
-          datum: order.destination.datum,
-          value: out_value,
-        },
-        ..pool_state.payouts
-      ],
-    }
-  } else {
-    fail
-  }
-}
-
-fn do_deposit(
-  pool_state: PoolState,
-  input: Output,
-  order: OrderDatum,
-) -> PoolState {
-  expect order.Deposit { assets } = order.order
-  let (asset_a, asset_b) = assets
-
-  expect asset_a.1st == pool_state.quantity_a.1st
-  expect asset_b.1st == pool_state.quantity_b.1st
-
-  let real_a =
-    math.max(
-      asset_a.2nd,
-      value.quantity_of(input.value, asset_a.1st.1st, asset_a.1st.2nd),
-    )
-  let real_b =
-    math.max(
-      asset_b.2nd,
-      value.quantity_of(input.value, asset_b.1st.1st, asset_b.1st.2nd),
-    )
-  let b_in_units_of_a =
-    real_b * pool_state.quantity_a.2nd / pool_state.quantity_b.2nd
-
-  let (final_a, final_b) =
-    if b_in_units_of_a > real_a {
-      (
-        real_a,
-        real_b - pool_state.quantity_b.2nd * ( b_in_units_of_a - real_a ) / pool_state.quantity_a.2nd,
-      )
-    } else {
-      (real_a - b_in_units_of_a, real_b)
-    }
-
-  let issued_lp_tokens =
-    final_a * pool_state.quantity_lp.2nd / pool_state.quantity_a.2nd
-
-  let remainder =
-    shared.to_value((asset_a.1st, final_a))
-      |> value.merge(shared.to_value((asset_b.1st, final_b)))
-      |> value.negate
-      |> value.merge(input.value)
-      |> value.merge(
-           value.from_asset(
-             pool_state.quantity_lp.1st.1st,
-             pool_state.quantity_lp.1st.2nd,
-             issued_lp_tokens,
-           ),
-         )
-  PoolState {
-    quantity_a: (pool_state.quantity_a.1st, pool_state.quantity_a.2nd + final_a),
-    quantity_b: (pool_state.quantity_b.1st, pool_state.quantity_b.2nd + final_b),
-    quantity_lp: (
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd + issued_lp_tokens,
-    ),
-    fee: pool_state.fee,
-    rewards: pool_state.rewards + order.scooper_fee,
-    payouts: if value.zero() == remainder {
-      pool_state.payouts
-    } else {
-      [
-        Payout {
-          address: order.destination.address,
-          datum: order.destination.datum,
-          value: remainder,
-        },
-        ..pool_state.payouts
-      ]
-    },
-  }
-}
-
-fn do_withdrawal(
-  pool_state: PoolState,
-  input: Output,
-  order: OrderDatum,
-) -> PoolState {
-  expect order.Withdrawal { amount } = order.order
-  let (lp_token, amount) = amount
-
-  expect lp_token == pool_state.quantity_lp.1st
-
-  let withdrawn =
-    math.max(amount, value.quantity_of(input.value, lp_token.1st, lp_token.2nd))
-  let withdrawn_a =
-    withdrawn * pool_state.quantity_a.2nd / pool_state.quantity_lp.2nd
-  let withdrawn_b =
-    withdrawn * pool_state.quantity_b.2nd / pool_state.quantity_lp.2nd
-  let remainder =
-    shared.to_value((lp_token, withdrawn))
-      |> value.negate
-      |> value.merge(input.value)
-  PoolState {
-    quantity_a: (
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd - withdrawn_a,
-    ),
-    quantity_b: (
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd - withdrawn_b,
-    ),
-    quantity_lp: (
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd - withdrawn,
-    ),
-    fee: pool_state.fee,
-    rewards: pool_state.rewards + order.scooper_fee,
-    payouts: if value.zero() == remainder {
-      pool_state.payouts
-    } else {
-      [
-        Payout {
-          address: order.destination.address,
-          datum: order.destination.datum,
-          value: remainder,
-        },
-        ..pool_state.payouts
-      ]
-    },
-  }
-}
-
-fn do_donation(
-  pool_state: PoolState,
-  input: Output,
-  datum: OrderDatum,
-) -> PoolState {
-  expect order.Donation { assets } = datum.order
-  expect assets.1st.1st == pool_state.quantity_a.1st
-  expect assets.2nd.1st == pool_state.quantity_b.1st
-  let remainder =
-    shared.to_value(assets.1st)
-      |> value.merge(shared.to_value(assets.2nd))
-      |> value.negate
-      |> value.merge(input.value)
-  PoolState {
-    quantity_a: (
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd + assets.1st.2nd,
-    ),
-    quantity_b: (
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd + assets.2nd.2nd,
-    ),
-    quantity_lp: pool_state.quantity_lp,
-    fee: pool_state.fee,
-    rewards: pool_state.rewards + datum.scooper_fee,
-    payouts: if value.zero() == remainder {
-      pool_state.payouts
-    } else {
-      [
-        Payout {
-          address: datum.destination.address,
-          datum: datum.destination.datum,
-          value: remainder,
-        },
-        ..pool_state.payouts
-      ]
-    },
-  }
-}
-
-fn process_order(
-  ctx: ScriptContext,
-  initial: PoolState,
-  input: Output,
-) -> PoolState {
-  expect Some(datum) = datum_of(ctx, input)
-  expect datum: OrderDatum = datum
-  when datum.order is {
-    order.Swap(..) -> do_swap(initial, input, datum)
-    order.Deposit(..) -> do_deposit(initial, input, datum)
-    order.Withdrawal(..) -> do_withdrawal(initial, input, datum)
-    // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(..) -> do_donation(initial, input, datum)
-  }
-}
-
-fn process_orders(
-  ctx: ScriptContext,
-  initial: PoolState,
-  orders: List<Output>,
-) -> PoolState {
-  list.reduce(orders, initial, fn(a, b) { process_order(ctx, a, b) })
-}
-
-fn pool_input_to_state(datum: PoolDatum, input: Output, fee: Int) -> PoolState {
-  let assets = datum.assets
-  let min_utxo =
-    if assets.1st.1st == value.ada_policy_id {
-      datum.rewards
-    } else {
-      0
-    }
-  PoolState {
-    quantity_a: (
-      assets.1st,
-      value.quantity_of(input.value, assets.1st.1st, assets.1st.2nd) - min_utxo,
-    ),
-    quantity_b: (
-      assets.2nd,
-      value.quantity_of(input.value, assets.2nd.1st, assets.2nd.2nd),
-    ),
-    quantity_lp: ((#"", #""), datum.circulating_lp),
-    fee: datum.fees,
-    rewards: datum.rewards - fee,
-    payouts: [],
-  }
-}
-
-fn check_satisfies_payouts(payouts: List<Payout>, outputs: List<Output>) -> Bool {
-  when (payouts, outputs) is {
-    ([next_payout, ..rest_payouts], [next_output, ..rest_outputs]) -> {
-      expect next_output.address == next_payout.address
-      expect next_output.datum == next_payout.datum
-      expect next_output.value == next_payout.value
-      check_satisfies_payouts(rest_payouts, rest_outputs)
-    }
-    ([], []) -> True
-    _ -> False
-  }
+fn expected_pool_value(settings: SettingsDatum, datum: PoolDatum, outcome: PoolState) -> Value {
+  value.from_lovelace(outcome.rewards)
+    |> value.merge(shared.to_value((pool_token(settings.pool_currency_symbol, datum.identifier), 1)))
+    |> value.merge(shared.to_value(outcome.quantity_a))
+    |> value.merge(shared.to_value(outcome.quantity_b))
 }
 
 validator {
@@ -382,40 +51,29 @@ validator {
     expect settings_datum: SettingsDatum = settings_datum
     // Sort the orders according to the redeemer
     let orders = get_sorted_orders(redeemer.input_order, ctx.transaction.inputs)
-    // Extract the amount of pool tokens that were minted
-    let minted_pool_tokens =
-      value.tokens(
-        value.from_minted_value(ctx.transaction.mint),
-        settings_datum.pool_script_hash,
-      )
 
     // Construct the initial pool state from the datum and the locked values
     let initial_state =
       pool_input_to_state(
+        settings_datum.pool_currency_symbol,
         datum,
         pool_input,
         value.lovelace_of(ctx.transaction.fee),
       )
+
     // Process the orders in order, and decide the final pool state we should see
     let outcome = process_orders(ctx, initial_state, orders)
 
-    let expected_pool_value =
-      value.from_lovelace(outcome.rewards)
-        |> value.merge(shared.to_value(outcome.quantity_a))
-        |> value.merge(shared.to_value(outcome.quantity_b))
+    // The pool should have all of the scooper fees, and the quantity of eahc token of the outcome
+    // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
+    let expected_pool_value = expected_pool_value(settings_datum, output_datum, outcome)
 
     // Calculate all the neccesary and sufficient conditions
     let at_least_one_order = !list.is_empty(orders)
     let updated_circulating_lp =
       output_datum.circulating_lp == outcome.quantity_lp.2nd
-    let minted_correct_lp_tokens =
-      if datum.circulating_lp == outcome.quantity_lp.2nd {
-        dict.is_empty(minted_pool_tokens)
-      } else {
-        dict.to_list(minted_pool_tokens) == [
-          (#"", outcome.quantity_lp.2nd - datum.circulating_lp),
-        ]
-      }
+    let minted_correct_lp_tokens = minted_correct_pool_tokens(settings_datum, ctx.transaction.mint, output_datum, outcome)
+      
     let updated_rewards = output_datum.rewards == outcome.rewards
     let satisfies_payouts =
       check_satisfies_payouts(

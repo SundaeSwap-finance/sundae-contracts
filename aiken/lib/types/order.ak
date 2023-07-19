@@ -14,6 +14,8 @@ pub type OrderDatum {
   destination: Destination,
   // And the actual order to execute
   order: Order,
+  // Leave space for extensions
+  extension: Data,
 }
 
 // A destination consists of

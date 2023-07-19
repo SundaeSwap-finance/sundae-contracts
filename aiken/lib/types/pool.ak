@@ -1,4 +1,6 @@
+use aiken/bytearray
 use aiken/time.{PosixTime}
+use aiken/transaction/value.{AssetName, PolicyId}
 use shared.{AssetClass, Ident, Rational}
 
 pub type PoolDatum {
@@ -19,4 +21,20 @@ pub type PoolRedeemer {
 pub type PoolMintRedeemer {
   CreatePool { assets: (AssetClass, AssetClass) }
   MintLP { identifier: Ident }
+}
+
+pub fn pool_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
+  (policy_id, bytearray.concat("p", ident))
+}
+
+pub fn pool_token_name(ident: Ident) -> AssetName {
+  bytearray.concat("p", ident)
+}
+
+pub fn lp_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
+  (policy_id, bytearray.concat("l", ident))
+}
+
+pub fn lp_token_name(ident: Ident) -> AssetName {
+  bytearray.concat("l", ident)
 }
