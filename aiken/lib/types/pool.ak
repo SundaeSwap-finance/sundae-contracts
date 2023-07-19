@@ -1,4 +1,5 @@
 use aiken/bytearray
+use aiken/cbor
 use aiken/time.{PosixTime}
 use aiken/transaction/value.{AssetName, PolicyId}
 use shared.{AssetClass, Ident, Rational}
@@ -12,12 +13,47 @@ pub type PoolDatum {
   rewards: Int,
 }
 
+test example_pool_datum() {
+  trace bytearray.to_hex(
+    cbor.serialise(
+      PoolDatum {
+        identifier: "123",
+        assets: (
+          (#"", #""),
+          (
+            #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77",
+            #"53554e444145",
+          ),
+        ),
+        circulating_lp: 20229488080013,
+        fees: (3, 1000),
+        market_open: 100,
+        rewards: 10000000,
+      },
+    ),
+  )
+  True
+}
+
 pub type PoolRedeemer {
-  pool_input: Int,
   settings_input: Int,
   signatory_index: Int,
   scooper_index: Int,
   input_order: List<Int>,
+}
+
+test example_pool_redeemer() {
+  trace bytearray.to_hex(
+    cbor.serialise(
+      PoolRedeemer {
+        settings_input: 0,
+        signatory_index: 0,
+        scooper_index: 0,
+        input_order: [1],
+      },
+    ),
+  )
+  True
 }
 
 pub type PoolMintRedeemer {

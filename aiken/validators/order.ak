@@ -19,7 +19,7 @@ validator {
           ctx.transaction.extra_signatories,
           ctx.transaction.validity_range,
         )
-      Scoop(_) ->
+      Scoop ->
         dict.has_key(
           ctx.transaction.withdrawals,
           Inline(ScriptCredential(stake_script_hash)),

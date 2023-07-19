@@ -1,5 +1,7 @@
-use aiken/transaction.{Datum}
-use aiken/transaction/credential.{Address}
+use aiken/bytearray
+use aiken/cbor
+use aiken/transaction.{Datum, NoDatum}
+use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use shared.{SingletonValue}
 use sundae/multisig.{MultisigScript}
 
@@ -16,6 +18,32 @@ pub type OrderDatum {
   order: Order,
   // Leave space for extensions
   extension: Data,
+}
+
+test example_swap() {
+  let addr =
+    Address(
+      VerificationKeyCredential(
+        #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+      ),
+      None,
+    )
+  let dest = Destination { address: addr, datum: NoDatum }
+  let swap = Swap(((#"", #""), 1), ((#"", #""), 1))
+  trace bytearray.to_hex(
+    cbor.serialise(
+      OrderDatum {
+        owner: multisig.Signature(
+          #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+        ),
+        scooper_fee: 2500000,
+        destination: dest,
+        order: swap,
+        extension: Void,
+      },
+    ),
+  )
+  True
 }
 
 // A destination consists of
@@ -43,7 +71,12 @@ pub type Order {
 // In order to redeem an order, you can either
 pub type OrderRedeemer {
   // Scoop it (in a specific order)
-  Scoop(Int)
+  Scoop
   // Or cancel/update it
   Cancel
+}
+
+test example_swap_redeemer() {
+  trace bytearray.to_hex(cbor.serialise(Scoop))
+  True
 }

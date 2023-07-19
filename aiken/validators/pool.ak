@@ -3,7 +3,7 @@ use aiken/list
 use aiken/transaction.{ScriptContext}
 use aiken/transaction/value.{Value, MintedValue}
 use shared.{datum_of, is_after, spent_output}
-use types/pool.{PoolDatum, PoolRedeemer, pool_token, lp_token_name}
+use types/pool.{PoolDatum, PoolRedeemer, PoolMintRedeemer, pool_token, lp_token_name}
 use types/settings.{SettingsDatum}
 use calculation/process.{pool_input_to_state, process_orders, check_satisfies_payouts}
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
@@ -25,7 +25,7 @@ fn minted_correct_pool_tokens(settings: SettingsDatum, mint: MintedValue, datum:
 
 fn expected_pool_value(settings: SettingsDatum, datum: PoolDatum, outcome: PoolState) -> Value {
   value.from_lovelace(outcome.rewards)
-    |> value.merge(shared.to_value((pool_token(settings.pool_currency_symbol, datum.identifier), 1)))
+    |> value.merge(shared.to_value((pool_token(settings.pool_policy_id, datum.identifier), 1)))
     |> value.merge(shared.to_value(outcome.quantity_a))
     |> value.merge(shared.to_value(outcome.quantity_b))
 }
@@ -55,7 +55,7 @@ validator {
     // Construct the initial pool state from the datum and the locked values
     let initial_state =
       pool_input_to_state(
-        settings_datum.pool_currency_symbol,
+        settings_datum.pool_policy_id,
         datum,
         pool_input,
         value.lovelace_of(ctx.transaction.fee),
@@ -104,5 +104,8 @@ validator {
 
     // And then AND these all together
     pool_can_be_scooped && funds_moved_correctly && pool_output_correct
+  }
+  fn mint(_r: PoolMintRedeemer, _ctx: ScriptContext) {
+    True
   }
 }
