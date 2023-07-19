@@ -86,10 +86,7 @@ validator {
     let pool_immutables_unchanged =
       datum.identifier == output_datum.identifier && datum.assets == output_datum.assets && datum.fees == output_datum.fees && datum.market_open == output_datum.market_open
     let licensed_scooper =
-      list.any(
-        ctx.transaction.extra_signatories,
-        fn(k) { list.has(settings_datum.authorized_scoopers, k) },
-      )
+      list.at(ctx.transaction.extra_signatories, redeemer.signatory_index) == list.at(settings_datum.authorized_scoopers, redeemer.scooper_index)
     let market_open =
       is_after(ctx.transaction.validity_range, datum.market_open)
 

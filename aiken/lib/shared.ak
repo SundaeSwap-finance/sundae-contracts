@@ -23,12 +23,12 @@ pub fn to_value(sv: SingletonValue) -> value.Value {
   value.from_asset(sv.1st.1st, sv.1st.2nd, sv.2nd)
 }
 
-const settings_script_hash: PolicyId = #""
+const settings_policy_id: PolicyId = #""
 
 const settings_token_name: AssetName = #""
 
 pub fn settings_asset_class() -> AssetClass {
-  (settings_script_hash, settings_token_name)
+  (settings_policy_id, settings_token_name)
 }
 
 pub const order_script_hash: PolicyId = #""
