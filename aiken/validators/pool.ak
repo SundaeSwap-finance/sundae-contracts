@@ -1,31 +1,49 @@
 use aiken/dict
 use aiken/list
 use aiken/transaction.{ScriptContext}
-use aiken/transaction/value.{Value, MintedValue}
-use shared.{datum_of, is_after, spent_output}
-use types/pool.{PoolDatum, PoolRedeemer, PoolMintRedeemer, pool_token, lp_token_name}
-use types/settings.{SettingsDatum}
-use calculation/process.{pool_input_to_state, process_orders, check_satisfies_payouts}
+use aiken/transaction/value.{MintedValue, Value}
+use calculation/process.{
+  check_satisfies_payouts, pool_input_to_state, process_orders,
+}
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
+use shared.{datum_of, is_after, spent_output}
+use types/pool.{
+  PoolDatum, PoolMintRedeemer, PoolRedeemer, lp_token_name, pool_token_name,
+}
+use types/settings.{SettingsDatum}
 
-fn minted_correct_pool_tokens(settings: SettingsDatum, mint: MintedValue, datum: PoolDatum, outcome: PoolState) -> Bool {
-  let minted_tokens = value.tokens(
-    value.from_minted_value(mint),
-    settings.pool_script_hash,
-  )
+fn minted_correct_pool_tokens(
+  settings: SettingsDatum,
+  mint: MintedValue,
+  datum: PoolDatum,
+  outcome: PoolState,
+) -> Bool {
+  let minted_tokens =
+    value.tokens(value.from_minted_value(mint), settings.pool_script_hash)
 
-  if datum.circulating_lp == outcome.quantity_lp.2nd {
+  if datum.circulating_lp == outcome.quantity_lp.3rd {
     dict.is_empty(minted_tokens)
   } else {
     dict.to_list(minted_tokens) == [
-      (lp_token_name(datum.identifier), outcome.quantity_lp.2nd - datum.circulating_lp),
+      (
+        lp_token_name(datum.identifier),
+        outcome.quantity_lp.3rd - datum.circulating_lp,
+      ),
     ]
   }
 }
 
-fn expected_pool_value(settings: SettingsDatum, datum: PoolDatum, outcome: PoolState) -> Value {
+fn expected_pool_value(
+  settings: SettingsDatum,
+  datum: PoolDatum,
+  outcome: PoolState,
+) -> Value {
   value.from_lovelace(outcome.rewards)
-    |> value.merge(shared.to_value((pool_token(settings.pool_policy_id, datum.identifier), 1)))
+    |> value.merge(
+         shared.to_value(
+           (settings.pool_policy_id, pool_token_name(datum.identifier), 1),
+         ),
+       )
     |> value.merge(shared.to_value(outcome.quantity_a))
     |> value.merge(shared.to_value(outcome.quantity_b))
 }
@@ -66,14 +84,20 @@ validator {
 
     // The pool should have all of the scooper fees, and the quantity of eahc token of the outcome
     // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
-    let expected_pool_value = expected_pool_value(settings_datum, output_datum, outcome)
+    let expected_pool_value =
+      expected_pool_value(settings_datum, output_datum, outcome)
 
     // Calculate all the neccesary and sufficient conditions
     let at_least_one_order = !list.is_empty(orders)
     let updated_circulating_lp =
-      output_datum.circulating_lp == outcome.quantity_lp.2nd
-    let minted_correct_lp_tokens = minted_correct_pool_tokens(settings_datum, ctx.transaction.mint, output_datum, outcome)
-      
+      output_datum.circulating_lp == outcome.quantity_lp.3rd
+    let minted_correct_lp_tokens =
+      minted_correct_pool_tokens(
+        settings_datum,
+        ctx.transaction.mint,
+        output_datum,
+        outcome,
+      )
     let updated_rewards = output_datum.rewards == outcome.rewards
     let satisfies_payouts =
       check_satisfies_payouts(
@@ -86,7 +110,10 @@ validator {
     let pool_immutables_unchanged =
       datum.identifier == output_datum.identifier && datum.assets == output_datum.assets && datum.fees == output_datum.fees && datum.market_open == output_datum.market_open
     let licensed_scooper =
-      list.at(ctx.transaction.extra_signatories, redeemer.signatory_index) == list.at(settings_datum.authorized_scoopers, redeemer.scooper_index)
+      list.at(ctx.transaction.extra_signatories, redeemer.signatory_index) == list.at(
+        settings_datum.authorized_scoopers,
+        redeemer.scooper_index,
+      )
     let market_open =
       is_after(ctx.transaction.validity_range, datum.market_open)
 
@@ -105,6 +132,7 @@ validator {
     // And then AND these all together
     pool_can_be_scooped && funds_moved_correctly && pool_output_correct
   }
+
   fn mint(_r: PoolMintRedeemer, _ctx: ScriptContext) {
     True
   }

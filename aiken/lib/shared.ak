@@ -17,10 +17,10 @@ pub type Rational =
   (Int, Int)
 
 pub type SingletonValue =
-  (AssetClass, Int)
+  (PolicyId, AssetName, Int)
 
 pub fn to_value(sv: SingletonValue) -> value.Value {
-  value.from_asset(sv.1st.1st, sv.1st.2nd, sv.2nd)
+  value.from_asset(sv.1st, sv.2nd, sv.3rd)
 }
 
 const settings_policy_id: PolicyId = #""

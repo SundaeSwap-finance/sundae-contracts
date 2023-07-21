@@ -3,12 +3,12 @@ use aiken/transaction.{Output, ScriptContext}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
 use calculation/donation
-use calculation/shared.{PoolState, Payout} as calc_shared
+use calculation/shared.{Payout, PoolState} as calc_shared
 use calculation/swap
 use calculation/withdrawal
 use shared.{datum_of}
 use types/order.{OrderDatum}
-use types/pool.{PoolDatum, lp_token}
+use types/pool.{PoolDatum, lp_token_name}
 
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
@@ -25,14 +25,20 @@ pub fn pool_input_to_state(
     }
   PoolState {
     quantity_a: (
-      assets.1st,
+      assets.1st.1st,
+      assets.1st.2nd,
       value.quantity_of(input.value, assets.1st.1st, assets.1st.2nd) - min_utxo,
     ),
     quantity_b: (
-      assets.2nd,
+      assets.2nd.1st,
+      assets.2nd.2nd,
       value.quantity_of(input.value, assets.2nd.1st, assets.2nd.2nd),
     ),
-    quantity_lp: (lp_token(pool_token_policy, datum.identifier), datum.circulating_lp),
+    quantity_lp: (
+      pool_token_policy,
+      lp_token_name(datum.identifier),
+      datum.circulating_lp,
+    ),
     fee: datum.fees,
     // Pay the transaction fee out of the rewards
     rewards: datum.rewards - fee,
@@ -64,7 +70,10 @@ pub fn process_orders(
   list.reduce(orders, initial, fn(a, b) { process_order(ctx, a, b) })
 }
 
-pub fn check_satisfies_payouts(payouts: List<Payout>, outputs: List<Output>) -> Bool {
+pub fn check_satisfies_payouts(
+  payouts: List<Payout>,
+  outputs: List<Output>,
+) -> Bool {
   when (payouts, outputs) is {
     ([next_payout, ..rest_payouts], [next_output, ..rest_outputs]) -> {
       expect next_output.address == next_payout.address

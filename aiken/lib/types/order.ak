@@ -29,7 +29,7 @@ test example_swap() {
       None,
     )
   let dest = Destination { address: addr, datum: NoDatum }
-  let swap = Swap(((#"", #""), 1), ((#"", #""), 1))
+  let swap = Swap((#"", #"", 1), (#"", #"", 1))
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
