@@ -8,6 +8,7 @@ pub fn swap_takes(
   pool_give: SingletonValue,
   pool_take: SingletonValue,
   pool_fee: Rational,
+  scooper_fee: Int,
   order_give: SingletonValue,
   input_value: Value,
 ) -> (Int, Value) {
@@ -26,7 +27,9 @@ pub fn swap_takes(
 
   // And then compute the remainder, using the input value minus the given amount
   let remainder =
-    value.add(input_value, order_give.1st, order_give.2nd, -order_give.3rd)
+    input_value
+      |> value.add(order_give.1st, order_give.2nd, -order_give.3rd)
+      |> value.add(ada_policy_id, ada_asset_name, scooper_fee)
   // And then add in the `takes` value
   let out_value = value.add(remainder, pool_take.1st, pool_take.2nd, takes)
 
@@ -56,6 +59,7 @@ pub fn do_swap(
         pool_state.quantity_a,
         pool_state.quantity_b,
         pool_state.fee,
+        order.scooper_fee,
         offer,
         input_value,
       )
@@ -90,6 +94,7 @@ pub fn do_swap(
         pool_state.quantity_b,
         pool_state.quantity_a,
         pool_state.fee,
+        scooper_fee,
         offer,
         input_value,
       )
