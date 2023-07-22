@@ -57,8 +57,8 @@ test example_pool_redeemer() {
 }
 
 pub type PoolMintRedeemer {
-  CreatePool { assets: (AssetClass, AssetClass) }
   MintLP { identifier: Ident }
+  CreatePool { assets: (AssetClass, AssetClass) }
 }
 
 pub fn pool_token(policy_id: PolicyId, ident: Ident) -> AssetClass {

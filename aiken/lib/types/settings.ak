@@ -14,6 +14,14 @@ pub type SettingsDatum {
   authorized_staking_keys: List<VerificationKey>,
 }
 
+pub type SettingsRedeemer {
+  FactorySetPoolScriptInfo
+}
+
+pub type SettingsMintRedeemer {
+  BootProtocol
+}
+
 test example_settings_datum() {
   trace bytearray.to_hex(
     cbor.serialise(

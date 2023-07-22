@@ -35,41 +35,57 @@ pub type PoolState {
 fn internal(items: List<Int>, elem: Int, idx: Int) {
   when items is {
     [] -> False
-    [head, ..rest] -> if head == elem { True } else if idx == 1 { False } else { internal(rest, elem, idx - 1) }
+    [head, ..rest] ->
+      if head == elem {
+        True
+      } else if idx == 1 {
+        False
+      } else {
+        internal(rest, elem, idx - 1)
+      }
   }
 }
+
 pub fn has_in_first_n(items: List<Int>, elem: Int, idx: Int) -> Bool {
-  if idx == 0 { False } else { internal(items, elem, idx) }
+  if idx == 0 {
+    False
+  } else {
+    internal(items, elem, idx)
+  }
 }
 
 test test_has_in_first_n() {
-  expect has_in_first_n([1,2,3], 1, 3)
-  expect has_in_first_n([1,2,3], 2, 3)
-  expect has_in_first_n([1,2,3], 3, 3)
-  expect !has_in_first_n([1,2,3], 1, 0)
-  expect !has_in_first_n([1,2,3], 3, 2)
-  expect !has_in_first_n([1,2,3], 4, 3)
-  expect !has_in_first_n([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], 21, 20)
-
+  expect has_in_first_n([1, 2, 3], 1, 3)
+  expect has_in_first_n([1, 2, 3], 2, 3)
+  expect has_in_first_n([1, 2, 3], 3, 3)
+  expect !has_in_first_n([1, 2, 3], 1, 0)
+  expect !has_in_first_n([1, 2, 3], 3, 2)
+  expect !has_in_first_n([1, 2, 3], 4, 3)
+  expect
+    !has_in_first_n(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      21,
+      20,
+    )
   True
 }
 
 /// Sort a set of inputs according to an indexing set
 pub fn get_sorted_orders(
-  /// The order to access the inputs
   input_order: List<Int>,
-  /// The inputs to reorder
   inputs: List<Input>,
 ) -> List<Output> {
   list.indexed_map(
     input_order,
-    fn(i, n) {
+    fn(idx, elem) {
       // make sure we don't secretly process the same order multiple times
       // more efficient than just list.has, since we cut the work in half
-      expect !has_in_first_n(input_order, i, n)
+      expect !has_in_first_n(input_order, elem, idx)
       // Grab the i'th input
-      expect Some(input) = list.at(inputs, i)
+      expect Some(input) = list.at(inputs, elem)
       input.output
     },
   )
 }
+/// The order to access the inputs
+/// The inputs to reorder

@@ -1,12 +1,11 @@
 use aiken/dict
+use aiken/hash.{Blake2b_224, Hash}
 use aiken/transaction.{ScriptContext}
-use aiken/transaction/credential.{Inline, ScriptCredential}
+use aiken/transaction/credential.{Inline, Script, ScriptCredential}
 use sundae/multisig
 use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop}
 
-const stake_script_hash = #""
-
-validator {
+validator(stake_script_hash: Hash<Blake2b_224, Script>) {
   fn spend(
     datum: OrderDatum,
     redeemer: OrderRedeemer,
