@@ -24,17 +24,25 @@ test example_swap() {
   let addr =
     Address(
       VerificationKeyCredential(
-        #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
     )
   let dest = Destination { address: addr, datum: NoDatum }
-  let swap = Swap((#"", #"", 1), (#"", #"", 1))
+  let swap =
+    Swap(
+      (#"", #"", 10000000),
+      (
+        #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
+        #"44554d4d59",
+        0,
+      ),
+    )
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
         owner: multisig.Signature(
-          #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
         scooper_fee: 2500000,
         destination: dest,

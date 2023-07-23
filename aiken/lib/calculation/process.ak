@@ -1,3 +1,5 @@
+use aiken/bytearray.{to_hex}
+use aiken/cbor.{serialise}
 use aiken/list
 use aiken/transaction.{Output, ScriptContext}
 use aiken/transaction/value.{PolicyId}
@@ -41,7 +43,7 @@ pub fn pool_input_to_state(
     ),
     fee: datum.fees,
     // Pay the transaction fee out of the rewards
-    rewards: datum.rewards - fee,
+    rewards: datum.rewards,
     payouts: [],
   }
 }
@@ -81,7 +83,7 @@ pub fn check_satisfies_payouts(
       expect next_output.value == next_payout.value
       check_satisfies_payouts(rest_payouts, rest_outputs)
     }
-    ([], []) -> True
+    ([], _) -> True
     _ -> False
   }
 }

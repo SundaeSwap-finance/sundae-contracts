@@ -41,7 +41,7 @@ fn expected_pool_value(
   value.from_lovelace(outcome.rewards)
     |> value.merge(
          shared.to_value(
-           (settings.pool_policy_id, pool_token_name(datum.identifier), 1),
+           (settings.pool_script_hash, pool_token_name(datum.identifier), 1),
          ),
        )
     |> value.merge(shared.to_value(outcome.quantity_a))
@@ -58,6 +58,7 @@ validator {
     expect pool_output.address == pool_input.address
     expect Some(output_datum) = datum_of(ctx, pool_output)
     expect output_datum: PoolDatum = output_datum
+
     // Find the reference input with the settings token and it's datum
     let settings_output =
       shared.get_input_with_token(
@@ -73,7 +74,7 @@ validator {
     // Construct the initial pool state from the datum and the locked values
     let initial_state =
       pool_input_to_state(
-        settings_datum.pool_policy_id,
+        settings_datum.pool_script_hash,
         datum,
         pool_input,
         value.lovelace_of(ctx.transaction.fee),
@@ -101,7 +102,9 @@ validator {
     let updated_rewards = output_datum.rewards == outcome.rewards
     let satisfies_payouts =
       check_satisfies_payouts(
-        outcome.payouts,
+        // We prepend each payout to the list, meaning we need to reverse it to match the outputs
+        // Candidate for optimization, just build the outputs in the reverse order
+        list.reverse(outcome.payouts),
         list.drop(ctx.transaction.outputs, 1),
       )
     let pool_has_correct_amounts = pool_output.value == expected_pool_value
@@ -128,7 +131,6 @@ validator {
       minted_correct_lp_tokens && satisfies_payouts && pool_has_correct_amounts
     let pool_output_correct =
       datum_updated_correctly && pool_has_correct_staking_key
-
     // And then AND these all together
     pool_can_be_scooped && funds_moved_correctly && pool_output_correct
   }
