@@ -1,6 +1,6 @@
 use aiken/dict
 use aiken/list
-use aiken/transaction.{ScriptContext}
+use aiken/transaction.{ScriptContext, Transaction}
 use aiken/transaction/value.{MintedValue, Value}
 use calculation/process.{
   check_satisfies_payouts, pool_input_to_state, process_orders,
@@ -50,11 +50,23 @@ fn expected_pool_value(
 
 validator {
   fn spend(datum: PoolDatum, redeemer: PoolRedeemer, ctx: ScriptContext) {
+    let transaction = ctx.transaction
+    let Transaction {
+      inputs,
+      outputs,
+      reference_inputs,
+      mint,
+      fee,
+      extra_signatories,
+      validity_range,
+      ..
+    } = transaction
+    let outputs = transaction.outputs
     // Grab the fields we'll need to determine whether we can execute this tx
     // Find the input being spent
     let pool_input = spent_output(ctx)
     // Assume the first output is the pool output
-    expect Some(pool_output) = list.head(ctx.transaction.outputs)
+    expect Some(pool_output) = list.head(outputs)
     expect pool_output.address == pool_input.address
     expect Some(output_datum) = datum_of(ctx, pool_output)
     expect output_datum: PoolDatum = output_datum
@@ -62,14 +74,14 @@ validator {
     // Find the reference input with the settings token and it's datum
     let settings_output =
       shared.get_input_with_token(
-        ctx.transaction.reference_inputs,
+        reference_inputs,
         redeemer.settings_input,
         shared.settings_asset_class(),
       )
     expect Some(settings_datum) = datum_of(ctx, settings_output)
     expect settings_datum: SettingsDatum = settings_datum
     // Sort the orders according to the redeemer
-    let orders = get_sorted_orders(redeemer.input_order, ctx.transaction.inputs)
+    let orders = get_sorted_orders(redeemer.input_order, inputs)
 
     // Construct the initial pool state from the datum and the locked values
     let initial_state =
@@ -77,7 +89,7 @@ validator {
         settings_datum.pool_script_hash,
         datum,
         pool_input,
-        value.lovelace_of(ctx.transaction.fee),
+        value.lovelace_of(fee),
       )
 
     // Process the orders in order, and decide the final pool state we should see
@@ -93,19 +105,14 @@ validator {
     let updated_circulating_lp =
       output_datum.circulating_lp == outcome.quantity_lp.3rd
     let minted_correct_lp_tokens =
-      minted_correct_pool_tokens(
-        settings_datum,
-        ctx.transaction.mint,
-        output_datum,
-        outcome,
-      )
+      minted_correct_pool_tokens(settings_datum, mint, output_datum, outcome)
     let updated_rewards = output_datum.rewards == outcome.rewards
     let satisfies_payouts =
       check_satisfies_payouts(
         // We prepend each payout to the list, meaning we need to reverse it to match the outputs
         // Candidate for optimization, just build the outputs in the reverse order
         outcome.payouts,
-        list.drop(ctx.transaction.outputs, 1),
+        list.drop(outputs, 1),
       )
     let pool_has_correct_amounts = pool_output.value == expected_pool_value
     let pool_has_correct_staking_key =
@@ -113,12 +120,11 @@ validator {
     let pool_immutables_unchanged =
       datum.identifier == output_datum.identifier && datum.assets == output_datum.assets && datum.fees == output_datum.fees && datum.market_open == output_datum.market_open
     let licensed_scooper =
-      list.at(ctx.transaction.extra_signatories, redeemer.signatory_index) == list.at(
+      list.at(extra_signatories, redeemer.signatory_index) == list.at(
         settings_datum.authorized_scoopers,
         redeemer.scooper_index,
       )
-    let market_open =
-      is_after(ctx.transaction.validity_range, datum.market_open)
+    let market_open = is_after(validity_range, datum.market_open)
 
     // Check that the fields on the datum have been updated (or not) correctly
     let datum_updated_correctly =
