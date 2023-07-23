@@ -104,7 +104,7 @@ validator {
       check_satisfies_payouts(
         // We prepend each payout to the list, meaning we need to reverse it to match the outputs
         // Candidate for optimization, just build the outputs in the reverse order
-        list.reverse(outcome.payouts),
+        outcome.payouts,
         list.drop(ctx.transaction.outputs, 1),
       )
     let pool_has_correct_amounts = pool_output.value == expected_pool_value

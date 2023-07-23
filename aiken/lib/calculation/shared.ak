@@ -1,8 +1,14 @@
 //// Shared types and functions across all pool calculations
 
+use aiken/bytearray.{to_hex}
+use aiken/cbor
 use aiken/list
-use aiken/transaction.{Datum, Input, Output}
-use aiken/transaction/credential.{Address, ScriptCredential}
+use aiken/transaction.{
+  Datum, Input, NoDatum, Output, OutputReference, TransactionId,
+}
+use aiken/transaction/credential.{
+  Address, ScriptCredential, VerificationKeyCredential,
+}
 use aiken/transaction/value.{Value}
 use shared.{Rational, SingletonValue}
 
@@ -75,16 +81,6 @@ pub fn get_sorted_orders(
   input_order: List<Int>,
   inputs: List<Input>,
 ) -> List<Output> {
-  let filtered_orders =
-    list.filter(
-      inputs,
-      fn(i) {
-        when i.output.address.payment_credential is {
-          ScriptCredential(_) -> True
-          _ -> False
-        }
-      },
-    )
   list.indexed_map(
     input_order,
     fn(idx, elem) {
@@ -92,7 +88,7 @@ pub fn get_sorted_orders(
       // more efficient than just list.has, since we cut the work in half
       expect !has_in_first_n(input_order, elem, idx)
       // Grab the i'th input
-      expect Some(input) = list.at(filtered_orders, elem)
+      expect Some(input) = list.at(inputs, elem)
       input.output
     },
   )
