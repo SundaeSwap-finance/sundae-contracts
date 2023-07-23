@@ -178,7 +178,7 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
     "ff";
 }
 
-for (let escrowsCount = 1n; escrowsCount <= 20n; escrowsCount++) {
+for (let escrowsCount = 20n; escrowsCount <= 20n; escrowsCount++) {
   const accounts =
     [
       {
@@ -192,6 +192,7 @@ for (let escrowsCount = 1n; escrowsCount <= 20n; escrowsCount++) {
   let emulator = new Emulator(accounts, {
     ...PROTOCOL_PARAMETERS_DEFAULT,
     maxTxSize: 999999999999,
+    maxTxExMem: 999999999999999n,
   });
 
   const lucid = await Lucid.new(emulator);
@@ -489,7 +490,7 @@ for (let escrowsCount = 1n; escrowsCount <= 20n; escrowsCount++) {
   console.log("pool: ");
   console.log(pool);
 
-  async function scoopPool(): Promise<TxHash> {
+  async function scoopPool(): Promise<{ txHash: TxHash, cpu?: number, mem?: number }> {
     let tx = await lucid.newTx()
       .validFrom(emulator.now())
       .validTo(emulator.now() + 30000);
@@ -530,21 +531,21 @@ for (let escrowsCount = 1n; escrowsCount <= 20n; escrowsCount++) {
     log(await tx.toString());
     try {
       let completeTx = await tx.complete({ coinSelection: false });
-      console.log(`${escrowsCount} escrows:\tcpu=${completeTx?.exUnits?.cpu}\tmem=${completeTx?.exUnits?.mem}`);
       log("complete:", completeTx.toString());
       const signedTx = await completeTx.sign().complete();
       log(signedTx.toString());
-      return signedTx.submit();
+      return { txHash: await signedTx.submit(), cpu: completeTx?.exUnits?.cpu, mem: completeTx?.exUnits?.mem };
     } catch(e) {
       log("Maximum escrows:", escrowsCount - 1n)
       throw e;
     }
   }
 
-  const scoopedHash = await scoopPool();
-  const okScooped = await emulator.awaitTx(scoopedHash);
+  const scoopResult = await scoopPool();
+  const okScooped = await emulator.awaitTx(scoopResult.txHash);
   log(`scooped pool: ${okScooped}`);
-  log(scoopedHash);
-
+  log(scoopResult.txHash);  
   log(emulator.ledger);
+  
+  console.log(`${escrowsCount} escrows:\tcpu=${scoopResult.cpu}\tmem=${scoopResult.mem}`);
 }
