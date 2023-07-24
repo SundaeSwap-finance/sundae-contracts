@@ -52,7 +52,25 @@ test example_pool_redeemer() {
 
 pub type PoolMintRedeemer {
   MintLP { identifier: Ident }
-  CreatePool { assets: (AssetClass, AssetClass) }
+  CreatePool { assets: (AssetClass, AssetClass), pool_output: Int }
+}
+
+test example_pool_mint_redeemer() {
+  trace bytearray.to_hex(
+    cbor.serialise(
+      CreatePool {
+        assets: (
+          (#"",#""),
+          (
+            #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77",
+            #"53554e444145",
+          ),
+        ),
+        pool_output: 0,
+      },
+    ),
+  )
+  True
 }
 
 pub fn pool_token(policy_id: PolicyId, ident: Ident) -> AssetClass {

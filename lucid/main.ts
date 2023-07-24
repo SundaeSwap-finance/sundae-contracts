@@ -141,7 +141,9 @@ function poolMintRedeemer(dummyPolicyHex: string) {
   return "d87a9f9f9f4040ff9f" +
     "581c" + dummyPolicyHex +
     "45" + fromText("DUMMY") +
-    "ffffff";
+    "ffff" +
+    "00" +
+    "ff";
 }
 
 function scoopRedeemer(inputOrder: bigint[]): string {

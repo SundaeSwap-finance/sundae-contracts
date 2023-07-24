@@ -1,13 +1,19 @@
 use aiken/builtin
+use aiken/bytearray
 use aiken/dict
+use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
+use aiken/math
 use aiken/transaction.{InlineDatum, ScriptContext, Transaction}
+use aiken/transaction/credential.{Script}
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
-use calculation/process.{pool_input_to_state, process_orders}
+use calculation/process.{
+  pool_input_to_state, process_orders,
+}
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
-use shared.{Ident, is_after, spent_output}
+use shared.{AssetClass, Ident, datum_of, is_after, spent_output}
 use types/pool.{
-  PoolDatum, PoolMintRedeemer, PoolRedeemer, lp_token_name, pool_token_name,
+  CreatePool, MintLP, PoolDatum, PoolRedeemer, PoolMintRedeemer, lp_token_name, pool_token_name,
 }
 use types/settings.{SettingsDatum}
 
@@ -79,6 +85,21 @@ fn has_expected_pool_value(
       ) == 1
     True
   }
+}
+
+fn compare_asset_class(a: AssetClass, b: AssetClass) {
+  let (aPolicy, aToken) = a
+  let (bPolicy, bToken) = b
+  when bytearray.compare(aPolicy, bPolicy) is {
+    Less -> Less
+    Equal -> bytearray.compare(aToken, bToken)
+    Greater -> Greater
+  }
+}
+
+fn int_to_ident(n: Int) -> Ident {
+  expect n < 256
+  bytearray.push(#"", n)
 }
 
 validator(settings_policy_id: PolicyId) {
@@ -181,7 +202,67 @@ validator(settings_policy_id: PolicyId) {
     True
   }
 
-  fn mint(_r: PoolMintRedeemer, _ctx: ScriptContext) {
-    True
+  fn mint(r: PoolMintRedeemer, ctx: ScriptContext) {
+    when r is {
+      CreatePool(assets, pool_output_ix) -> {
+        let (asset_a, asset_b) = assets
+        let coin_pair_ordering_is_canonical =
+          compare_asset_class(asset_a, asset_b) == Less
+
+        expect Some(first_input) = list.at(ctx.transaction.inputs, 0)
+        let first_input_index =
+          int_to_ident(first_input.output_reference.output_index)
+        let new_pool_id = 
+          first_input.output_reference.transaction_id.hash
+            |> bytearray.concat(#"23") // '#' character
+            |> bytearray.concat(first_input_index)
+            |> hash.blake2b_256
+            |> bytearray.drop(1)
+        let new_pool_p_token = #"70" |> bytearray.concat(new_pool_id)
+        let new_pool_l_token = #"6c" |> bytearray.concat(new_pool_id)
+
+        let reference_inputs = ctx.transaction.reference_inputs
+        let settings_input = 0
+
+        let settings_output = builtin.head_list(reference_inputs).output
+        expect InlineDatum(settings_datum) = settings_output.datum
+        expect settings_datum: SettingsDatum = settings_datum
+
+        expect Some(pool_output) = list.at(ctx.transaction.outputs, pool_output_ix)
+
+        let coin_a_amt = value.quantity_of(
+          pool_output.value,
+          asset_a.1st,
+          asset_a.2nd)
+        let coin_b_amt = value.quantity_of(
+          pool_output.value,
+          asset_b.1st,
+          asset_b.2nd)
+
+        // Only ada has a null policy id. If coin A is ada, subtract the 2 ada
+        // rider from the output to get the true amount in the pool.
+        let coin_a_amt_sans_rider =
+          if bytearray.is_empty(asset_a.1st) {
+            coin_a_amt - 2_000_000
+          } else {
+            coin_a_amt
+          }
+
+        expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
+
+        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_p_token)
+        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_l_token)
+
+        let expected_mint =
+          shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1))
+            |> value.merge(shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)))
+        let mint_is_correct =
+          value.from_minted_value(ctx.transaction.mint) == expected_mint
+
+        coin_pair_ordering_is_canonical
+          && mint_is_correct
+      }
+      MintLP(_) -> False
+    }
   }
 }
