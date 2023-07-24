@@ -76,6 +76,35 @@ test test_has_in_first_n() {
   True
 }
 
+pub fn unsafe_fast_index_skip(inputs: List<a>, idx: Int) -> a {
+  if idx >= 10 {
+    unsafe_fast_index_skip(
+      inputs
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list
+        |> builtin.tail_list,
+      idx - 10,
+    )
+  } else {
+    unsafe_fast_index(inputs, idx)
+  }
+}
+
+fn unsafe_fast_index(inputs: List<a>, idx: Int) -> a {
+  if idx == 0 {
+    builtin.head_list(inputs)
+  } else {
+    unsafe_fast_index(builtin.tail_list(inputs), idx - 1)
+  }
+}
+
 /// Sort a set of inputs according to an indexing set
 pub fn get_sorted_orders(
   input_order: List<Int>,
@@ -88,7 +117,8 @@ pub fn get_sorted_orders(
       // more efficient than just list.has, since we cut the work in half
       expect !has_in_first_n(input_order, elem, idx)
       // Grab the i'th input
-      expect Some(input) = list.at(inputs, elem)
+      // OPTIMIZATION: Huge perf wins from tail_list builtin; skip 5 at a time
+      let input = unsafe_fast_index_skip(inputs, elem)
       input.output
     },
   )
