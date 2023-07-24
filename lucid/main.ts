@@ -40,7 +40,8 @@ function assert(p: boolean) {
 
 const flags = parse(Deno.args, {
   string: ["scriptsFile"],
-  boolean: ["aiken"],
+  number: ["max"],
+  boolean: ["aiken", "findMax"],
 });
 
 if (flags.scriptsFile == undefined) {
@@ -178,7 +179,8 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
     "ff";
 }
 
-for (let escrowsCount = 20n; escrowsCount <= 20n; escrowsCount++) {
+const max = BigInt(flags.max) ?? 30n;
+for (let escrowsCount = (flags.findMax ? 1n : max); escrowsCount <= max; escrowsCount++) {
   const accounts =
     [
       {
@@ -192,7 +194,7 @@ for (let escrowsCount = 20n; escrowsCount <= 20n; escrowsCount++) {
   let emulator = new Emulator(accounts, {
     ...PROTOCOL_PARAMETERS_DEFAULT,
     maxTxSize: 999999999999,
-    maxTxExMem: 999999999999999n,
+    maxTxExMem: flags.findMax ? PROTOCOL_PARAMETERS_DEFAULT.maxTxExMem : 999999999999999n,
   });
 
   const lucid = await Lucid.new(emulator);
