@@ -6,18 +6,16 @@ use sundae/multisig
 use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop}
 
 validator(stake_script_hash: Hash<Blake2b_224, Script>) {
-  fn spend(
-    datum: OrderDatum,
-    redeemer: OrderRedeemer,
-    ctx: ScriptContext,
-  ) -> Bool {
+  fn spend(datum: Data, redeemer: OrderRedeemer, ctx: ScriptContext) -> Bool {
     when redeemer is {
-      Cancel ->
+      Cancel -> {
+        expect datum: OrderDatum = datum
         multisig.satisfied(
           datum.owner,
           ctx.transaction.extra_signatories,
           ctx.transaction.validity_range,
         )
+      }
       Scoop ->
         dict.has_key(
           ctx.transaction.withdrawals,
