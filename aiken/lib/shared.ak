@@ -60,6 +60,7 @@ pub fn get_input_with_token(
   idx: Int,
   token: AssetClass,
 ) -> Output {
+  // Optimization: assume first reference input by farming for high reference script hashes
   expect Some(input) = list.at(inputs, idx)
   expect value.quantity_of(input.output.value, token.1st, token.2nd) >= 1
   input.output

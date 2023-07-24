@@ -1,26 +1,9 @@
 //// Shared types and functions across all pool calculations
 
-use aiken/bytearray.{to_hex}
-use aiken/cbor
+use aiken/builtin
 use aiken/list
-use aiken/transaction.{
-  Datum, Input, NoDatum, Output, OutputReference, TransactionId,
-}
-use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
-}
-use aiken/transaction/value.{Value}
+use aiken/transaction.{Input, Output}
 use shared.{Rational, SingletonValue}
-
-/// Represents a payout to a specific 
-pub type Payout {
-  /// The address to pay out to
-  address: Address,
-  /// The datum to attach to the payout
-  datum: Datum,
-  /// The value to pay out
-  value: Value,
-}
 
 /// An interim pool state
 pub type PoolState {
@@ -34,8 +17,6 @@ pub type PoolState {
   fee: Rational,
   /// The rewards accumulated for the scoopers
   rewards: Int,
-  /// The payouts that need to be made
-  payouts: List<Payout>,
 }
 
 fn internal(items: List<Int>, elem: Int, idx: Int) {
@@ -69,7 +50,7 @@ test test_has_in_first_n() {
   expect !has_in_first_n([1, 2, 3], 4, 3)
   expect
     !has_in_first_n(
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      [1, 2, 3, 5, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
       21,
       20,
     )

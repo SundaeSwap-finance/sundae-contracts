@@ -2,9 +2,7 @@ use aiken/dict
 use aiken/list
 use aiken/transaction.{ScriptContext, Transaction}
 use aiken/transaction/value.{MintedValue, Value}
-use calculation/process.{
-  check_satisfies_payouts, pool_input_to_state, process_orders,
-}
+use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
 use shared.{datum_of, is_after, spent_output}
 use types/pool.{
@@ -38,6 +36,7 @@ fn expected_pool_value(
   datum: PoolDatum,
   outcome: PoolState,
 ) -> Value {
+  // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
   value.from_lovelace(outcome.rewards)
     |> value.merge(
          shared.to_value(
@@ -67,7 +66,6 @@ validator {
       scooper_index,
       input_order,
     } = redeemer
-    let outputs = transaction.outputs
     // Grab the fields we'll need to determine whether we can execute this tx
     // Find the input being spent
     let pool_input = spent_output(ctx)
@@ -105,11 +103,12 @@ validator {
       )
 
     // Process the orders in order, and decide the final pool state we should see
-    let outcome = process_orders(ctx, initial_state, orders)
+    // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
+    let outcome =
+      process_orders(ctx, initial_state, orders, list.drop(outputs, 1))
     let PoolState {
       quantity_lp: expected_circulating_lp,
       rewards: expected_rewards,
-      payouts: expected_payouts,
       ..
     } = outcome
 
@@ -119,24 +118,20 @@ validator {
       expected_pool_value(settings_datum, output_datum, outcome)
 
     // Calculate all the neccesary and sufficient conditions
+    // OPTIMIZATION: this will be checked by nature of getting the orders in sorted order
     let at_least_one_order = !list.is_empty(orders)
     let updated_circulating_lp =
       actual_circulating_lp == expected_circulating_lp.3rd
     let minted_correct_lp_tokens =
       minted_correct_pool_tokens(settings_datum, mint, output_datum, outcome)
     let updated_rewards = actual_rewards == expected_rewards
-    let satisfies_payouts =
-      check_satisfies_payouts(
-        // We prepend each payout to the list, meaning we need to reverse it to match the outputs
-        // Candidate for optimization, just build the outputs in the reverse order
-        expected_payouts,
-        list.drop(outputs, 1),
-      )
     let pool_has_correct_amounts = pool_output.value == expected_pool_value
     let pool_has_correct_staking_key =
       pool_input.address.stake_credential == pool_output.address.stake_credential
     let pool_immutables_unchanged =
       datum.identifier == output_datum.identifier && datum.assets == output_datum.assets && datum.fees == output_datum.fees && datum.market_open == output_datum.market_open
+    // OPTIMIZATION: skip 10 entries at a time
+    // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
     let licensed_scooper =
       list.at(extra_signatories, signatory_index) == list.at(
         settings_datum.authorized_scoopers,
@@ -148,11 +143,12 @@ validator {
     let datum_updated_correctly =
       updated_circulating_lp && updated_rewards && pool_immutables_unchanged
 
+    // OPTIMIZATION: `expect` each of these individually, rather than ANDing
     // High-level intermediate goals
     let pool_can_be_scooped =
       at_least_one_order && market_open && licensed_scooper
     let funds_moved_correctly =
-      minted_correct_lp_tokens && satisfies_payouts && pool_has_correct_amounts
+      minted_correct_lp_tokens && pool_has_correct_amounts
     let pool_output_correct =
       datum_updated_correctly && pool_has_correct_staking_key
     // And then AND these all together

@@ -1,5 +1,6 @@
+use aiken/transaction.{Output}
 use aiken/transaction/value.{Value, ada_asset_name, ada_policy_id}
-use calculation/shared.{Payout, PoolState} as calc_shared
+use calculation/shared.{PoolState} as calc_shared
 use shared.{Rational, SingletonValue}
 use types/order.{OrderDatum}
 
@@ -46,6 +47,7 @@ pub fn do_swap(
   pool_state: PoolState,
   input_value: Value,
   order: OrderDatum,
+  output: Output,
 ) -> PoolState {
   expect order.Swap { offer, min_received } = order.order
 
@@ -63,6 +65,11 @@ pub fn do_swap(
         offer,
         input_value,
       )
+
+    // Check that the output satisfies this swap
+    expect output.address == order.destination.address
+    expect output.datum == order.destination.datum
+    expect output.value == out_value
     PoolState {
       quantity_a: (
         pool_state.quantity_a.1st,
@@ -77,14 +84,6 @@ pub fn do_swap(
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
       rewards: pool_state.rewards + order.scooper_fee,
-      payouts: [
-        Payout {
-          address: order.destination.address,
-          datum: order.destination.datum,
-          value: out_value,
-        },
-        ..pool_state.payouts
-      ],
     }
   } else if offer.1st == pool_state.quantity_b.1st && offer.2nd == pool_state.quantity_b.2nd {
     expect min_received.1st == pool_state.quantity_a.1st
@@ -98,6 +97,10 @@ pub fn do_swap(
         offer,
         input_value,
       )
+
+    expect output.address == order.destination.address
+    expect output.datum == order.destination.datum
+    expect output.value == out_value
     PoolState {
       quantity_a: (
         pool_state.quantity_a.1st,
@@ -112,14 +115,6 @@ pub fn do_swap(
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
       rewards: pool_state.rewards + order.scooper_fee,
-      payouts: [
-        Payout {
-          address: order.destination.address,
-          datum: order.destination.datum,
-          value: out_value,
-        },
-        ..pool_state.payouts
-      ],
     }
   } else {
     fail

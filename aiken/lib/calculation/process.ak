@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/bytearray.{to_hex}
 use aiken/cbor.{serialise}
 use aiken/list
@@ -5,7 +6,7 @@ use aiken/transaction.{Output, ScriptContext}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
 use calculation/donation
-use calculation/shared.{Payout, PoolState} as calc_shared
+use calculation/shared.{PoolState} as calc_shared
 use calculation/swap
 use calculation/withdrawal
 use shared.{datum_of}
@@ -44,23 +45,6 @@ pub fn pool_input_to_state(
     fee: datum.fees,
     // Pay the transaction fee out of the rewards
     rewards: datum.rewards,
-    payouts: [],
-  }
-}
-
-pub fn process_order(
-  ctx: ScriptContext,
-  initial: PoolState,
-  input: Output,
-) -> PoolState {
-  expect Some(datum) = datum_of(ctx, input)
-  expect datum: OrderDatum = datum
-  when datum.order is {
-    order.Swap(..) -> swap.do_swap(initial, input.value, datum)
-    order.Deposit(..) -> deposit.do_deposit(initial, input, datum)
-    order.Withdrawal(..) -> withdrawal.do_withdrawal(initial, input, datum)
-    // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(..) -> donation.do_donation(initial, input, datum)
   }
 }
 
@@ -68,22 +52,40 @@ pub fn process_orders(
   ctx: ScriptContext,
   initial: PoolState,
   orders: List<Output>,
-) -> PoolState {
-  list.reduce(orders, initial, fn(a, b) { process_order(ctx, a, b) })
-}
-
-pub fn check_satisfies_payouts(
-  payouts: List<Payout>,
   outputs: List<Output>,
-) -> Bool {
-  when (payouts, outputs) is {
-    ([next_payout, ..rest_payouts], [next_output, ..rest_outputs]) -> {
-      expect next_output.address == next_payout.address
-      expect next_output.datum == next_payout.datum
-      expect next_output.value == next_payout.value
-      check_satisfies_payouts(rest_payouts, rest_outputs)
+) -> PoolState {
+  when orders is {
+    [] -> initial
+    [order, ..rest_orders] -> {
+      expect [output, ..rest_outputs] = outputs
+
+      expect Some(datum) = datum_of(ctx, order)
+      expect datum: OrderDatum = datum
+      when datum.order is {
+        order.Swap(..) -> {
+          let next = swap.do_swap(initial, order.value, datum, output)
+          process_orders(ctx, next, rest_orders, rest_outputs)
+        }
+        order.Deposit(..) -> {
+          let next = deposit.do_deposit(initial, order.value, datum, output)
+          process_orders(ctx, next, rest_orders, rest_outputs)
+        }
+        order.Withdrawal(..) -> {
+          let next =
+            withdrawal.do_withdrawal(initial, order.value, datum, output)
+          process_orders(ctx, next, rest_orders, rest_outputs)
+        }
+        // order.Zap(..) -> do_zap(initial, input, datum)
+        order.Donation(..) -> {
+          let (next, used_output) =
+            donation.do_donation(initial, order.value, datum, output)
+          if used_output {
+            process_orders(ctx, next, rest_orders, rest_outputs)
+          } else {
+            process_orders(ctx, next, rest_orders, outputs)
+          }
+        }
+      }
     }
-    ([], _) -> True
-    _ -> False
   }
 }

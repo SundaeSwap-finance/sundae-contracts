@@ -522,7 +522,7 @@ for (let escrowsCount = 20n; escrowsCount <= 20n; escrowsCount++) {
       });
 
     // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
-    for(let e of escrowTakes.reverse()) {
+    for(let e of escrowTakes) {
       tx.payToAddress(userAddress, {
         "lovelace": rider,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: e,
