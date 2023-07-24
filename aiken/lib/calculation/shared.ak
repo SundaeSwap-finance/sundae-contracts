@@ -98,7 +98,6 @@ pub fn get_sorted_orders(
       // more efficient than just list.has, since we cut the work in half
       expect !has_in_first_n(input_order, elem, idx)
       // Grab the i'th input
-      // OPTIMIZATION: Huge perf wins from tail_list builtin; skip 5 at a time
       let input = unsafe_fast_index_skip(inputs, elem)
       input.output
     },

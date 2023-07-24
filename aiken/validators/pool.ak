@@ -118,18 +118,10 @@ validator {
       expected_pool_value(settings_datum, output_datum, outcome)
 
     // Calculate all the neccesary and sufficient conditions
-    // OPTIMIZATION: this will be checked by nature of getting the orders in sorted order
-    let at_least_one_order = !list.is_empty(orders)
-    let updated_circulating_lp =
-      actual_circulating_lp == expected_circulating_lp.3rd
     let minted_correct_lp_tokens =
       minted_correct_pool_tokens(settings_datum, mint, output_datum, outcome)
-    let updated_rewards = actual_rewards == expected_rewards
     let pool_has_correct_amounts = pool_output.value == expected_pool_value
-    let pool_has_correct_staking_key =
-      pool_input.address.stake_credential == pool_output.address.stake_credential
-    let pool_immutables_unchanged =
-      datum.identifier == output_datum.identifier && datum.assets == output_datum.assets && datum.fees == output_datum.fees && datum.market_open == output_datum.market_open
+
     // OPTIMIZATION: skip 10 entries at a time
     // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
     let licensed_scooper =
@@ -139,20 +131,27 @@ validator {
       )
     let market_open = is_after(validity_range, datum.market_open)
 
-    // Check that the fields on the datum have been updated (or not) correctly
-    let datum_updated_correctly =
-      updated_circulating_lp && updated_rewards && pool_immutables_unchanged
-
-    // OPTIMIZATION: `expect` each of these individually, rather than ANDing
-    // High-level intermediate goals
-    let pool_can_be_scooped =
-      at_least_one_order && market_open && licensed_scooper
-    let funds_moved_correctly =
-      minted_correct_lp_tokens && pool_has_correct_amounts
-    let pool_output_correct =
-      datum_updated_correctly && pool_has_correct_staking_key
-    // And then AND these all together
-    pool_can_be_scooped && funds_moved_correctly && pool_output_correct
+    // expect pool_can_be_scooped
+    expect !list.is_empty(orders)
+    // Must have at least one order
+    expect market_open
+    expect licensed_scooper
+    // expect funds_moved_correctly
+    expect minted_correct_lp_tokens
+    expect pool_has_correct_amounts
+    // expect pool_output_correct
+    // Must update the circulating LP if tokens are minted
+    expect actual_circulating_lp == expected_circulating_lp.3rd
+    // Must update the rewards field as expected
+    expect actual_rewards == expected_rewards
+    // Must not update the immutable fields
+    expect datum.identifier == output_datum.identifier
+    expect datum.assets == output_datum.assets
+    expect datum.fees == output_datum.fees
+    expect datum.market_open == output_datum.market_open
+    expect
+      pool_input.address.stake_credential == pool_output.address.stake_credential
+    True
   }
 
   fn mint(_r: PoolMintRedeemer, _ctx: ScriptContext) {
