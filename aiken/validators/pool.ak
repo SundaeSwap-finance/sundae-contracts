@@ -136,8 +136,8 @@ validator(settings_policy_id: PolicyId) {
     let settings_output = builtin.head_list(reference_inputs).output
     let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
     expect [_, (found_policy_id, settings_dict)] = settings_value_list
-    expect settings_found_policy_id = settings_policy_id
-    expect dict.to_list(settings_dict) == [("factory", 1)]
+    expect found_policy_id == settings_policy_id
+    expect dict.to_list(settings_dict) == [(shared.settings_nft_name, 1)]
     expect InlineDatum(settings_datum) = settings_output.datum
     expect settings_datum: SettingsDatum = settings_datum
     let SettingsDatum { pool_script_hash, authorized_scoopers, .. } =

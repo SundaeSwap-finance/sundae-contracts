@@ -263,13 +263,13 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
     const tx = await lucid.newTx()
       .collectFrom([mintedChange])
       .mintAssets({
-        [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
       }, factoryMintRedeemer())
       .validTo(emulator.now() + 30000)
       .attachMintingPolicy(factoryMintingPolicy)
       .payToContract(factoryAddress, { inline: newFactoryDatum }, {
         "lovelace": 2_000_000n,
-        [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
       })
       .complete();
     const signedTx = await tx.sign().complete();
@@ -304,7 +304,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
       .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
       .payToContract(factoryAddress, { inline: configuredFactoryDatum }, {
         "lovelace": 2_000_000n,
-        [toUnit(factoryPolicyId, fromText("factory"))]: 1n
+        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
       })
       .complete();
     const signedTx = await tx.sign().complete();
