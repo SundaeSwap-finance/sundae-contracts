@@ -1,10 +1,10 @@
 use aiken/dict
 use aiken/list
 use aiken/transaction.{ScriptContext, Transaction}
-use aiken/transaction/value.{MintedValue, Value}
+use aiken/transaction/value.{MintedValue, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
-use shared.{datum_of, is_after, spent_output}
+use shared.{Ident, datum_of, is_after, spent_output}
 use types/pool.{
   PoolDatum, PoolMintRedeemer, PoolRedeemer, lp_token_name, pool_token_name,
 }
@@ -31,20 +31,53 @@ fn minted_correct_pool_tokens(
   }
 }
 
-fn expected_pool_value(
+fn has_expected_pool_value(
   settings: SettingsDatum,
-  datum: PoolDatum,
+  identifier: Ident,
+  output_value: Value,
   outcome: PoolState,
-) -> Value {
+) -> Bool {
   // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  value.from_lovelace(outcome.rewards)
-    |> value.merge(
-         shared.to_value(
-           (settings.pool_script_hash, pool_token_name(datum.identifier), 1),
-         ),
-       )
-    |> value.merge(shared.to_value(outcome.quantity_a))
-    |> value.merge(shared.to_value(outcome.quantity_b))
+  if outcome.quantity_a.1st == ada_policy_id {
+    expect 3 == list.length(value.flatten(output_value))
+    expect
+      value.lovelace_of(output_value) == outcome.rewards + outcome.quantity_a.3rd
+    expect
+      value.quantity_of(
+        output_value,
+        outcome.quantity_b.1st,
+        outcome.quantity_b.2nd,
+      ) == outcome.quantity_b.3rd
+    expect
+      value.quantity_of(
+        output_value,
+        settings.pool_script_hash,
+        pool_token_name(identifier),
+      ) == 1
+    True
+  } else {
+    expect 4 == list.length(value.flatten(output_value))
+    expect value.lovelace_of(output_value) == outcome.rewards
+    expect
+      value.quantity_of(
+        output_value,
+        outcome.quantity_a.1st,
+        outcome.quantity_a.2nd,
+      ) == outcome.quantity_a.3rd
+    expect
+      value.quantity_of(
+        output_value,
+        outcome.quantity_b.1st,
+        outcome.quantity_b.2nd,
+      ) == outcome.quantity_b.3rd
+    expect
+      value.quantity_of(
+        output_value,
+        settings.pool_script_hash,
+        pool_token_name(identifier),
+      ) == 1
+    True
+  }
 }
 
 validator {
@@ -114,13 +147,9 @@ validator {
 
     // The pool should have all of the scooper fees, and the quantity of eahc token of the outcome
     // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
-    let expected_pool_value =
-      expected_pool_value(settings_datum, output_datum, outcome)
-
     // Calculate all the neccesary and sufficient conditions
     let minted_correct_lp_tokens =
       minted_correct_pool_tokens(settings_datum, mint, output_datum, outcome)
-    let pool_has_correct_amounts = pool_output.value == expected_pool_value
 
     // OPTIMIZATION: skip 10 entries at a time
     // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
@@ -138,7 +167,13 @@ validator {
     expect licensed_scooper
     // expect funds_moved_correctly
     expect minted_correct_lp_tokens
-    expect pool_has_correct_amounts
+    expect
+      has_expected_pool_value(
+        settings_datum,
+        output_datum.identifier,
+        pool_output.value,
+        outcome,
+      )
     // expect pool_output_correct
     // Must update the circulating LP if tokens are minted
     expect actual_circulating_lp == expected_circulating_lp.3rd

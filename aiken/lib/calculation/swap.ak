@@ -1,16 +1,22 @@
 use aiken/transaction.{Output}
-use aiken/transaction/value.{Value, ada_asset_name, ada_policy_id}
+use aiken/transaction/value.{
+  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
+}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{Rational, SingletonValue}
 use types/order.{OrderDatum}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 pub fn swap_takes(
-  pool_give: SingletonValue,
-  pool_take: SingletonValue,
+  give_policy_id: PolicyId,
+  give_asset_name: AssetName,
+  take_policy_id: PolicyId,
+  take_asset_name: AssetName,
+  pool_give: Int,
+  pool_take: Int,
   pool_fee: Rational,
   scooper_fee: Int,
-  order_give: SingletonValue,
+  order_give: Int,
   input_value: Value,
 ) -> (Int, Value) {
   // We compute the AMM formula, but 
@@ -18,21 +24,19 @@ pub fn swap_takes(
   let (numerator, denominator) = pool_fee
   let difference = denominator - numerator
 
-  // Make sure we're giving up the same asset the pool accepts
-  expect pool_give.1st == order_give.1st
   // Compute the amount of token received
   let takes =
-    pool_take.3rd * order_give.3rd * difference / (
-      pool_give.3rd * denominator + order_give.3rd * difference
+    pool_take * order_give * difference / (
+      pool_give * denominator + order_give * difference
     )
 
   // And then compute the remainder, using the input value minus the given amount
   let remainder =
     input_value
-      |> value.add(order_give.1st, order_give.2nd, -order_give.3rd)
+      |> value.add(give_policy_id, give_asset_name, -order_give)
       |> value.add(ada_policy_id, ada_asset_name, -scooper_fee)
   // And then add in the `takes` value
-  let out_value = value.add(remainder, pool_take.1st, pool_take.2nd, takes)
+  let out_value = value.add(remainder, take_policy_id, take_asset_name, takes)
 
   (takes, out_value)
 }
@@ -51,18 +55,24 @@ pub fn do_swap(
 ) -> PoolState {
   expect order.Swap { offer, min_received } = order.order
 
-  if
-  offer.1st == pool_state.quantity_a.1st && offer.2nd == pool_state.quantity_a.2nd{
-  
-    expect min_received.1st == pool_state.quantity_b.1st
-    expect min_received.2nd == pool_state.quantity_b.2nd
+  let (offer_policy_id, offer_asset_name, offer_amt) = offer
+  let (a_policy_id, a_asset_name, a_amt) = pool_state.quantity_a
+  let (b_policy_id, b_asset_name, b_amt) = pool_state.quantity_b
+
+  if offer_policy_id == a_policy_id && offer_asset_name == a_asset_name {
+    expect min_received.1st == b_policy_id
+    expect min_received.2nd == b_asset_name
     let (takes, out_value) =
       swap_takes(
-        pool_state.quantity_a,
-        pool_state.quantity_b,
+        offer_policy_id,
+        offer_asset_name,
+        b_policy_id,
+        b_asset_name,
+        a_amt,
+        b_amt,
         pool_state.fee,
         order.scooper_fee,
-        offer,
+        offer_amt,
         input_value,
       )
 
@@ -71,30 +81,26 @@ pub fn do_swap(
     expect output.datum == order.destination.datum
     expect output.value == out_value
     PoolState {
-      quantity_a: (
-        pool_state.quantity_a.1st,
-        pool_state.quantity_a.2nd,
-        pool_state.quantity_a.3rd + offer.3rd,
-      ),
-      quantity_b: (
-        pool_state.quantity_b.1st,
-        pool_state.quantity_b.2nd,
-        pool_state.quantity_b.3rd - takes,
-      ),
+      quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
+      quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
       rewards: pool_state.rewards + order.scooper_fee,
     }
-  } else if offer.1st == pool_state.quantity_b.1st && offer.2nd == pool_state.quantity_b.2nd {
-    expect min_received.1st == pool_state.quantity_a.1st
-    expect min_received.2nd == pool_state.quantity_a.2nd
+  } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
+    expect min_received.1st == a_policy_id
+    expect min_received.2nd == a_asset_name
     let (takes, out_value) =
       swap_takes(
-        pool_state.quantity_b,
-        pool_state.quantity_a,
+        offer_policy_id,
+        offer_asset_name,
+        a_policy_id,
+        a_asset_name,
+        b_amt,
+        a_amt,
         pool_state.fee,
         order.scooper_fee,
-        offer,
+        offer_amt,
         input_value,
       )
 
@@ -102,16 +108,8 @@ pub fn do_swap(
     expect output.datum == order.destination.datum
     expect output.value == out_value
     PoolState {
-      quantity_a: (
-        pool_state.quantity_a.1st,
-        pool_state.quantity_a.2nd,
-        pool_state.quantity_a.3rd - takes,
-      ),
-      quantity_b: (
-        pool_state.quantity_b.1st,
-        pool_state.quantity_b.2nd,
-        pool_state.quantity_b.3rd + offer.3rd,
-      ),
+      quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
+      quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
       rewards: pool_state.rewards + order.scooper_fee,

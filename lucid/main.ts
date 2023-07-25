@@ -40,7 +40,7 @@ function assert(p: boolean) {
 
 const flags = parse(Deno.args, {
   string: ["scriptsFile"],
-  number: ["max"],
+  number: ["min", "max"],
   boolean: ["aiken", "findMax"],
 });
 
@@ -179,8 +179,9 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
     "ff";
 }
 
-const max = BigInt(flags.max) ?? 30n;
-for (let escrowsCount = (flags.findMax ? 1n : max); escrowsCount <= max; escrowsCount++) {
+const max = flags.max ? BigInt(flags.max) : 30n;
+const min = flags.min ? BigInt(flags.min) : (flags.findMax ? 1n : max);
+for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   const accounts =
     [
       {

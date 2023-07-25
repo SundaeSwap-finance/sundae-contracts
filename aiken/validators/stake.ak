@@ -9,18 +9,17 @@ use aiken/transaction/value
 validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   fn stake(_r: Data, ctx: ScriptContext) -> Bool {
     when ctx.purpose is {
-      WithdrawFrom(_) ->
-        // At east one output must contain the pool NFT
-        list.any(
-          ctx.transaction.inputs,
-          fn(out) {
-            let pool_tokens = value.tokens(out.output.value, pool_script_hash)
-            let pool_tokens_list = dict.to_list(pool_tokens)
-            let is_pool_nft =
-              fn(kvp: (ByteArray, Int)) { bytearray.take(kvp.1st, 1) == "p" }
-            list.any(pool_tokens_list, is_pool_nft)
-          },
-        )
+      WithdrawFrom(_) -> {
+        // We can assume that the pool output is the first output
+        // and it's safe to check that the pool NFT is on this output, so long
+        // as the pool minting policy checks that there are *no* withdrawals present in the transaction
+        expect Some(pool_output) = list.head(ctx.transaction.outputs)
+        let pool_tokens = value.tokens(pool_output.value, pool_script_hash)
+        let pool_tokens_list = dict.to_list(pool_tokens)
+        let is_pool_nft =
+          fn(kvp: (ByteArray, Int)) { bytearray.take(kvp.1st, 1) == "p" }
+        list.any(pool_tokens_list, is_pool_nft)
+      }
       _ -> False
     }
   }
