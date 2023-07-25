@@ -79,3 +79,5 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
 pub fn legal_swap_fees() -> List<Rational> {
   [(1, 2000), (3, 1000), (1, 100)]
 }
+
+pub const settings_nft_name: AssetName = "settings"

@@ -4,7 +4,7 @@ use aiken/dict
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
 use aiken/math
-use aiken/transaction.{NoDatum, DatumHash, InlineDatum, ScriptContext, Transaction}
+use aiken/transaction.{Mint, NoDatum, DatumHash, InlineDatum, ScriptContext, Transaction}
 use aiken/transaction/credential.{Script}
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{
@@ -279,7 +279,20 @@ validator(settings_policy_id: PolicyId) {
           && funds_spent_to_pool
           && pool_output_datum_correct
       }
-      MintLP(_) -> False
+      // It is sufficient to check that either a pool nft is being spent or the
+      // settings nft is being spent, *provided that* the settings and pool
+      // contracts check that they are minting the correct token
+      MintLP(pool_ident) -> {
+        expect Mint(own_policy_id) = ctx.purpose
+        let pool_nft_name = #"70" |> bytearray.concat(pool_ident)
+        let allows_to_spend = fn(v) {
+          value.quantity_of(v, own_policy_id, pool_nft_name) >= 1
+            || value.quantity_of(v, settings_policy_id, shared.settings_nft_name) >= 1
+        }
+        list.any(ctx.transaction.inputs, fn(input) {
+          allows_to_spend(input.output.value)
+        })
+      }
     }
   }
 }
