@@ -151,7 +151,6 @@ function scoopRedeemer(inputOrder: bigint[]): string {
   }
   return "d87a81" + // wrap this to avoid running the minting script
     "d8799f" +
-    "00" + // settings input; only one reference input, so it's always first
     "00" + // signatory index; only one required signer, so it's always first
     "00" + // scooper index; only one scooper, so it's always first
     "9f" + orderString + "ff" +

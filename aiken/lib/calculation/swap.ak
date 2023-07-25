@@ -4,7 +4,7 @@ use aiken/transaction/value.{
 }
 use calculation/shared.{PoolState} as calc_shared
 use shared.{Rational, SingletonValue}
-use types/order.{OrderDatum}
+use types/order.{Destination, OrderDatum}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 pub fn swap_takes(
@@ -50,11 +50,12 @@ pub fn swap_takes(
 pub fn do_swap(
   pool_state: PoolState,
   input_value: Value,
-  order: OrderDatum,
+  destination: Destination,
+  scooper_fee: Int,
+  offer: SingletonValue,
+  min_received: SingletonValue,
   output: Output,
 ) -> PoolState {
-  expect order.Swap { offer, min_received } = order.order
-
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
   let (a_policy_id, a_asset_name, a_amt) = pool_state.quantity_a
   let (b_policy_id, b_asset_name, b_amt) = pool_state.quantity_b
@@ -71,21 +72,21 @@ pub fn do_swap(
         a_amt,
         b_amt,
         pool_state.fee,
-        order.scooper_fee,
+        scooper_fee,
         offer_amt,
         input_value,
       )
 
     // Check that the output satisfies this swap
-    expect output.address == order.destination.address
-    expect output.datum == order.destination.datum
+    expect output.address == destination.address
+    expect output.datum == destination.datum
     expect output.value == out_value
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
-      rewards: pool_state.rewards + order.scooper_fee,
+      rewards: pool_state.rewards + scooper_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     expect min_received.1st == a_policy_id
@@ -99,20 +100,20 @@ pub fn do_swap(
         b_amt,
         a_amt,
         pool_state.fee,
-        order.scooper_fee,
+        scooper_fee,
         offer_amt,
         input_value,
       )
 
-    expect output.address == order.destination.address
-    expect output.datum == order.destination.datum
+    expect output.address == destination.address
+    expect output.datum == destination.datum
     expect output.value == out_value
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp: pool_state.quantity_lp,
       fee: pool_state.fee,
-      rewards: pool_state.rewards + order.scooper_fee,
+      rewards: pool_state.rewards + scooper_fee,
     }
   } else {
     fail

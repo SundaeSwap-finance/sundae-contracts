@@ -1,7 +1,5 @@
-use aiken/builtin
-use aiken/bytearray.{to_hex}
-use aiken/cbor.{serialise}
-use aiken/list
+use aiken/dict.{Dict}
+use aiken/hash.{Blake2b_256, Hash}
 use aiken/transaction.{Output, ScriptContext}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
@@ -17,7 +15,6 @@ pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
   datum: PoolDatum,
   input: Output,
-  fee: Int,
 ) -> PoolState {
   let assets = datum.assets
   let min_utxo =
@@ -49,7 +46,7 @@ pub fn pool_input_to_state(
 }
 
 pub fn process_orders(
-  ctx: ScriptContext,
+  datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   orders: List<Output>,
   outputs: List<Output>,
@@ -59,30 +56,42 @@ pub fn process_orders(
     [order, ..rest_orders] -> {
       expect [output, ..rest_outputs] = outputs
 
-      expect Some(datum) = datum_of(ctx, order)
+      expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
-      when datum.order is {
-        order.Swap(..) -> {
-          let next = swap.do_swap(initial, order.value, datum, output)
-          process_orders(ctx, next, rest_orders, rest_outputs)
+      let OrderDatum { destination, scooper_fee, order: order_details, .. } =
+        datum
+
+      when order_details is {
+        order.Swap(offer, min_received) -> {
+          let next =
+            swap.do_swap(
+              initial,
+              order.value,
+              destination,
+              scooper_fee,
+              offer,
+              min_received,
+              output,
+            )
+          process_orders(datums, next, rest_orders, rest_outputs)
         }
         order.Deposit(..) -> {
           let next = deposit.do_deposit(initial, order.value, datum, output)
-          process_orders(ctx, next, rest_orders, rest_outputs)
+          process_orders(datums, next, rest_orders, rest_outputs)
         }
         order.Withdrawal(..) -> {
           let next =
             withdrawal.do_withdrawal(initial, order.value, datum, output)
-          process_orders(ctx, next, rest_orders, rest_outputs)
+          process_orders(datums, next, rest_orders, rest_outputs)
         }
         // order.Zap(..) -> do_zap(initial, input, datum)
         order.Donation(..) -> {
           let (next, used_output) =
             donation.do_donation(initial, order.value, datum, output)
           if used_output {
-            process_orders(ctx, next, rest_orders, rest_outputs)
+            process_orders(datums, next, rest_orders, rest_outputs)
           } else {
-            process_orders(ctx, next, rest_orders, outputs)
+            process_orders(datums, next, rest_orders, outputs)
           }
         }
       }

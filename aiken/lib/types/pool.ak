@@ -36,7 +36,6 @@ test example_pool_datum() {
 }
 
 pub type PoolRedeemer {
-  settings_input: Int,
   signatory_index: Int,
   scooper_index: Int,
   input_order: List<Int>,
@@ -45,12 +44,7 @@ pub type PoolRedeemer {
 test example_pool_redeemer() {
   trace bytearray.to_hex(
     cbor.serialise(
-      PoolRedeemer {
-        settings_input: 0,
-        signatory_index: 0,
-        scooper_index: 0,
-        input_order: [1],
-      },
+      PoolRedeemer { signatory_index: 0, scooper_index: 0, input_order: [1] },
     ),
   )
   True

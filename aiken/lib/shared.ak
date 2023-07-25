@@ -1,3 +1,5 @@
+use aiken/dict.{Dict}
+use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{Finite, Interval}
 use aiken/list
 use aiken/time.{PosixTime}
@@ -23,20 +25,13 @@ pub fn to_value(sv: SingletonValue) -> value.Value {
   value.from_asset(sv.1st, sv.2nd, sv.3rd)
 }
 
-const settings_policy_id: PolicyId = #""
-
-const settings_token_name: AssetName = #""
-
-pub fn settings_asset_class() -> AssetClass {
-  (settings_policy_id, settings_token_name)
-}
-
-pub const order_script_hash: PolicyId = #""
-
-pub fn datum_of(ctx: ScriptContext, output: Output) -> Option<Data> {
+pub fn datum_of(
+  datums: Dict<Hash<Blake2b_256, Data>, Data>,
+  output: Output,
+) -> Option<Data> {
   when output.datum is {
     transaction.NoDatum -> None
-    transaction.DatumHash(h) -> find_datum([], ctx.transaction.datums, h)
+    transaction.DatumHash(h) -> dict.get(datums, h)
     transaction.InlineDatum(d) -> Some(d)
   }
 }
@@ -48,9 +43,13 @@ pub fn spent_output(ctx: ScriptContext) -> Output {
 }
 
 pub fn is_after(range: Interval<PosixTime>, point: PosixTime) {
-  when (range.lower_bound.bound_type, range.lower_bound.is_inclusive) is {
-    (Finite(low), True) -> point <= low
-    (Finite(low), False) -> point < low
+  when range.lower_bound.bound_type is {
+    Finite(low) ->
+      if range.lower_bound.is_inclusive {
+        point <= low
+      } else {
+        point < low
+      }
     _ -> False
   }
 }
