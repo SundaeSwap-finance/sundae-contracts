@@ -4,7 +4,7 @@ use aiken/dict
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
 use aiken/math
-use aiken/transaction.{InlineDatum, ScriptContext, Transaction}
+use aiken/transaction.{NoDatum, DatumHash, InlineDatum, ScriptContext, Transaction}
 use aiken/transaction/credential.{Script}
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{
@@ -265,9 +265,30 @@ validator(settings_policy_id: PolicyId) {
           list.length(value.flatten(pool_output.value)) <= 3 &&
           value.quantity_of(pool_output.value, settings_datum.pool_script_hash, new_pool_p_token) == 1
 
+        let pool_output_datum_correct =
+          when pool_output.datum is {
+            NoDatum -> False
+            DatumHash(dh) -> {
+              expect Some(d) = dict.get(ctx.transaction.datums, dh)
+              expect pool_output_datum: PoolDatum = d
+              pool_output_datum.identifier == new_pool_id
+                && pool_output_datum.assets == (asset_a, asset_b)
+                && pool_output_datum.circulating_lp == initial_lq
+                && list.has(shared.legal_swap_fees(), pool_output_datum.fees)
+            }
+            InlineDatum(d) -> {
+              expect pool_output_datum: PoolDatum = d
+              pool_output_datum.identifier == new_pool_id
+                && pool_output_datum.assets == (asset_a, asset_b)
+                && pool_output_datum.circulating_lp == initial_lq
+                && list.has(shared.legal_swap_fees(), pool_output_datum.fees)
+            }
+          }
+
         coin_pair_ordering_is_canonical
           && mint_is_correct
           && funds_spent_to_pool
+          && pool_output_datum_correct
       }
       MintLP(_) -> False
     }
