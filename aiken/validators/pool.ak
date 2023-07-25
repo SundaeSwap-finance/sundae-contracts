@@ -259,8 +259,15 @@ validator(settings_policy_id: PolicyId) {
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
+        let funds_spent_to_pool =
+          coin_a_amt_sans_rider >= 1 &&
+          coin_b_amt >= 1 &&
+          list.length(value.flatten(pool_output.value)) <= 3 &&
+          value.quantity_of(pool_output.value, settings_datum.pool_script_hash, new_pool_p_token) == 1
+
         coin_pair_ordering_is_canonical
           && mint_is_correct
+          && funds_spent_to_pool
       }
       MintLP(_) -> False
     }
