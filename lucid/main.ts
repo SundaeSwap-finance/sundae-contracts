@@ -330,9 +330,13 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   if (!factoryChange) { throw "No factory change"; }
   factory.datum = configuredFactoryDatum;
 
-  const poolInputTxHash = fromHex(factoryChange.txHash);
+  let walletUtxos = await lucid.wallet.getUtxos();
+  walletUtxos.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
+
+  console.log(`first input: ${walletUtxos[0].txHash}#${walletUtxos[0].outputIndex}`);
+  const poolInputTxHash = fromHex(walletUtxos[0].txHash);
   const numberSign = new Uint8Array([0x23]);
-  const poolInputTxIx = new Uint8Array([0x01]); // ident encoding for output index 1
+  const poolInputTxIx = new Uint8Array([walletUtxos[0].outputIndex]); // ident encoding for output index 1
   let poolInputRef = new Uint8Array([]);
   poolInputRef = concat(poolInputRef, poolInputTxHash);
   poolInputRef = concat(poolInputRef, numberSign);
@@ -358,6 +362,8 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   assert(factoryChange.datum == null);
 
   log("datum table", emulator.datumTable);
+  log("pool id hash", toHex(newPoolId));
+  log("pool policy id, pool nft token", poolPolicyId, poolNftNameHex);
 
   async function mintPool(): Promise<TxHash> {
     const tx = await lucid.newTx()
@@ -368,7 +374,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
       .validTo(emulator.now() + 30000)
       .attachMintingPolicy(poolMintingPolicy)
       .readFrom([factory])
-      .collectFrom([factoryChange])
+      .collectFrom(walletUtxos)
       .payToContract(poolAddress, { inline: newPoolDatum }, {
         "lovelace": 1_000_000_000n + 2_000_000n,
         [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
