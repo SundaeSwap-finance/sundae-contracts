@@ -222,36 +222,6 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
 
   const steakAddress = lucid.utils.validatorToRewardAddress(steakScript);
 
-  // Using a native script works
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
-
-  async function mintDummyTokens(): Promise<TxHash> {
-    const tx = await lucid.newTx()
-      .mintAssets({
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n,
-      })
-      .validTo(emulator.now() + 30000)
-      .attachMintingPolicy(dummyMintingPolicy)
-      .payToAddress(userAddress, {
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n
-      })
-      .complete();
-    const signedTx = await tx.sign().complete();
-    return signedTx.submit();
-  }
-
-  let mintedHash: TxHash = await mintDummyTokens();
-  let okMinted = await emulator.awaitTx(mintedHash);
-  log(`minted dummy tokens: ${okMinted}`);
-  log("mintedHash:", mintedHash);
-
-  let ref = { txHash: mintedHash, outputIndex: 1 };
-  let mintedChange = (await emulator.getUtxosByOutRef([ref]))[0];
-
   const factoryMintingPolicy: Script = { type: "PlutusV2", script: factoryMint };
   const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
   log(`factoryPolicyId: ${factoryPolicyId}`);
@@ -259,9 +229,11 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   const newFactoryDatum = factoryDatum(poolScriptHash, userPkh.to_hex())
   log("newFactoryDatum", newFactoryDatum);
 
+  log("ledger before boot: ")
+  log(emulator.ledger);
+
   async function bootFactory(): Promise<TxHash> {
     const tx = await lucid.newTx()
-      .collectFrom([mintedChange])
       .mintAssets({
         [toUnit(factoryPolicyId, fromText("settings"))]: 1n
       }, factoryMintRedeemer())
@@ -281,7 +253,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   log(`booted factory: ${okBooted}`);
   log("bootedHash:", bootedHash);
 
-  ref = { txHash: bootedHash, outputIndex: 0 };
+  let ref = { txHash: bootedHash, outputIndex: 0 };
   log(`get ${ref.txHash}#${ref.outputIndex}`);
   let newFactory = (await emulator.getUtxosByOutRef([ref]))[0];
   newFactory.datum = newFactoryDatum;
@@ -323,12 +295,36 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   log(`get ${ref.txHash}#${ref.outputIndex}`);
   const factory = (await emulator.getUtxosByOutRef([ref]))[0];
   if (!factory) { throw "No factory"; }
-  const factoryChange = (await emulator.getUtxosByOutRef([{
-    txHash: configuredHash,
-    outputIndex: 1
-  }]))[0];
-  if (!factoryChange) { throw "No factory change"; }
   factory.datum = configuredFactoryDatum;
+
+  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
+    type: "all",
+    scripts: [],
+  });
+  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
+
+  async function mintDummyTokens(): Promise<TxHash> {
+    const tx = await lucid.newTx()
+      .mintAssets({
+        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n,
+      })
+      .validTo(emulator.now() + 30000)
+      .attachMintingPolicy(dummyMintingPolicy)
+      .payToAddress(userAddress, {
+        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000_000n
+      })
+      .complete();
+    const signedTx = await tx.sign().complete();
+    return signedTx.submit();
+  }
+
+  let mintedHash: TxHash = await mintDummyTokens();
+  let okMinted = await emulator.awaitTx(mintedHash);
+  log(`minted dummy tokens: ${okMinted}`);
+  log("mintedHash:", mintedHash);
+
+  ref = { txHash: mintedHash, outputIndex: 1 };
+  let mintedChange = (await emulator.getUtxosByOutRef([ref]))[0];
 
   let walletUtxos = await lucid.wallet.getUtxos();
   walletUtxos.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
@@ -359,7 +355,6 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   log("ledger before mint:", emulator.ledger);
 
   assert(factory.datum == configuredFactoryDatum);
-  assert(factoryChange.datum == null);
 
   log("datum table", emulator.datumTable);
   log("pool id hash", toHex(newPoolId));
