@@ -1,6 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
 
-type ABL = {
+export type ABL = {
   a: bigint;
   b: bigint;
   liq: bigint;
@@ -11,7 +11,7 @@ export enum Coin {
   CoinB,
 }
 
-type SwapFees = {
+export type SwapFees = {
   numerator: bigint;
   denominator: bigint;
 }

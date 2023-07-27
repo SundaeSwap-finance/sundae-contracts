@@ -1,8 +1,11 @@
 import {
+  Address,
   Blockfrost,
   Data,
   Constr,
   Script,
+  ScriptHash,
+  PolicyId,
   Emulator,
   fromText,
   generatePrivateKey,
@@ -26,7 +29,7 @@ import { Datum } from "../../lucid/src/core/libs/cardano_multiplatform_lib/carda
 
 const verbose = true;
 
-function log(...args) {
+function log(...args: any[]) {
   if (verbose) {
     console.log(...args);
   }
@@ -40,9 +43,17 @@ function assert(p: boolean) {
 
 interface Scripts {
   poolValidator: Script;
+  poolScriptHash: ScriptHash;
+  poolAddress: Address;
   factoryValidator: Script;
+  factoryScriptHash: ScriptHash;
+  factoryAddress: Address;
   escrowValidator: Script;
+  escrowScriptHash: ScriptHash;
+  escrowAddress: Address;
   steakValidator: Script;
+  steakScriptHash: ScriptHash;
+  steakAddress: Address;
   poolMint: Script;
   poolPolicyId: PolicyId;
   factoryMint: Script;
@@ -53,9 +64,9 @@ function bytesToScript(bytes: string) {
   return { type: "PlutusV2", script: bytes };
 }
 
-function getScriptsAiken(lucid: Lucid, json: string): Scripts {
+function getScriptsAiken(lucid: Lucid, json: any): Scripts {
   let validator = json["validators"];
-  let out: Scripts = {};
+  let out: any = {};
   for (let v of validator) {
     if (v.title == "order.spend") {
       out.escrowValidator = bytesToScript(v.compiledCode);
@@ -89,8 +100,8 @@ function getScriptsAiken(lucid: Lucid, json: string): Scripts {
   return out;
 }
 
-function getScriptsPlutusTx(lucid: Lucid, json: string): Scripts {
-  let out: Scripts = {};
+function getScriptsPlutusTx(lucid: Lucid, json: any): Scripts {
+  let out: any = {};
   out.poolValidator = bytesToScript(json["pool-validator"]);
   out.poolScriptHash = lucid.utils.validatorToScriptHash(out.poolValidator);
   out.poolAddress = lucid.utils.validatorToAddress(out.poolValidator);
@@ -147,7 +158,7 @@ function factorySpendRedeemer() {
   return "d87a81d87980" // Note: wrapped in ctor-2 tag, to trick the compiler into running the spend validator
 };
 
-function poolDatum(poolIDHex, dummyPolicyHex: string, rewards: bigint): string {
+function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint): string {
   return "d8799f" +
     "581f" + poolIDHex +
     "9f9f" +
@@ -580,8 +591,8 @@ async function bench_endToEndScoop(flags: Args, scripts: Scripts, dummy: Lucid) 
 async function main() {
   const flags = parse(Deno.args, {
     string: ["scriptsFile"],
-    number: ["min", "max"],
     boolean: ["aiken", "findMax"],
+    //number: ["min", "max"],
   });
   if (flags.scriptsFile == undefined) {
     throw "no scripts file";
