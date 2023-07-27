@@ -239,6 +239,27 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
     "ff";
 }
 
+function computePoolId(utxo: UTxO) {
+  const poolInputTxHash = fromHex(utxo.txHash);
+  const numberSign = new Uint8Array([0x23]);
+  const poolInputTxIx = new Uint8Array([utxo.outputIndex]); // ident encoding for output index 1
+  let poolInputRef = new Uint8Array([]);
+  poolInputRef = concat(poolInputRef, poolInputTxHash);
+  poolInputRef = concat(poolInputRef, numberSign);
+  poolInputRef = concat(poolInputRef, poolInputTxIx);
+  return C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
+}
+
+function computePoolNftName(poolId: Uint8Array) {
+  const p = new Uint8Array([0x70]); // 'p'
+  return toHex(concat(p, poolId));
+}
+
+function computePoolLqName(poolId: Uint8Array) {
+  const l = new Uint8Array([0x6c]); // 'l'
+  return toHex(concat(l, poolId));
+}
+
 const max = flags.max ? BigInt(flags.max) : 30n;
 const min = flags.min ? BigInt(flags.min) : (flags.findMax ? 1n : max);
 for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
@@ -366,28 +387,15 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   walletUtxos.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
 
   console.log(`first input: ${walletUtxos[0].txHash}#${walletUtxos[0].outputIndex}`);
-  const poolInputTxHash = fromHex(walletUtxos[0].txHash);
-  const numberSign = new Uint8Array([0x23]);
-  const poolInputTxIx = new Uint8Array([walletUtxos[0].outputIndex]); // ident encoding for output index 1
-  let poolInputRef = new Uint8Array([]);
-  poolInputRef = concat(poolInputRef, poolInputTxHash);
-  poolInputRef = concat(poolInputRef, numberSign);
-  poolInputRef = concat(poolInputRef, poolInputTxIx);
-  let newPoolId = C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
-  const p = new Uint8Array([0x70]); // 'p'
-  const l = new Uint8Array([0x6c]); // 'l'
-  const poolNftName = concat(p, newPoolId);
-  const poolLqName = concat(l, newPoolId);
-  const poolNftNameHex = toHex(poolNftName);
-  const poolLqNameHex = toHex(poolLqName);
+  let newPoolId = computePoolId(walletUtxos[0]);
+  const poolNftNameHex = computePoolNftName(newPoolId);
+  const poolLqNameHex = computePoolLqName(newPoolId);
   log("poolNftName (hex): ", poolNftNameHex);
   log("poolLqName (hex): ", poolLqNameHex);
 
   const newPoolDatum = poolDatum(toHex(newPoolId), dummyPolicyId, 2000000n);
   log("newPoolDatum: ", newPoolDatum);
-
   log("poolMintRedeemer: ", poolMintRedeemer(dummyPolicyId));
-
   log("ledger before mint:", emulator.ledger);
 
   assert(factory.datum == configuredFactoryDatum);
