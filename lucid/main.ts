@@ -51,35 +51,94 @@ if (flags.scriptsFile == undefined) {
 let s = await Deno.readTextFile(flags.scriptsFile);
 let scriptsJson = JSON.parse(s);
 
-let poolValidator;
-let factoryValidator;
-let escrowValidator;
-let steakValidator;
-let poolMint;
-let factoryMint;
+interface Scripts {
+  poolValidator: Script;
+  factoryValidator: Script;
+  escrowValidator: Script;
+  steakValidator: Script;
+  poolMint: Script;
+  poolPolicyId: PolicyId; 
+  factoryMint: Script;
+  factoryPolicyId: PolicyId;
+};
 
-if (flags.aiken) {
-  console.log("Benchmarking Aiken contracts");
-  let validator = scriptsJson["validators"];
+function bytesToScript(bytes: string) {
+  return { type: "PlutusV2", script: bytes };
+}
+
+function getScriptsAiken(lucid: Lucid, json: string): Scripts {
+  let validator = json["validators"];
+  let out: Scripts = {};
   for (let v of validator) {
-    if (v.title == "order.spend") escrowValidator = v.compiledCode;
-    if (v.title == "settings.spend") factoryValidator = v.compiledCode;
-    if (v.title == "pool.spend") poolValidator = v.compiledCode;
-    if (v.title == "stake.stake") steakValidator = v.compiledCode;
-    if (v.title == "pool.mint") poolMint = v.compiledCode;
-    if (v.title == "settings.mint") factoryMint = v.compiledCode;
+    if (v.title == "order.spend") {
+      out.escrowValidator = bytesToScript(v.compiledCode);
+      out.escrowScriptHash = lucid.utils.validatorToScriptHash(out.escrowValidator);
+      out.escrowAddress = lucid.utils.validatorToAddress(out.escrowValidator);
+    }
+    if (v.title == "settings.spend") {
+      out.factoryValidator = bytesToScript(v.compiledCode);
+      out.factoryScriptHash = lucid.utils.validatorToScriptHash(out.factoryValidator);
+      out.factoryAddress = lucid.utils.validatorToAddress(out.factoryValidator);
+    }
+    if (v.title == "pool.spend") {
+      out.poolValidator = bytesToScript(v.compiledCode);
+      out.poolScriptHash = lucid.utils.validatorToScriptHash(out.poolValidator);
+      out.poolAddress = lucid.utils.validatorToAddress(out.poolValidator);
+    }
+    if (v.title == "stake.stake") {
+      out.steakValidator = bytesToScript(v.compiledCode);
+      out.steakScriptHash = lucid.utils.validatorToScriptHash(out.steakValidator);
+      out.steakAddress = lucid.utils.validatorToRewardAddress(out.steakValidator);
+    }
+    if (v.title == "pool.mint") {
+      out.poolMint = bytesToScript(v.compiledCode);
+      out.poolPolicyId = lucid.utils.mintingPolicyToId(out.poolMint);
+    }
+    if (v.title == "settings.mint") {
+      out.factoryMint = bytesToScript(v.compiledCode);
+      out.factoryPolicyId = lucid.utils.mintingPolicyToId(out.factoryMint);
+    }
   }
-} else {
-  console.log("Benchmarking Plutus contracts");
-  let poolValidator = scriptsJson["pool-validator"];
-  let factoryValidator = scriptsJson["factory-validator"];
-  let escrowValidator = scriptsJson["escrow-validator"];
-  let steakValidator = scriptsJson["steak-validator"];
-  let poolMint = scriptsJson["pool-mint"];
-  let factoryMint = scriptsJson["factory-mint"];
+  return out;
+}
+
+function getScriptsPlutusTx(lucid: Lucid, json: string): Scripts {
+  let out: Scripts = {};
+  out.poolValidator = bytesToScript(json["pool-validator"]);
+  out.poolScriptHash = lucid.utils.validatorToScriptHash(out.poolValidator);
+  out.poolAddress = lucid.utils.validatorToAddress(out.poolValidator);
+
+  out.factoryValidator = bytesToScript(json["factory-validator"]);
+  out.factoryScriptHash = lucid.utils.validatorToScriptHash(out.factoryValidator);
+  out.factoryAddress = lucid.utils.validatorToAddress(out.factoryValidator);
+
+  out.escrowValidator = bytesToScript(json["escrow-validator"]);
+  out.escrowScriptHash = lucid.utils.validatorToScriptHash(out.escrowValidator);
+  out.escrowAddress = lucid.utils.validatorToAddress(out.escrowValidator);
+
+  out.steakValidator = bytesToScript(json["steak-validator"]);
+  out.steakScriptHash = lucid.utils.validatorToScriptHash(out.steakValidator);
+  out.steakAddress = lucid.utils.validatorToAddress(out.steakValidator);
+
+  out.poolMint = bytesToScript(json["pool-mint"]);
+  out.poolPolicyId = lucid.utils.mintingPolicyToId(out.poolMint);
+
+  out.factoryMint = bytesToScript(json["factory-mint"]);
+  out.factoryPolicyId = lucid.utils.mintingPolicyToId(out.factoryMint);
+
+  return out;
 }
 
 const dummy = await Lucid.new(undefined, "Custom");
+
+let scripts: Scripts;
+if (flags.aiken) {
+  console.log("Benchmarking Aiken contracts");
+  scripts = getScriptsAiken(dummy, scriptsJson);
+} else {
+  console.log("Benchmarking Plutus contracts");
+  scripts = getScriptsPlutusTx(dummy, scriptsJson);
+}
 
 const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
 //generatePrivateKey();
@@ -203,30 +262,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
 
   lucid.selectWalletFromPrivateKey(userPrivateKey);
 
-  const poolMintingPolicy: Script = { type: "PlutusV2", script: poolMint };
-  const poolPolicyId = lucid.utils.mintingPolicyToId(poolMintingPolicy);
-  log("poolPolicyId: ", poolPolicyId);
-  const poolScript: Script = { type: "PlutusV2", script: poolValidator };
-  const poolScriptHash = lucid.utils.validatorToScriptHash(poolScript);
-  log("poolScriptHash: ", poolScriptHash);
-  const escrowScript: Script = { type: "PlutusV2", script: escrowValidator };
-  const escrowScriptHash = lucid.utils.validatorToScriptHash(escrowScript);
-  log("escrowScriptHash: ", escrowScriptHash);
-  const steakScript: Script = { type: "PlutusV2", script: steakValidator };
-  const steakScriptHash = lucid.utils.validatorToScriptHash(steakScript);
-
-  const factoryScript: Script = { type: "PlutusV2", script: factoryValidator };
-  const factoryAddress = lucid.utils.validatorToAddress(factoryScript);
-  const poolAddress = lucid.utils.validatorToAddress(poolScript);
-  const escrowAddress = lucid.utils.validatorToAddress(escrowScript);
-
-  const steakAddress = lucid.utils.validatorToRewardAddress(steakScript);
-
-  const factoryMintingPolicy: Script = { type: "PlutusV2", script: factoryMint };
-  const factoryPolicyId = lucid.utils.mintingPolicyToId(factoryMintingPolicy);
-  log(`factoryPolicyId: ${factoryPolicyId}`);
-
-  const newFactoryDatum = factoryDatum(poolScriptHash, userPkh.to_hex())
+  const newFactoryDatum = factoryDatum(scripts.poolScriptHash, userPkh.to_hex())
   log("newFactoryDatum", newFactoryDatum);
 
   log("ledger before boot: ")
@@ -235,13 +271,13 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   async function bootFactory(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .mintAssets({
-        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
+        [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n
       }, factoryMintRedeemer())
       .validTo(emulator.now() + 30000)
-      .attachMintingPolicy(factoryMintingPolicy)
-      .payToContract(factoryAddress, { inline: newFactoryDatum }, {
+      .attachMintingPolicy(scripts.factoryMint)
+      .payToContract(scripts.factoryAddress, { inline: newFactoryDatum }, {
         "lovelace": 2_000_000n,
-        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
+        [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n
       })
       .complete();
     const signedTx = await tx.sign().complete();
@@ -264,7 +300,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   log("ledger after boot: ")
   log(emulator.ledger);
 
-  const configuredFactoryDatum = factoryDatum(poolScriptHash, userPkh.to_hex());
+  const configuredFactoryDatum = factoryDatum(scripts.poolScriptHash, userPkh.to_hex());
 
   log("configured factory datum: " + configuredFactoryDatum) 
 
@@ -273,10 +309,10 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
       .collectFrom([newFactoryChange])
       .collectFrom([newFactory], factorySpendRedeemer())
       .validTo(emulator.now() + 30000)
-      .attachSpendingValidator({ type: "PlutusV2", script: factoryValidator })
-      .payToContract(factoryAddress, { inline: configuredFactoryDatum }, {
+      .attachSpendingValidator(scripts.factoryValidator)
+      .payToContract(scripts.factoryAddress, { inline: configuredFactoryDatum }, {
         "lovelace": 2_000_000n,
-        [toUnit(factoryPolicyId, fromText("settings"))]: 1n
+        [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n
       })
       .complete();
     const signedTx = await tx.sign().complete();
@@ -358,26 +394,26 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
 
   log("datum table", emulator.datumTable);
   log("pool id hash", toHex(newPoolId));
-  log("pool policy id, pool nft token", poolPolicyId, poolNftNameHex);
+  log("pool policy id, pool nft token", scripts.poolPolicyId, poolNftNameHex);
 
   async function mintPool(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .mintAssets({
-        [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
-        [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
+        [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
+        [toUnit(scripts.poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
       }, poolMintRedeemer(dummyPolicyId))
       .validTo(emulator.now() + 30000)
-      .attachMintingPolicy(poolMintingPolicy)
+      .attachMintingPolicy(scripts.poolMint)
       .readFrom([factory])
       .collectFrom(walletUtxos)
-      .payToContract(poolAddress, { inline: newPoolDatum }, {
+      .payToContract(scripts.poolAddress, { inline: newPoolDatum }, {
         "lovelace": 1_000_000_000n + 2_000_000n,
-        [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
+        [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
       })
       .payToAddress(userAddress, {
         "lovelace": 2_000_000n,
-        [toUnit(poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
+        [toUnit(scripts.poolPolicyId, poolLqNameHex)]: 1_000_000_000n,
       })
       .complete();
     log("mintPoolTx: ", tx.toString());
@@ -407,7 +443,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   async function listEscrow(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .validTo(emulator.now() + 30000)
-      .payToContract(escrowAddress, { inline: orderDatum(userPkh.to_hex(), dummyPolicyId) }, {
+      .payToContract(scripts.escrowAddress, { inline: orderDatum(userPkh.to_hex(), dummyPolicyId) }, {
         "lovelace": 4_500_000n + 10_000_000n,
       })
       .complete();
@@ -470,7 +506,7 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
   let i = 0n;
   let indexingSet: bigint[] = [];
   for (let i = 0n; i < toSpend.length; i++) {
-    if (toSpend[Number(i)].address == escrowAddress) {
+    if (toSpend[Number(i)].address == scripts.escrowAddress) {
       indexingSet.push(i);
     }
   }
@@ -501,9 +537,9 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
       .validTo(emulator.now() + 30000);
     let i = 0n;
     for (let e of toSpend) {
-      if (e.address == poolAddress) {
+      if (e.address == scripts.poolAddress) {
         tx.collectFrom([pool], scoopPoolRedeemer)
-      } else if (e.address == escrowAddress) {
+      } else if (e.address == scripts.escrowAddress) {
         tx.collectFrom([e], escrowScoopRedeemer);
       } else {
         tx.collectFrom([e])
@@ -511,19 +547,19 @@ for (let escrowsCount = min; escrowsCount <= max; escrowsCount++) {
     }
     tx
       .readFrom([factory])
-      .attachSpendingValidator({ type: "PlutusV2", script: escrowValidator })
-      .attachSpendingValidator({ type: "PlutusV2", script: poolValidator })
-      .attachSpendingValidator({ type: "PlutusV2", script: steakValidator })
+      .attachSpendingValidator(scripts.escrowValidator)
+      .attachSpendingValidator(scripts.poolValidator)
+      .attachSpendingValidator(scripts.steakValidator)
       .addSigner(userAddress)
-      .withdraw(steakAddress, 0n, "00")
-      .payToContract(poolAddress, { inline: scoopedPoolDatum }, {
+      .withdraw(scripts.steakAddress, 0n, "00")
+      .payToContract(scripts.poolAddress, { inline: scoopedPoolDatum }, {
         "lovelace":
           1_000_000_000n +
           escrowsCount * 10_000_000n +
           escrowsCount * scooperFee +
           rider,
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n - totalReturn,
-        [toUnit(poolPolicyId, poolNftNameHex)]: 1n,
+        [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
       });
 
     // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
