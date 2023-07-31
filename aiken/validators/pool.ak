@@ -309,9 +309,61 @@ fn mk_tx_hash(n: Int) -> TransactionId {
   }
 }
 
+fn mk_output_reference(n: Int) -> OutputReference {
+  OutputReference {
+    transaction_id: mk_tx_hash(0),
+    output_index: n,
+  }
+}
+
+fn script_address(hash: ByteArray) -> Address {
+  Address {
+    payment_credential: ScriptCredential(hash),
+    stake_credential: None,
+  }
+}
+
+fn wallet_address(hash: ByteArray) -> Address {
+  Address(VerificationKeyCredential(hash), None)
+}
+
+fn mk_factory_input(psh: ByteArray, scoopers: List<ByteArray>, ix: Int) -> Input {
+  let hash_of_factory_script = #"00000000000000000000000000000000000000000000000000000000"
+  let factory_nft_name = "settings"
+  let factory_address = script_address(hash_of_factory_script)
+  let factory_datum = SettingsDatum {
+    pool_script_hash: psh,
+    settings_admin: multisig.AnyOf([]),
+    rewards_admin: multisig.AnyOf([]),
+    authorized_scoopers: scoopers,
+    authorized_staking_keys: [],
+  }
+  let factory_input = Input {
+    output_reference: mk_output_reference(ix),
+    output: Output {
+      address: factory_address,
+      value: value.from_lovelace(2_000_000)
+        |> value.add(hash_of_factory_script, factory_nft_name, 1),
+      datum: InlineDatum(factory_datum),
+      reference_script: None,
+    },
+  }
+  factory_input
+}
+
 test scoop() {
+  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let dummy_asset_name = #"53554e444145"
+  let scooper = #"00000000000000000000000000000000000000000000000000000000"
+  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+  let hash_of_escrow_script = #"00000000000000000000000000000000000000000000000000000000"
+  let user_addr = wallet_address(
+    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+  )
+  let owner = multisig.Signature(
+    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+  )
   let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
   let pool_datum = PoolDatum {
     identifier: pool_id,
@@ -335,17 +387,10 @@ test scoop() {
     market_open: 0,
     rewards: 7_000_000,
   }
-  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
   let pool_nft_name = shared.pool_nft_name(pool_id)
-  let pool_address = Address {
-    payment_credential: ScriptCredential(hash_of_pool_script),
-    stake_credential: None,
-  }
+  let pool_address = script_address(hash_of_pool_script)
   let pool_input = Input {
-    output_reference: OutputReference {
-      transaction_id: mk_tx_hash(0),
-      output_index: 0,
-    },
+    output_reference: mk_output_reference(0),
     output: Output {
       address: pool_address,
       value: value.from_lovelace(1_000_000_000 + 2_000_000)
@@ -355,16 +400,6 @@ test scoop() {
       reference_script: None,
     },
   }
-  let user_addr =
-    Address(
-      VerificationKeyCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let owner = multisig.Signature(
-    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-  )
   let dest = Destination { address: user_addr, datum: NoDatum }
   let swap =
     Swap(
@@ -378,16 +413,9 @@ test scoop() {
     order: swap,
     extension: builtin.i_data(0),
   }
-  let hash_of_escrow_script = #"00000000000000000000000000000000000000000000000000000000"
-  let escrow_address = Address {
-    payment_credential: ScriptCredential(hash_of_escrow_script),
-    stake_credential: None,
-  }
+  let escrow_address = script_address(hash_of_escrow_script)
   let escrow1_in = Input {
-    output_reference: OutputReference {
-      transaction_id: mk_tx_hash(0),
-      output_index: 2,
-    },
+    output_reference: mk_output_reference(2),
     output: Output {
       address: escrow_address,
       value: value.from_lovelace(4_500_000 + 10_000_000),
@@ -396,10 +424,7 @@ test scoop() {
     },
   }
   let escrow2_in = Input {
-    output_reference: OutputReference {
-      transaction_id: mk_tx_hash(0),
-      output_index: 3,
-    },
+    output_reference: mk_output_reference(3),
     output: Output {
       address: escrow_address,
       value: value.from_lovelace(4_500_000 + 10_000_000),
@@ -407,34 +432,7 @@ test scoop() {
       reference_script: None,
     },
   }
-  let hash_of_factory_script = #"00000000000000000000000000000000000000000000000000000000"
-  let factory_nft_name = "settings"
-  let factory_address = Address {
-    payment_credential: ScriptCredential(hash_of_factory_script),
-    stake_credential: None,
-  }
-  let scooper = #"00000000000000000000000000000000000000000000000000000000"
-  let factory_datum = SettingsDatum {
-    pool_script_hash: hash_of_pool_script,
-    settings_admin: multisig.AnyOf([]),
-    rewards_admin: multisig.AnyOf([]),
-    authorized_scoopers: [scooper],
-    authorized_staking_keys: [],
-  }
-
-  let factory_input = Input {
-    output_reference: OutputReference {
-      transaction_id: mk_tx_hash(0),
-      output_index: 1,
-    },
-    output: Output {
-      address: factory_address,
-      value: value.from_lovelace(2_000_000)
-        |> value.add(hash_of_factory_script, factory_nft_name, 1),
-      datum: InlineDatum(factory_datum),
-      reference_script: None,
-    },
-  }
+  let factory_input = mk_factory_input(hash_of_pool_script, [scooper], 1)
   let escrow1_out = Output {
     address: user_addr,
     value: value.from_lovelace(2_000_000)
@@ -461,7 +459,6 @@ test scoop() {
     transaction: Transaction {
       inputs: [pool_input, escrow1_in, escrow2_in],
       reference_inputs: [factory_input],
-      //outputs: [pool_output, escrow2_out, escrow1_out], // Outputs are in reverse
       outputs: [pool_output, escrow1_out, escrow2_out],
       fee: value.from_lovelace(0),
       mint: value.to_minted_value(value.from_lovelace(0)),
@@ -475,7 +472,6 @@ test scoop() {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_redeemer = PoolRedeemer(0, 0, [1,2])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
