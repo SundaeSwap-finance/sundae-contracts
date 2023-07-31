@@ -356,6 +356,7 @@ type ScoopTestOptions {
   edit_escrow_1_value: Option<Value>,
   edit_escrow_2_value: Option<Value>,
   edit_escrow_destination: Option<Address>,
+  edit_fee: Option<Value>,
 }
 
 fn default_scoop_test_options() -> ScoopTestOptions {
@@ -363,6 +364,7 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_escrow_1_value: None,
     edit_escrow_2_value: None,
     edit_escrow_destination: None,
+    edit_fee: None,
   }
 }
 
@@ -401,7 +403,13 @@ test ok_scoop() {
   scoop(options)
 }
 
-
+test pool_validator_ignores_fee() {
+  let options = ScoopTestOptions
+    { ..default_scoop_test_options()
+    , edit_fee: Some(value.from_lovelace(1_000_000_000))
+    }
+  scoop(options)
+}
 
 fn scoop(options: ScoopTestOptions) {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
@@ -514,7 +522,7 @@ fn scoop(options: ScoopTestOptions) {
       inputs: [pool_input, escrow1_in, escrow2_in],
       reference_inputs: [factory_input],
       outputs: [pool_output, escrow1_out, escrow2_out],
-      fee: value.from_lovelace(0),
+      fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
       mint: value.to_minted_value(value.from_lovelace(0)),
       certificates: [],
       withdrawals: dict.new(),
