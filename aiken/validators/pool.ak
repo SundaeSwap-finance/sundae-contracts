@@ -351,7 +351,21 @@ fn mk_factory_input(psh: ByteArray, scoopers: List<ByteArray>, ix: Int) -> Input
   factory_input
 }
 
-test scoop() {
+test ok_scoop() {
+  let user_addr = wallet_address(
+    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+  )
+  scoop(user_addr)
+}
+
+!test scoop_bad_destination() {
+  let burn_addr = wallet_address(
+    #"12000000000000000000000000000000000000000000000000000000"
+  )
+  scoop(burn_addr)
+}
+
+fn scoop(send_to: Address) {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let dummy_asset_name = #"53554e444145"
@@ -434,14 +448,14 @@ test scoop() {
   }
   let factory_input = mk_factory_input(hash_of_pool_script, [scooper], 1)
   let escrow1_out = Output {
-    address: user_addr,
+    address: send_to,
     value: value.from_lovelace(2_000_000)
       |> value.add(dummy_policy_id, dummy_asset_name, 9_896_088),
     datum: NoDatum,
     reference_script: None,
   }
   let escrow2_out = Output {
-    address: user_addr,
+    address: send_to,
     value: value.from_lovelace(2_000_000)
       |> value.add(dummy_policy_id, dummy_asset_name, 9_702_095),
     datum: NoDatum,
