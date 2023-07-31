@@ -847,8 +847,9 @@ async function main() {
     console.log("Benchmarking Plutus contracts");
     scripts = getScriptsPlutusTx(dummy, scriptsJson);
   }
-  await expectSuccess(async () => { await validScoop(flags, scripts, dummy); });
-  await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
+  //await expectSuccess(async () => { await validScoop(flags, scripts, dummy); });
+  //await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
+  await bench_endToEndScoop(flags, scripts, dummy);
 }
 
 async function validScoop(flags: Args, scripts: Scripts, dummy: Lucid) {

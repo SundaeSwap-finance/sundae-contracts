@@ -1,3 +1,4 @@
+use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{Finite, Interval}
@@ -81,3 +82,11 @@ pub fn legal_swap_fees() -> List<Rational> {
 }
 
 pub const settings_nft_name: AssetName = "settings"
+
+pub fn pool_nft_name(pool_ident: Ident) {
+  bytearray.concat(#"70", pool_ident)
+}
+
+pub fn pool_lq_name(pool_ident: Ident) {
+  bytearray.concat(#"6c", pool_ident)
+}
