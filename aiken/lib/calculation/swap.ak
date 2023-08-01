@@ -4,7 +4,7 @@ use aiken/transaction/value.{
 }
 use calculation/shared.{PoolState} as calc_shared
 use shared.{Rational, SingletonValue}
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 pub fn swap_takes(

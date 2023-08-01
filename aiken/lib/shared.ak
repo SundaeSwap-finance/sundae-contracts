@@ -6,7 +6,7 @@ use aiken/list
 use aiken/time.{PosixTime}
 use aiken/transaction.{
   DatumHash, InlineDatum, Input, NoDatum, Output, ScriptContext, Spend,
-  find_datum, find_input,
+  find_input,
 }
 use aiken/transaction/value.{AssetName, PolicyId}
 

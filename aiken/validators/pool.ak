@@ -1,20 +1,20 @@
 use aiken/builtin
 use aiken/bytearray
 use aiken/dict
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/hash
 use aiken/list
 use aiken/math
 use aiken/option
 use aiken/interval
-use aiken/transaction.{Spend, Output, TransactionId, OutputReference, Mint, NoDatum, DatumHash, InlineDatum, ScriptContext, Transaction, Input}
-use aiken/transaction/credential.{Address, Script, ScriptCredential, VerificationKeyCredential}
+use aiken/transaction.{Spend, Output, TransactionId, OutputReference, Mint, NoDatum, InlineDatum, ScriptContext, Transaction, Input}
+use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{
   pool_input_to_state, process_orders,
 }
 use calculation/shared.{PoolState, get_sorted_orders} as calc_shared
-use shared.{AssetClass, Ident, datum_of, is_after, spent_output}
-use sundae/multisig.{MultisigScript}
+use shared.{AssetClass, Ident, is_after, spent_output}
+use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolRedeemer, PoolMintRedeemer, lp_token_name, pool_token_name,
 }
@@ -117,7 +117,6 @@ validator(settings_policy_id: PolicyId) {
       reference_inputs,
       mint,
       datums,
-      fee,
       extra_signatories,
       validity_range,
       ..
@@ -132,7 +131,7 @@ validator(settings_policy_id: PolicyId) {
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
     let PoolDatum {
-      identifier: actual_identifier,
+      identifier: _actual_identifier,
       circulating_lp: actual_circulating_lp,
       rewards: actual_rewards,
       ..

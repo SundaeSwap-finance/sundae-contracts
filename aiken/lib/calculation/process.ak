@@ -1,6 +1,6 @@
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
-use aiken/transaction.{Output, ScriptContext}
+use aiken/transaction.{Output}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
 use calculation/donation
