@@ -158,6 +158,7 @@ validator(settings_policy_id: PolicyId) {
     // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
     let outcome =
       process_orders(datums, initial_state, orders, list.drop(outputs, 1))
+
     let PoolState {
       quantity_lp: expected_circulating_lp,
       rewards: expected_rewards,
@@ -357,6 +358,8 @@ type ScoopTestOptions {
   edit_escrow_2_value: Option<Value>,
   edit_escrow_destination: Option<Address>,
   edit_fee: Option<Value>,
+  edit_swap_fees: Option<(Int, Int)>,
+  edit_pool_output_value: Option<Value>,
 }
 
 fn default_scoop_test_options() -> ScoopTestOptions {
@@ -365,6 +368,8 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_escrow_2_value: None,
     edit_escrow_destination: None,
     edit_fee: None,
+    edit_swap_fees: None,
+    edit_pool_output_value: None,
   }
 }
 
@@ -411,6 +416,40 @@ test pool_validator_ignores_fee() {
   scoop(options)
 }
 
+test scoop_high_swap_fees() {
+  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_nft_name = shared.pool_nft_name(pool_id)
+  let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let dummy_asset_name = #"53554e444145"
+  let swap_fee = (1, 100)
+  let options = ScoopTestOptions
+    { ..default_scoop_test_options()
+    , edit_swap_fees: Some(swap_fee)
+    , edit_escrow_1_value: Some(value.from_lovelace(2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 9_802_950))
+    , edit_escrow_2_value: Some(value.from_lovelace(2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 9_611_678))
+    , edit_pool_output_value: Some(
+        value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+          |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - (9_802_950 + 9_611_678))
+          |> value.add(hash_of_pool_script, pool_nft_name, 1))
+    }
+  scoop(options)
+}
+
+!test output_missing_nft() {
+  let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let dummy_asset_name = #"53554e444145"
+  let options = ScoopTestOptions
+    { ..default_scoop_test_options()
+    , edit_pool_output_value: Some(
+        value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+          |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - (9_896_088 + 9_702_095)))
+    }
+  scoop(options)
+}
+
 fn scoop(options: ScoopTestOptions) {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -432,7 +471,7 @@ fn scoop(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees: (1, 2000),
+    fees: option.or_else(options.edit_swap_fees, (1, 2000)),
     market_open: 0,
     rewards: 2_000_000,
   }
@@ -443,7 +482,7 @@ fn scoop(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees: (1, 2000),
+    fees: option.or_else(options.edit_swap_fees, (1, 2000)),
     market_open: 0,
     rewards: 7_000_000,
   }
@@ -511,9 +550,10 @@ fn scoop(options: ScoopTestOptions) {
   }
   let pool_output = Output {
     address: pool_address,
-    value: value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
-      |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - (9_896_088 + 9_702_095))
-      |> value.add(hash_of_pool_script, pool_nft_name, 1),
+    value: option.or_else(options.edit_pool_output_value,
+      value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - (9_896_088 + 9_702_095))
+        |> value.add(hash_of_pool_script, pool_nft_name, 1)),
     datum: InlineDatum(pool_out_datum),
     reference_script: None,
   }
