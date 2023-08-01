@@ -22,7 +22,7 @@ pub fn do_donation(
       |> value.merge(input_value)
 
   let has_remainder = remainder != value.zero()
-  expect _ =
+  let Void =
     if has_remainder {
       expect output.address == order.destination.address
       expect output.datum == order.destination.datum
