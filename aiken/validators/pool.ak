@@ -328,28 +328,28 @@ fn wallet_address(hash: ByteArray) -> Address {
   Address(VerificationKeyCredential(hash), None)
 }
 
-fn mk_factory_input(psh: ByteArray, scoopers: List<ByteArray>, ix: Int) -> Input {
-  let hash_of_factory_script = #"00000000000000000000000000000000000000000000000000000000"
-  let factory_nft_name = "settings"
-  let factory_address = script_address(hash_of_factory_script)
-  let factory_datum = SettingsDatum {
+fn mk_settings_input(psh: ByteArray, scoopers: List<ByteArray>, ix: Int) -> Input {
+  let hash_of_settings_script = #"00000000000000000000000000000000000000000000000000000000"
+  let settings_nft_name = "settings"
+  let settings_address = script_address(hash_of_settings_script)
+  let settings_datum = SettingsDatum {
     pool_script_hash: psh,
     settings_admin: multisig.AnyOf([]),
     rewards_admin: multisig.AnyOf([]),
     authorized_scoopers: scoopers,
     authorized_staking_keys: [],
   }
-  let factory_input = Input {
+  let settings_input = Input {
     output_reference: mk_output_reference(ix),
     output: Output {
-      address: factory_address,
+      address: settings_address,
       value: value.from_lovelace(2_000_000)
-        |> value.add(hash_of_factory_script, factory_nft_name, 1),
-      datum: InlineDatum(factory_datum),
+        |> value.add(hash_of_settings_script, settings_nft_name, 1),
+      datum: InlineDatum(settings_datum),
       reference_script: None,
     },
   }
-  factory_input
+  settings_input
 }
 
 type ScoopTestOptions {
@@ -530,7 +530,7 @@ fn scoop(options: ScoopTestOptions) {
       reference_script: None,
     },
   }
-  let factory_input = mk_factory_input(hash_of_pool_script, [scooper], 1)
+  let settings_input = mk_settings_input(hash_of_pool_script, [scooper], 1)
   let escrow1_out = Output {
     address: option.or_else(options.edit_escrow_destination, user_addr),
     value: option.or_else(options.edit_escrow_1_value,
@@ -559,7 +559,7 @@ fn scoop(options: ScoopTestOptions) {
   let ctx = ScriptContext {
     transaction: Transaction {
       inputs: [pool_input, escrow1_in, escrow2_in],
-      reference_inputs: [factory_input],
+      reference_inputs: [settings_input],
       outputs: [pool_output, escrow1_out, escrow2_out],
       fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
       mint: value.to_minted_value(value.from_lovelace(0)),
