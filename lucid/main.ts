@@ -128,6 +128,12 @@ function getScriptsPlutusTx(lucid: Lucid, json: any): Scripts {
 }
 
 function factoryDatum(poolHash: string, userPkh: string): string {
+  let scooperList = "";
+  let nobody = "00000000000000000000000000000000000000000000000000000000";
+  for (let i = 0; i < 29; i++) {
+    scooperList += "581c" + nobody;
+  }
+  scooperList += "581c" + userPkh;
   return "d879" +
     "9f" +
       "581c" +
@@ -143,14 +149,13 @@ function factoryDatum(poolHash: string, userPkh: string): string {
             userPkh +
         "ff" +
       "9f" +
-        "581c" +
-          userPkh +
+        scooperList +
       "ff" +
       "9f" +
         "581c" +
           userPkh +
       "ff" +
-    "ff"
+    "ff";
 }
 
 function factoryMintRedeemer() { return "d87980" };
@@ -191,7 +196,7 @@ function scoopRedeemer(inputOrder: bigint[]): string {
   return "d87a81" + // wrap this to avoid running the minting script
     "d8799f" +
     "00" + // signatory index; only one required signer, so it's always first
-    "00" + // scooper index; only one scooper, so it's always first
+    "181d" + // scooper index; index 29 in a list of 30, see factoryDatum
     "9f" + orderString + "ff" +
     "ff";
 }
