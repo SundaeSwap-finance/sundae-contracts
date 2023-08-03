@@ -6,7 +6,7 @@ use aiken/list
 use aiken/math
 use aiken/option
 use aiken/interval
-use aiken/transaction.{Spend, Output, TransactionId, OutputReference, Mint, NoDatum, InlineDatum, ScriptContext, Transaction, Input}
+use aiken/transaction.{Spend, Output, TransactionId, OutputReference, Mint, Datum, NoDatum, InlineDatum, ScriptContext, Transaction, Input}
 use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{
@@ -359,6 +359,7 @@ type ScoopTestOptions {
   edit_fee: Option<Value>,
   edit_swap_fees: Option<(Int, Int)>,
   edit_pool_output_value: Option<Value>,
+  edit_settings_datum: Option<Datum>,
 }
 
 fn default_scoop_test_options() -> ScoopTestOptions {
@@ -369,6 +370,7 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_fee: None,
     edit_swap_fees: None,
     edit_pool_output_value: None,
+    edit_settings_datum: None,
   }
 }
 
@@ -445,6 +447,24 @@ test scoop_high_swap_fees() {
     , edit_pool_output_value: Some(
         value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - (9_896_088 + 9_702_095)))
+    }
+  scoop(options)
+}
+
+!test scooper_not_in_settings() {
+  let somebody = #"11111111111111111111111111111111111111111111111111111111"
+  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+  let options = ScoopTestOptions
+    { ..default_scoop_test_options()
+    , edit_settings_datum: Some(
+        InlineDatum(SettingsDatum {
+          pool_script_hash: hash_of_pool_script,
+          settings_admin: multisig.AnyOf([]),
+          rewards_admin: multisig.AnyOf([]),
+          authorized_scoopers: [somebody],
+          authorized_staking_keys: [],
+        })
+      )
     }
   scoop(options)
 }
@@ -530,7 +550,17 @@ fn scoop(options: ScoopTestOptions) {
       reference_script: None,
     },
   }
-  let settings_input = mk_settings_input(hash_of_pool_script, [scooper], 1)
+  let settings_input = {
+    let Input {output_reference, output} = mk_settings_input(hash_of_pool_script, [scooper], 1)
+    let updated_output = Output {
+      ..output,
+      datum: option.or_else(options.edit_settings_datum, output.datum)
+    }
+    Input {
+      output_reference: output_reference,
+      output: updated_output,
+    }
+  }
   let escrow1_out = Output {
     address: option.or_else(options.edit_escrow_destination, user_addr),
     value: option.or_else(options.edit_escrow_1_value,
