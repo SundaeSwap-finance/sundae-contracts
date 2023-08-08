@@ -1,5 +1,4 @@
 use aiken/builtin
-use aiken/bytearray
 use aiken/dict
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/list

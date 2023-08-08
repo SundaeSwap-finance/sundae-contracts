@@ -1,4 +1,3 @@
-use aiken/cbor
 use aiken/math
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
@@ -116,7 +115,7 @@ test deposit_test() {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fee: (1, 2000),
+    fees_per_10_thousand: 5,
     rewards: 2_000_000,
   }
   let input_value =

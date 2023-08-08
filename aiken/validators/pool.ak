@@ -18,7 +18,7 @@ use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{AssetClass, Ident, is_after, spent_output}
 use sundae/multisig
-use types/order.{Destination, OrderDatum, Swap}
+use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, lp_token_name,
   pool_token_name,
@@ -160,11 +160,11 @@ validator(settings_policy_id: PolicyId) {
       ..
     } = outcome
 
-    // The pool should have all of the scooper fees, and the quantity of eahc token of the outcome
+    // The pool should have all of the scooper fees, and the quantity of each token of the outcome
     // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
     // Calculate all the neccesary and sufficient conditions
     let minted_correct_lp_tokens =
-      minted_correct_pool_tokens(pool_script_hash, mint, output_datum, outcome)
+      minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
 
     // OPTIMIZATION: skip 10 entries at a time
     // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
@@ -182,6 +182,7 @@ validator(settings_policy_id: PolicyId) {
     expect licensed_scooper
     // expect funds_moved_correctly
     expect minted_correct_lp_tokens
+    expect output_datum.circulating_lp == outcome.quantity_lp.3rd
     expect
       has_expected_pool_value(
         pool_script_hash,
@@ -380,15 +381,14 @@ fn default_scoop_test_options() -> ScoopTestOptions {
   }
 }
 
-test ok_scoop() {
-  let user_addr =
-    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let options =
-    ScoopTestOptions {
-      ..default_scoop_test_options(),
-      edit_escrow_destination: Some(user_addr),
-    }
+test ok_scoop_swap_swap() {
+  let options = default_scoop_test_options()
   scoop(options)
+}
+
+test ok_scoop_swap_deposit() {
+  let options = default_scoop_test_options()
+  scoop_swap_deposit(options)
 }
 
 test scoop_bad_destination() fail {
@@ -654,6 +654,162 @@ fn scoop(options: ScoopTestOptions) {
       purpose: Spend(pool_input.output_reference),
     }
   let pool_redeemer = PoolRedeemer(0, 0, [1, 2])
+  let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
+  result
+}
+
+fn scoop_swap_deposit(options: ScoopTestOptions) {
+  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
+  let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let dummy_asset_name = #"53554e444145"
+  let scooper = #"00000000000000000000000000000000000000000000000000000000"
+  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+  let hash_of_escrow_script = #"00000000000000000000000000000000000000000000000000000000"
+  let user_addr = wallet_address(
+    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+  )
+  let owner = multisig.Signature(
+    #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+  )
+  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_datum = PoolDatum {
+    identifier: pool_id,
+    assets: (
+      (#"", #""),
+      (dummy_policy_id, dummy_asset_name),
+    ),
+    circulating_lp: 1_000_000_000,
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    market_open: 0,
+    rewards: 2_000_000,
+  }
+  let pool_out_datum = PoolDatum {
+    identifier: pool_id,
+    assets: (
+      (#"", #""),
+      (dummy_policy_id, dummy_asset_name),
+    ),
+    circulating_lp: 1_009_900_990,
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    market_open: 0,
+    rewards: 7_000_000,
+  }
+  let pool_nft_name = shared.pool_nft_name(pool_id)
+  let pool_address = script_address(hash_of_pool_script)
+  let pool_input = Input {
+    output_reference: mk_output_reference(0),
+    output: Output {
+      address: pool_address,
+      value: value.from_lovelace(1_000_000_000 + 2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000)
+        |> value.add(hash_of_pool_script, pool_nft_name, 1),
+      datum: InlineDatum(pool_datum),
+      reference_script: None,
+    },
+  }
+  let dest = Destination { address: user_addr, datum: NoDatum }
+  let swap =
+    Swap(
+      (#"", #"", 10_000_000),
+      (dummy_policy_id, dummy_asset_name, 0),
+    )
+  let deposit =
+    Deposit((
+      (#"", #"", 10_000_000),
+      (dummy_policy_id, dummy_asset_name, 10_000_000),
+    ))
+  let escrow_datum_1 = OrderDatum {
+    owner: owner,
+    scooper_fee: 2_500_000,
+    destination: dest,
+    order: swap,
+    extension: builtin.i_data(0),
+  }
+  let escrow_datum_2 = OrderDatum {
+    owner: owner,
+    scooper_fee: 2_500_000,
+    destination: dest,
+    order: deposit,
+    extension: builtin.i_data(0),
+  }
+  let escrow_address = script_address(hash_of_escrow_script)
+  let escrow1_in = Input {
+    output_reference: mk_output_reference(2),
+    output: Output {
+      address: escrow_address,
+      value: value.from_lovelace(4_500_000 + 10_000_000),
+      datum: InlineDatum(escrow_datum_1),
+      reference_script: None,
+    },
+  }
+  let escrow2_in = Input {
+    output_reference: mk_output_reference(3),
+    output: Output {
+      address: escrow_address,
+      value: value.from_lovelace(4_500_000 + 10_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 10_000_000),
+      datum: InlineDatum(escrow_datum_2),
+      reference_script: None,
+    },
+  }
+  let settings_input = {
+    let Input {output_reference, output} = mk_settings_input(hash_of_pool_script, [scooper], 1)
+    let updated_output = Output {
+      ..output,
+      datum: option.or_else(options.edit_settings_datum, output.datum)
+    }
+    Input {
+      output_reference: output_reference,
+      output: updated_output,
+    }
+  }
+  let escrow1_out = Output {
+    address: option.or_else(options.edit_escrow_destination, user_addr),
+    value: option.or_else(options.edit_escrow_1_value,
+      value.from_lovelace(2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 9_896_088)),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let escrow2_out = Output {
+    address: option.or_else(options.edit_escrow_destination, user_addr),
+    value: value.from_lovelace(2_000_000)
+      |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+      |> value.add(dummy_policy_id, dummy_asset_name, 196_990),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let pool_output = Output {
+    address: pool_address,
+    value: option.or_else(options.edit_pool_output_value,
+      value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - 9_896_088 + 10_000_000 - 196_990)
+        |> value.add(hash_of_pool_script, pool_nft_name, 1)),
+    datum: InlineDatum(pool_out_datum),
+    reference_script: None,
+  }
+
+  let ctx = ScriptContext {
+    transaction: Transaction {
+      inputs: [pool_input, escrow1_in, escrow2_in],
+      reference_inputs: [settings_input],
+      outputs: [pool_output, escrow1_out, escrow2_out],
+      fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
+      mint: value.to_minted_value(
+        value.from_lovelace(0)
+          |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+      ),
+      certificates: [],
+      withdrawals: dict.new(),
+      validity_range: interval.between(0, 1),
+      extra_signatories: [scooper],
+      redeemers: dict.new(),
+      datums: dict.new(),
+      id: mk_tx_hash(1),
+    },
+    purpose: Spend(pool_input.output_reference),
+  }
+  let pool_redeemer = PoolRedeemer(0, 0, [1,2])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
