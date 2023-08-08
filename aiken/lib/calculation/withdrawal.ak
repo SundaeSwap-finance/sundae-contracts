@@ -1,4 +1,4 @@
-use aiken/cbor
+use aiken/option
 use aiken/math
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
@@ -68,7 +68,47 @@ pub fn do_withdrawal(
   }
 }
 
-test withdrawal_test() {
+type WithdrawalTestOptions {
+  edit_withdrawal_value: Option<Value>,
+  edit_withdrawal_destination: Option<Address>,
+}
+
+fn default_withdrawal_test_options() {
+  WithdrawalTestOptions {
+    edit_withdrawal_value: None,
+    edit_withdrawal_destination: None,
+  }
+}
+
+test withdrawal_ok() {
+  let options = default_withdrawal_test_options()
+  withdrawal_test(options)
+}
+
+!test withdrawal_wrong_output_value() {
+  let options = WithdrawalTestOptions {
+    ..default_withdrawal_test_options(),
+    edit_withdrawal_value: Some(value.from_lovelace(2_000_000))
+  }
+  withdrawal_test(options)
+}
+
+!test withdrawal_wrong_payout_address() {
+  let burn_addr =
+    Address(
+      VerificationKeyCredential(
+        #"77777777777777777777777777777777777777777777777777777777",
+      ),
+      None,
+    )
+  let options = WithdrawalTestOptions {
+    ..default_withdrawal_test_options(),
+    edit_withdrawal_destination: Some(burn_addr),
+  }
+  withdrawal_test(options)
+}
+
+fn withdrawal_test(options: WithdrawalTestOptions) {
   let addr =
     Address(
       VerificationKeyCredential(
@@ -103,10 +143,12 @@ test withdrawal_test() {
     extension: Void,
   }
   let output = Output {
-    address: addr,
-    value: value.from_lovelace(2_000_000)
-      |> value.add(#"", #"", 10_000_000)
-      |> value.add(rberry.1st, rberry.2nd, 10_000_000),
+    address: option.or_else(options.edit_withdrawal_destination, addr),
+    value: option.or_else(
+      options.edit_withdrawal_value,
+      value.from_lovelace(2_000_000)
+        |> value.add(#"", #"", 10_000_000)
+        |> value.add(rberry.1st, rberry.2nd, 10_000_000)),
     datum: NoDatum,
     reference_script: None,
   }
