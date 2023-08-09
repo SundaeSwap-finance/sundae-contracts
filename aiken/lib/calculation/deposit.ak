@@ -74,7 +74,7 @@ pub fn do_deposit(
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd + issued_lp_tokens,
     ),
-    fee: pool_state.fee,
+    fees_per_10_thousand: pool_state.fees_per_10_thousand,
     rewards: pool_state.rewards + order.scooper_fee,
   }
 }

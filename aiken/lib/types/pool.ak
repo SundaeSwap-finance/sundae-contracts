@@ -2,13 +2,13 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/time.{PosixTime}
 use aiken/transaction/value.{AssetName, PolicyId}
-use shared.{AssetClass, Ident, Rational}
+use shared.{AssetClass, Ident}
 
 pub type PoolDatum {
   identifier: Ident,
   assets: (AssetClass, AssetClass),
   circulating_lp: Int,
-  fees: Rational,
+  fees_per_10_thousand: Int,
   market_open: PosixTime,
   rewards: Int,
 }
@@ -26,7 +26,7 @@ test example_pool_datum() {
           ),
         ),
         circulating_lp: 20229488080013,
-        fees: (3, 1000),
+        fees_per_10_thousand: 3,
         market_open: 100,
         rewards: 10000000,
       },
@@ -60,7 +60,7 @@ test example_pool_mint_redeemer() {
     cbor.serialise(
       CreatePool {
         assets: (
-          (#"",#""),
+          (#"", #""),
           (
             #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77",
             #"53554e444145",

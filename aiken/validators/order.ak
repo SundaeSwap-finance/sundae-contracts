@@ -16,11 +16,13 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
           ctx.transaction.validity_range,
         )
       }
-      Scoop ->
-        dict.has_key(
-          ctx.transaction.withdrawals,
-          Inline(ScriptCredential(stake_script_hash)),
-        )
+      Scoop -> {
+        expect [head] = dict.to_list(ctx.transaction.withdrawals)
+        when head is {
+          (Inline(ScriptCredential(script)), _) -> script == stake_script_hash
+          _ -> False
+        }
+      }
     }
   }
 }

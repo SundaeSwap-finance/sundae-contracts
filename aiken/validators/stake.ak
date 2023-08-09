@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/bytearray
 use aiken/dict
 use aiken/hash.{Blake2b_224, Hash}
@@ -17,7 +18,10 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
         let pool_tokens = value.tokens(pool_output.value, pool_script_hash)
         let pool_tokens_list = dict.to_list(pool_tokens)
         let is_pool_nft =
-          fn(kvp: (ByteArray, Int)) { bytearray.take(kvp.1st, 1) == "p" }
+          fn(kvp: (ByteArray, Int)) {
+            // p == 112
+            builtin.index_bytearray(kvp.1st, 0) == 112
+          }
         list.any(pool_tokens_list, is_pool_nft)
       }
       _ -> False

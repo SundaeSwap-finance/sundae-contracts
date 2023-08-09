@@ -3,7 +3,7 @@ use aiken/transaction/value.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
 }
 use calculation/shared.{PoolState} as calc_shared
-use shared.{Rational, SingletonValue}
+use shared.{SingletonValue}
 use types/order.{Destination}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
@@ -14,20 +14,19 @@ pub fn swap_takes(
   take_asset_name: AssetName,
   pool_give: Int,
   pool_take: Int,
-  pool_fee: Rational,
+  fees_per_10_thousand: Int,
   scooper_fee: Int,
   order_give: Int,
   input_value: Value,
 ) -> (Int, Value) {
   // We compute the AMM formula, but 
   // algebraically rearranged to minimize rounding error
-  let (numerator, denominator) = pool_fee
-  let difference = denominator - numerator
+  let difference = 10000 - fees_per_10_thousand
 
   // Compute the amount of token received
   let takes =
     pool_take * order_give * difference / (
-      pool_give * denominator + order_give * difference
+      pool_give * 10000 + order_give * difference
     )
 
   // And then compute the remainder, using the input value minus the given amount
@@ -57,8 +56,15 @@ pub fn do_swap(
   output: Output,
 ) -> PoolState {
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
-  let (a_policy_id, a_asset_name, a_amt) = pool_state.quantity_a
-  let (b_policy_id, b_asset_name, b_amt) = pool_state.quantity_b
+  let PoolState {
+    quantity_a,
+    quantity_b,
+    quantity_lp,
+    fees_per_10_thousand,
+    rewards,
+  } = pool_state
+  let (a_policy_id, a_asset_name, a_amt) = quantity_a
+  let (b_policy_id, b_asset_name, b_amt) = quantity_b
 
   if offer_policy_id == a_policy_id && offer_asset_name == a_asset_name {
     expect min_received.1st == b_policy_id
@@ -71,7 +77,7 @@ pub fn do_swap(
         b_asset_name,
         a_amt,
         b_amt,
-        pool_state.fee,
+        fees_per_10_thousand,
         scooper_fee,
         offer_amt,
         input_value,
@@ -84,9 +90,9 @@ pub fn do_swap(
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
-      quantity_lp: pool_state.quantity_lp,
-      fee: pool_state.fee,
-      rewards: pool_state.rewards + scooper_fee,
+      quantity_lp,
+      fees_per_10_thousand,
+      rewards: rewards + scooper_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     expect min_received.1st == a_policy_id
@@ -99,7 +105,7 @@ pub fn do_swap(
         a_asset_name,
         b_amt,
         a_amt,
-        pool_state.fee,
+        fees_per_10_thousand,
         scooper_fee,
         offer_amt,
         input_value,
@@ -111,9 +117,9 @@ pub fn do_swap(
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
-      quantity_lp: pool_state.quantity_lp,
-      fee: pool_state.fee,
-      rewards: pool_state.rewards + scooper_fee,
+      quantity_lp,
+      fees_per_10_thousand,
+      rewards: rewards + scooper_fee,
     }
   } else {
     fail

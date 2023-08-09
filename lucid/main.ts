@@ -174,7 +174,7 @@ function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint): 
     "581c" + dummyPolicyHex +
     "45" + fromText("DUMMY") +
     "ffff" +
-    "1a3b9aca009f011907d0ff00" +
+    "1a3b9aca000500" +
     Data.to(rewards) +
     "ff";
 }
@@ -836,7 +836,7 @@ async function main() {
   const flags = parse(Deno.args, {
     string: ["scriptsFile"],
     boolean: ["aiken", "findMax"],
-    //number: ["min", "max"],
+    number: ["min", "max"],
   });
   if (flags.scriptsFile == undefined) {
     throw "no scripts file";
