@@ -243,6 +243,15 @@ function computePoolLqName(poolId: Uint8Array) {
   return toHex(concat(l, poolId));
 }
 
+function addLedgerUtxo(emulator: Emulator, utxo: any): any {
+  let id = utxo.txHash + utxo.outputIndex;
+  emulator.ledger[id] = {
+    utxo: utxo,
+    spent: false,
+  };
+  return id;
+}
+
 async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: any) {
   const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
   //generatePrivateKey();
@@ -274,112 +283,70 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
   const poolNftNameHex = computePoolNftName(poolId);
   const newPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2_000_000n);
 
-  // Change
-  emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
-    utxo: {
-      txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      outputIndex: 0,
-      assets: { lovelace: 1_000_000_000_000_000_000n },
-      address: userAddress,
-      datumHash: undefined,
-      datum: undefined,
-      scriptRef: undefined,
-    },
-    spent: false
-  };
+  const change = addLedgerUtxo(emulator, {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 0,
+    assets: { lovelace: 1_000_000_000_000_000_000n },
+    address: userAddress,
+    datumHash: undefined,
+    datum: undefined,
+    scriptRef: undefined,
+  });
 
-  // Pool
-  emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"] = {
-    utxo: {
-      txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      outputIndex: 1,
-      assets: {
-        lovelace: 1_000_000_000n + 2_000_000n,
-        [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
-      },
-      address: scripts.poolAddress,
-      datumHash: undefined,
-      datum: newPoolDatum,
-      scriptRef: undefined
+  const pool = addLedgerUtxo(emulator, {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 1,
+    assets: {
+      lovelace: 1_000_000_000n + 2_000_000n,
+      [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
     },
-    spent: false
-  };
+    address: scripts.poolAddress,
+    datumHash: undefined,
+    datum: newPoolDatum,
+    scriptRef: undefined,
+  });
 
   const settingsDatum = factoryDatum(scripts.poolScriptHash, userPkh.to_hex());
 
-  // Factory
-  emulator.ledger["00000000000000000000000000000000000000000000000000000000000000002"] = {
-    utxo: {
-      txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      outputIndex: 2,
-      assets: {
-        lovelace: 2_000_000n,
-        [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n,
-      },
-      address: scripts.factoryAddress,
-      datumHash: undefined,
-      datum: settingsDatum,
-      scriptRef: undefined
+  const factory = addLedgerUtxo(emulator, {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 2,
+    assets: {
+      lovelace: 2_000_000n,
+      [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n,
     },
-    spent: false
-  };
+    address: scripts.factoryAddress,
+    datumHash: undefined,
+    datum: settingsDatum,
+    scriptRef: undefined,
+  });
 
   const escrowDatum = orderDatum(userPkh.to_hex(), dummyPolicyId);
 
-  // Escrow 1
-  emulator.ledger["00000000000000000000000000000000000000000000000000000000000000003"] = {
-    utxo: {
-      txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      outputIndex: 3,
-      assets: {
-        lovelace: 4_500_000n + 10_000_000n,
-      },
-      address: scripts.escrowAddress,
-      datumHash: undefined,
-      datum: escrowDatum,
-      scriptRef: undefined
+  const escrow1 = addLedgerUtxo(emulator, {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 3,
+    assets: {
+      lovelace: 4_500_000n + 10_000_000n,
     },
-    spent: false
-  };
+    address: scripts.escrowAddress,
+    datumHash: undefined,
+    datum: escrowDatum,
+    scriptRef: undefined,
+  });
 
-  // Escrow 2
-  emulator.ledger["00000000000000000000000000000000000000000000000000000000000000004"] = {
-    utxo: {
-      txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      outputIndex: 4,
-      assets: {
-        lovelace: 4_500_000n + 10_000_000n,
-      },
-      address: scripts.escrowAddress,
-      datumHash: undefined,
-      datum: escrowDatum,
-      scriptRef: undefined
+  const escrow2 = addLedgerUtxo(emulator, {
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 4,
+    assets: {
+      lovelace: 4_500_000n + 10_000_000n,
     },
-    spent: false
-  };
-
-
-  const pool =
-    emulator
-      .ledger["00000000000000000000000000000000000000000000000000000000000000001"]
-      .utxo;
-  const factory =
-    emulator
-      .ledger["00000000000000000000000000000000000000000000000000000000000000002"]
-      .utxo;
-  const escrow1 =
-    emulator
-      .ledger["00000000000000000000000000000000000000000000000000000000000000003"]
-      .utxo;
-  const escrow2 =
-    emulator
-      .ledger["00000000000000000000000000000000000000000000000000000000000000004"]
-      .utxo;
-  const change =
-    emulator
-      .ledger["00000000000000000000000000000000000000000000000000000000000000000"]
-      .utxo;
+    address: scripts.escrowAddress,
+    datumHash: undefined,
+    datum: escrowDatum,
+    scriptRef: undefined
+  });
 
   const escrowsCount = 2n;
 
