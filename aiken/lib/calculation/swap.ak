@@ -1,10 +1,12 @@
-use aiken/transaction.{Output}
+use aiken/transaction.{NoDatum, Output}
+use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
 }
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
-use types/order.{Destination}
+use sundae/multisig
+use types/order.{Destination, OrderDatum}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 pub fn swap_takes(
@@ -87,6 +89,8 @@ pub fn do_swap(
     expect output.address == destination.address
     expect output.datum == destination.datum
     expect output.value == out_value
+    // Check that mintakes is satisfied
+    expect takes >= min_received.3rd
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
@@ -114,6 +118,8 @@ pub fn do_swap(
     expect output.address == destination.address
     expect output.datum == destination.datum
     expect output.value == out_value
+    // Check that mintakes is satisfied
+    expect takes >= min_received.3rd
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
@@ -128,3 +134,51 @@ pub fn do_swap(
 /// The pool state before processing this swap
 /// The value being processed
 /// The datum describing the order 
+
+test swap_mintakes_too_high() fail {
+  let addr =
+    Address(
+      VerificationKeyCredential(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      None,
+    )
+  let ada = (#"", #"")
+  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
+  let pool_state = PoolState {
+    quantity_a: (#"", #"", 1_000_000_000),
+    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
+    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
+    fees_per_10_thousand: 5,
+    rewards: 2_000_000,
+  }
+  let input_value =
+    value.from_lovelace(14_500_000)
+  let swap_offer = (ada.1st, ada.2nd, 10_000_000)
+  let swap_min_received = (rberry.1st, rberry.2nd, 10_000_000)
+  let order = OrderDatum {
+    owner: multisig.Signature(
+      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+    ),
+    scooper_fee: 2_500_000,
+    destination: Destination {
+      address: addr,
+      datum: NoDatum,
+    },
+    order: order.Swap { offer: swap_offer, min_received: swap_min_received, },
+    extension: Void,
+  }
+  let output = Output {
+    address: addr,
+    value: value.from_lovelace(2_000_000)
+      |> value.add(rberry.1st, rberry.2nd, 9_896_088),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let final_pool_state = do_swap(pool_state, input_value, order.destination, order.scooper_fee, swap_offer, swap_min_received, output)
+  expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
+  expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
+  expect final_pool_state.rewards == 4_500_000
+  True
+}
