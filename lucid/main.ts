@@ -26,6 +26,7 @@ import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 import { ABL, Coin, SwapFees, doSwap } from "./cpp.ts";
 import { Datum } from "../../lucid/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
+import * as random from "https://deno.land/x/random@v1.1.2/Random.js";
 
 const verbose = true;
 
@@ -268,13 +269,43 @@ function computePoolLqName(poolId: Uint8Array) {
   return toHex(concat(l, poolId));
 }
 
-function addLedgerUtxo(emulator: Emulator, utxo: any): any {
+function setLedgerUtxo(emulator: Emulator, utxo: any): any {
   let id = utxo.txHash + utxo.outputIndex.toString();
   emulator.ledger[id] = {
     utxo: utxo,
     spent: false,
   };
   return utxo;
+}
+
+function randomBytes(n: int): Uint8Array {
+  let buf = new Uint8Array(n);
+  let r = new random.Random();
+  for (let i = 0; i < n; i++) {
+    let byte = r.int(0, 256);
+    buf[i] = byte;
+  }
+  return buf;
+}
+
+function addLedgerUtxo(emulator: Emulator, utxo: any): any {
+  let hash = toHex(randomBytes(32));
+  let id = hash + "0";
+  console.log(id);
+  let inserted = {
+    txHash: hash,
+    outputIndex: 0,
+    assets: utxo.assets,
+    address: utxo.address,
+    datumHash: utxo.datumHash,
+    datum: utxo.datum,
+    scriptRef: utxo.scriptRef,
+  };
+  emulator.ledger[id] = {
+    utxo: inserted,
+    spent: false,
+  };
+  return inserted;
 }
 
 function zeroPoolId(): Uint8Array {
@@ -341,42 +372,29 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
   const newPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2_000_000n);
 
   const change = addLedgerUtxo(emulator, {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 0,
     assets: { lovelace: 1_000_000_000_000_000_000n },
     address: userAddress,
-    datumHash: undefined,
-    datum: undefined,
-    scriptRef: undefined,
   });
 
   const pool = addLedgerUtxo(emulator, {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 1,
     assets: {
       lovelace: 1_000_000_000n + 2_000_000n,
       [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n,
     },
     address: scripts.poolAddress,
-    datumHash: undefined,
     datum: newPoolDatum,
-    scriptRef: undefined,
   });
 
   const settingsDatum = factoryDatum(scripts.poolScriptHash, userPkh.to_hex());
 
   const factory = addLedgerUtxo(emulator, {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 2,
     assets: {
       lovelace: 2_000_000n,
       [toUnit(scripts.factoryPolicyId, fromText("settings"))]: 1n,
     },
     address: scripts.factoryAddress,
-    datumHash: undefined,
     datum: settingsDatum,
-    scriptRef: undefined,
   });
 
   const escrow1Info = {
@@ -388,15 +406,11 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
   };
 
   const escrow1 = addLedgerUtxo(emulator, {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 3,
     assets: {
       lovelace: 4_500_000n + 10_000_000n,
     },
     address: scripts.escrowAddress,
-    datumHash: undefined,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
-    scriptRef: undefined,
   });
 
   const escrow2Info = {
@@ -408,15 +422,11 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
   };
 
   const escrow2 = addLedgerUtxo(emulator, {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 4,
     assets: {
       lovelace: 4_500_000n + 20_000_000n,
     },
     address: scripts.escrowAddress,
-    datumHash: undefined,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
-    scriptRef: undefined
   });
 
   const escrowsCount = 2n;
