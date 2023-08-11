@@ -653,18 +653,6 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   };
   let takes: bigint = 0n;
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
-  for (let e of listedEscrows) {
-    if (e.escrow.type == EscrowType.SWAP) {
-      [takes, poolABL] = doSwap(e.escrow.side, e.escrow.gives, swapFees, poolABL);
-      escrowTakes.push(takes);
-    } else if (e.escrow.type == EscrowType.SOMETHING) {
-      throw "escrow type was 'something'"
-    } else {
-      throw "unexpected escrow type" + JSON.stringify(e);
-    }
-  }
-  log("escrowTakes:", escrowTakes);
-
   const totalRewards = 2_500_000n * escrowsCount;
 
   const scoopedPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2000000n + totalRewards);
@@ -685,11 +673,26 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   let i = 0n;
   let indexingSet: bigint[] = [];
   for (let i = 0n; i < toSpend.length; i++) {
-    if (toSpend[Number(i)].address == scripts.escrowAddress) {
+    let e = toSpend[Number(i)];
+    if (e.address == scripts.escrowAddress) {
       indexingSet.push(i);
     }
   }
   console.log("indexing set:", indexingSet);
+
+  listedEscrows.sort((a,b) => a.utxo.txHash == b.utxo.txHash ? a.utxo.outputIndex - b.utxo.outputIndex : (a.utxo.txHash < b.utxo.txHash ? -1 : 1));
+
+  for (let e of listedEscrows) {
+    if (e.escrow.type == EscrowType.SWAP) {
+      [takes, poolABL] = doSwap(e.escrow.side, e.escrow.gives, swapFees, poolABL);
+      escrowTakes.push(takes);
+    } else if (e.escrow.type == EscrowType.SOMETHING) {
+      throw "escrow type was 'something'";
+    } else {
+      throw "unexpected escrow type" + JSON.stringify(e);
+    }
+  }
+  log("escrowTakes:", escrowTakes);
 
   const scoopPoolRedeemer = scoopRedeemer(indexingSet)
 
