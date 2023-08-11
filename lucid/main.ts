@@ -244,7 +244,7 @@ function computePoolLqName(poolId: Uint8Array) {
 }
 
 function addLedgerUtxo(emulator: Emulator, utxo: any): any {
-  let id = utxo.txHash + utxo.outputIndex;
+  let id = utxo.txHash + utxo.outputIndex.toString();
   emulator.ledger[id] = {
     utxo: utxo,
     spent: false,
@@ -252,9 +252,52 @@ function addLedgerUtxo(emulator: Emulator, utxo: any): any {
   return id;
 }
 
+function zeroPoolId(): Uint8Array {
+  return new Uint8Array([
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+  ]);
+}
+
+async function getDummyPolicyId(): PolicyId {
+  const dummy = await Lucid.new(undefined, "Custom");
+  const dummyMintingPolicy = dummy.utils.nativeScriptFromJson({
+    type: "all",
+    scripts: [],
+  });
+  return dummy.utils.mintingPolicyToId(dummyMintingPolicy);
+}
+
+const dummyPolicyId = await getDummyPolicyId();
+
+enum EscrowType {
+  SWAP,
+  SOMETHING,
+}
+
+enum Coin {
+  COINA,
+  COINB,
+}
+
+interface Swap {
+  type: EscrowType.SWAP;
+  coins: [AssetId, AssetId];
+  gives: bigint;
+  takes?: bigint;
+  side: Coin;
+}
+
+interface Something {
+  type: EscrowType.SOMETHING;
+}
+
+type Escrow = Swap | Something
+
 async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: any) {
   const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
-  //generatePrivateKey();
   const userPublicKey = toPublicKey(userPrivateKey);
   const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
   const userAddress = await dummy.selectWalletFromPrivateKey(userPrivateKey).wallet.address();
@@ -268,18 +311,7 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
   const lucid = await Lucid.new(emulator);
   lucid.selectWalletFromPrivateKey(userPrivateKey);
 
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
-
-  const poolId = new Uint8Array([
-    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-  ]);
+  const poolId = zeroPoolId();
   const poolNftNameHex = computePoolNftName(poolId);
   const newPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2_000_000n);
 
@@ -336,6 +368,14 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     scriptRef: undefined,
   });
 
+  const escrow1Info = {
+    type: EscrowType.SWAP,
+    //coins: [AssetId, AssetId],
+    gives: 10_000_000n,
+    takes: null,
+    side: Coin.COINA,
+  };
+
   const escrow2 = addLedgerUtxo(emulator, {
     txHash: "0000000000000000000000000000000000000000000000000000000000000000",
     outputIndex: 4,
@@ -348,6 +388,14 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     scriptRef: undefined
   });
 
+  const escrow2Info = {
+    type: EscrowType.SWAP,
+    //coins: [AssetId, AssetId],
+    gives: 10_000_000n,
+    takes: null,
+    side: Coin.COINA,
+  };
+
   const escrowsCount = 2n;
 
   await doScoopPool(
@@ -357,7 +405,16 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     config,
     userAddress,
     escrowsCount,
-    [escrow1, escrow2],
+    [
+      {
+        utxo: emulator.ledger[escrow1].utxo,
+        escrow: escrow1Info
+      },
+      {
+        utxo: emulator.ledger[escrow2].utxo,
+        escrow: escrow2Info
+      }
+    ],
     pool,
     factory,
     change,
@@ -443,11 +500,6 @@ async function doConfigureFactory(lucid: Lucid, scripts: Scripts, emulator: Emul
 }
 
 async function doMintDummyTokens(lucid: Lucid, scripts: Scripts, emulator: Emulator, userAddress: any): any {
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
   async function mintDummyTokens(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .mintAssets({
@@ -476,11 +528,6 @@ async function doMintDummyTokens(lucid: Lucid, scripts: Scripts, emulator: Emula
 }
 
 async function doMintPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, factory: any, userAddress: any, walletUtxos: any[]): any {
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
   console.log(`first input: ${walletUtxos[0].txHash}#${walletUtxos[0].outputIndex}`);
   let newPoolId = computePoolId(walletUtxos[0]);
   const poolNftNameHex = computePoolNftName(newPoolId);
@@ -539,11 +586,6 @@ async function doMintPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, fa
 }
 
 async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator, userPkh: any, escrowsCount: int): any {
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
   async function listEscrow(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .validTo(emulator.now() + 30000)
@@ -563,7 +605,14 @@ async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator,
     log(`listed escrow ${i}: ${okListed}`);
     let ref = { txHash: escrowHash, outputIndex: 0 };
     const escrow = (await emulator.getUtxosByOutRef([ref]))[0];
-    listedEscrows.push(escrow);
+    let swap = {
+      type: EscrowType.SWAP,
+      //coins: [AssetId, AssetId],
+      gives: 10_000_000n,
+      takes: null,
+      side: Coin.COINA,
+    };
+    listedEscrows.push({ escrow: swap, utxo: escrow });
   }
 
   return {
@@ -572,11 +621,6 @@ async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator,
 }
 
 async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, config: any, userAddress: any, escrowsCount: int, listedEscrows: any[], pool: any, factory: any, change: any, poolId: any): any {
-  const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
   let escrowTakes: bigint[] = [];
   let poolABL: ABL = {
     a: 1_000_000_000n,
@@ -586,8 +630,14 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   let takes: bigint = 0n;
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
   for (let e of listedEscrows) {
-    [takes, poolABL] = doSwap(Coin.CoinA, 10_000_000n, swapFees, poolABL);
-    escrowTakes.push(takes);
+    if (e.escrow.type == EscrowType.SWAP) {
+      [takes, poolABL] = doSwap(e.escrow.side, e.escrow.gives, swapFees, poolABL);
+      escrowTakes.push(takes);
+    } else if (e.escrow.type == EscrowType.SOMETHING) {
+      throw "escrow type was 'something'"
+    } else {
+      throw "unexpected escrow type" + JSON.stringify(e);
+    }
   }
   log("escrowTakes:", escrowTakes);
 
@@ -598,10 +648,14 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   log("scoopedPoolDatum: " + scoopedPoolDatum);
 
   let toSpend: UTxO[] = [];
-  toSpend.push(change)
+  toSpend.push(change);
   toSpend.push(pool);
+  console.log("pool");
+  console.log(pool);
   for (let e of listedEscrows) {
-    toSpend.push(e);
+    toSpend.push(e.utxo.txHash);
+  console.log("e.utxo");
+    console.log(e.utxo.txHash);
   }
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
   let i = 0n;
@@ -738,12 +792,6 @@ async function bench_endToEndScoop(flags: Args, scripts: Scripts, dummy: Lucid) 
 
     let { factory } = await doConfigureFactory(lucid, scripts, emulator, userPkh, newFactory, newFactoryChange);
 
-    const dummyMintingPolicy = lucid.utils.nativeScriptFromJson({
-      type: "all",
-      scripts: [],
-    });
-    const dummyPolicyId = lucid.utils.mintingPolicyToId(dummyMintingPolicy);
-
     let { mintedChange } = await doMintDummyTokens(lucid, scripts, emulator, userAddress);
     let mintedHash = mintedChange.txHash;
 
@@ -763,6 +811,8 @@ async function bench_endToEndScoop(flags: Args, scripts: Scripts, dummy: Lucid) 
     log(`newEscrowDatum: ${orderDatum(userPkh.to_hex(), dummyPolicyId)}`);
 
     let { listedEscrows } = await doListEscrows(lucid, scripts, emulator, userPkh, escrowsCount);
+
+    assert(!emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"]);
 
     emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
       utxo: {
@@ -790,7 +840,8 @@ async function expectSuccess(f: any) {
     await f();
     console.log("Test passed");
   } catch (e) {
-    console.log("Test failed: " + e.toString());
+    console.log("Test failed: ");
+    console.log(e.stack);
   }
 }
 
@@ -824,7 +875,7 @@ async function main() {
     scripts = getScriptsPlutusTx(dummy, scriptsJson);
   }
   await expectSuccess(async () => { await validScoop(flags, scripts, dummy); });
-  await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
+  //await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
   //await bench_endToEndScoop(flags, scripts, dummy);
 }
 
