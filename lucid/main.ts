@@ -201,7 +201,32 @@ function scoopRedeemer(inputOrder: bigint[]): string {
     "ff";
 }
 
-function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
+function cborFormatInteger(n: bigint): string {
+  let f = function(m: bigint, l: int) {
+    return m.toString(16).padStart(l, '0');
+  };
+  if (n <= 0x17) {
+    return f(n);
+  } else if (n <= 0xff) {
+    return "18" + f(n, 2);
+  } else if (n <= 0xffff) {
+    return "19" + f(n, 4);
+  } else if (n <= 0xffffffff) {
+    return "1a" + f(n, 8);
+  } else if (n <= 0xffffffffffffffff) {
+    return "1b" + f(n, 16);
+  } else {
+    throw "cborFormatInteger: really huge bigint (is this a mistake?):" + n;
+  }
+}
+
+function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
+  let giveAmountA = 0n;
+  if (escrow.type == EscrowType.SWAP && escrow.side == Coin.COINA) {
+    giveAmountA = cborFormatInteger(escrow.gives);
+  } else {
+    throw "orderDatum: unimplemented escrow type";
+  }
   return "d8799fd8799f" +
     "581c" + userPkhHex + "ff" +
     "1a002625a0" + // Scooper fee
@@ -211,7 +236,7 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string): string {
     "d87980ff" + // No datum
     "d8799f9f" +
     "40" + "40" +
-    "1a00989680" + "ff" +
+    giveAmountA + "ff" +
     "9f" +
     "581c" + dummyPolicyHex +
     "45" + fromText("DUMMY") +
@@ -354,7 +379,13 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     scriptRef: undefined,
   });
 
-  const escrowDatum = orderDatum(userPkh.to_hex(), dummyPolicyId);
+  const escrow1Info = {
+    type: EscrowType.SWAP,
+    //coins: [AssetId, AssetId],
+    gives: 10_000_000n,
+    takes: null,
+    side: Coin.COINA,
+  };
 
   const escrow1 = addLedgerUtxo(emulator, {
     txHash: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -364,14 +395,14 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     },
     address: scripts.escrowAddress,
     datumHash: undefined,
-    datum: escrowDatum,
+    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
     scriptRef: undefined,
   });
 
-  const escrow1Info = {
+  const escrow2Info = {
     type: EscrowType.SWAP,
     //coins: [AssetId, AssetId],
-    gives: 10_000_000n,
+    gives: 20_000_000n,
     takes: null,
     side: Coin.COINA,
   };
@@ -380,21 +411,13 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     txHash: "0000000000000000000000000000000000000000000000000000000000000000",
     outputIndex: 4,
     assets: {
-      lovelace: 4_500_000n + 10_000_000n,
+      lovelace: 4_500_000n + 20_000_000n,
     },
     address: scripts.escrowAddress,
     datumHash: undefined,
-    datum: escrowDatum,
+    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
     scriptRef: undefined
   });
-
-  const escrow2Info = {
-    type: EscrowType.SWAP,
-    //coins: [AssetId, AssetId],
-    gives: 10_000_000n,
-    takes: null,
-    side: Coin.COINA,
-  };
 
   const escrowsCount = 2n;
 
@@ -586,10 +609,18 @@ async function doMintPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, fa
 }
 
 async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator, userPkh: any, escrowsCount: int): any {
+  const escrowInfo = {
+    type: EscrowType.SWAP,
+    //coins: [AssetId, AssetId],
+    gives: 10_000_000n,
+    takes: null,
+    side: Coin.COINA,
+  };
+  const thisDatum = orderDatum(userPkh.to_hex(), dummyPolicyId, escrowInfo);
   async function listEscrow(): Promise<TxHash> {
     const tx = await lucid.newTx()
       .validTo(emulator.now() + 30000)
-      .payToContract(scripts.escrowAddress, { inline: orderDatum(userPkh.to_hex(), dummyPolicyId) }, {
+      .payToContract(scripts.escrowAddress, { inline: thisDatum }, {
         "lovelace": 4_500_000n + 10_000_000n,
       })
       .complete();
@@ -605,14 +636,7 @@ async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator,
     log(`listed escrow ${i}: ${okListed}`);
     let ref = { txHash: escrowHash, outputIndex: 0 };
     const escrow = (await emulator.getUtxosByOutRef([ref]))[0];
-    let swap = {
-      type: EscrowType.SWAP,
-      //coins: [AssetId, AssetId],
-      gives: 10_000_000n,
-      takes: null,
-      side: Coin.COINA,
-    };
-    listedEscrows.push({ escrow: swap, utxo: escrow });
+    listedEscrows.push({ escrow: escrowInfo, utxo: escrow });
   }
 
   return {
@@ -676,8 +700,6 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   const scooperFee = 2_500_000n;
   const rider = 2_000_000n;
 
-  const totalReturn = escrowTakes.reduce((x,acc) => x + acc);
-
   log(emulator.ledger);
   console.log("about to scoop the pool");
   console.log("spending:");
@@ -712,11 +734,10 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
       .withdraw(scripts.steakAddress, 0n, "00")
       .payToContract(scripts.poolAddress, { inline: scoopedPoolDatum }, {
         "lovelace":
-          1_000_000_000n +
-          escrowsCount * 10_000_000n +
+          poolABL.a +
           escrowsCount * scooperFee +
           rider,
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 1_000_000_000n - totalReturn,
+        [toUnit(dummyPolicyId, fromText("DUMMY"))]: poolABL.b,
         [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
       });
 
@@ -808,8 +829,6 @@ async function bench_endToEndScoop(flags: Args, scripts: Scripts, dummy: Lucid) 
     });
     const ownerMultisig = lucid.utils.validatorToScriptHash(ownerMultisigScript);
 
-    log(`newEscrowDatum: ${orderDatum(userPkh.to_hex(), dummyPolicyId)}`);
-
     let { listedEscrows } = await doListEscrows(lucid, scripts, emulator, userPkh, escrowsCount);
 
     assert(!emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"]);
@@ -841,7 +860,7 @@ async function expectSuccess(f: any) {
     console.log("Test passed");
   } catch (e) {
     console.log("Test failed: ");
-    console.log(e.stack);
+    console.log(e, e.stack);
   }
 }
 
