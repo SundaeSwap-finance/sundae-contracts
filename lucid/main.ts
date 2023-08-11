@@ -249,7 +249,7 @@ function addLedgerUtxo(emulator: Emulator, utxo: any): any {
     utxo: utxo,
     spent: false,
   };
-  return id;
+  return utxo;
 }
 
 function zeroPoolId(): Uint8Array {
@@ -407,11 +407,11 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     escrowsCount,
     [
       {
-        utxo: emulator.ledger[escrow1].utxo,
+        utxo: escrow1,
         escrow: escrow1Info
       },
       {
-        utxo: emulator.ledger[escrow2].utxo,
+        utxo: escrow2,
         escrow: escrow2Info
       }
     ],
@@ -653,9 +653,9 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   console.log("pool");
   console.log(pool);
   for (let e of listedEscrows) {
-    toSpend.push(e.utxo.txHash);
+    toSpend.push(e.utxo);
   console.log("e.utxo");
-    console.log(e.utxo.txHash);
+    console.log(e.utxo);
   }
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
   let i = 0n;
