@@ -38,7 +38,7 @@ function log(...args: any[]) {
 
 function assert(p: boolean) {
   if (!p) {
-    throw "Assertion failed!"
+    throw new Error("Assertion failed!");
   }
 }
 
@@ -207,7 +207,7 @@ function cborFormatInteger(n: bigint): string {
     return m.toString(16).padStart(l, '0');
   };
   if (n <= 0x17) {
-    return f(n);
+    return f(n, 2);
   } else if (n <= 0xff) {
     return "18" + f(n, 2);
   } else if (n <= 0xffff) {
@@ -221,14 +221,41 @@ function cborFormatInteger(n: bigint): string {
   }
 }
 
-function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
-  let giveAmountA = 0n;
-  if (escrow.type == EscrowType.SWAP && escrow.side == Coin.COINA) {
-    giveAmountA = cborFormatInteger(escrow.gives);
+function cborFormatByteString(n: bigint): string {
+  let f = function(m: bigint, l: int) {
+    return m.toString(16).padStart(l, '0');
+  };
+  if (n <= 0x17) {
+    return f(0x40n + n, 2);
+  } else if (n <= 0xff) {
+    return "58" + f(n, 2);
+  } else if (n <= 0xffff) {
+    return "59" + f(n, 4);
+  } else if (n <= 0xffffffff) {
+    return "5a" + f(n, 8);
+  } else if (n <= 0xffffffffffffffff) {
+    return "5b" + f(n, 16);
   } else {
-    throw "orderDatum: unimplemented escrow type";
+    throw "cborFormatByteString: really huge bytestring length (is this a mistake?):" + n;
   }
-  return "d8799fd8799f" +
+}
+
+function cborFormatAssetId(assetId: [string, string]) {
+  if (assetId[0] == "") {
+    assert(assetId[1] == "");
+    return "4040";
+  } else {
+    assert(assetId[0].length == 56);
+    let policy = "581c" + assetId[0];
+    let l = cborFormatByteString(BigInt(assetId[1].length / 2));
+    console.log(l);
+    let token = assetId[1];
+    return policy + l + token;
+  }
+}
+
+function swapDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
+  let out = "d8799fd8799f" +
     "581c" + userPkhHex + "ff" +
     "1a002625a0" + // Scooper fee
     "d8799fd8799fd8799f" +
@@ -236,16 +263,24 @@ function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow):
     "d87a80ff" + // No staking credential
     "d87980ff" + // No datum
     "d8799f9f" +
-    "40" + "40" +
-    giveAmountA + "ff" +
+    cborFormatAssetId(escrow.gives[0]) +
+    cborFormatInteger(escrow.gives[1]) + "ff" +
     "9f" +
-    "581c" + dummyPolicyHex +
-    "45" + fromText("DUMMY") +
-    "00" +
-    "ff" +
+    cborFormatAssetId(escrow.takes[0]) +
+    cborFormatInteger(escrow.takes[1]) + "ff" +
     "ff" +
     "d87980" + // extra void for extension data
     "ff";
+  console.log(out);
+  return out;
+}
+
+function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
+  if (escrow.type == EscrowType.SWAP) {
+    return swapDatum(userPkhHex, dummyPolicyHex, escrow);
+  } else {
+    throw "orderDatum: unimplemented escrow type";
+  }
 }
 
 function computePoolId(utxo: UTxO) {
@@ -333,17 +368,10 @@ enum EscrowType {
   SOMETHING,
 }
 
-enum Coin {
-  COINA,
-  COINB,
-}
-
 interface Swap {
   type: EscrowType.SWAP;
-  coins: [AssetId, AssetId];
-  gives: bigint;
-  takes?: bigint;
-  side: Coin;
+  gives: [AssetId, bigint];
+  takes: [AssetId, bigint];
 }
 
 interface Something {
@@ -399,10 +427,8 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
 
   const escrow1Info = {
     type: EscrowType.SWAP,
-    //coins: [AssetId, AssetId],
-    gives: 10_000_000n,
-    takes: null,
-    side: Coin.COINA,
+    gives: [["",""], 10_000_000n],
+    takes: [[dummyPolicyId, fromText("DUMMY")], 0n],
   };
 
   const escrow1 = addLedgerUtxo(emulator, {
@@ -415,15 +441,13 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
 
   const escrow2Info = {
     type: EscrowType.SWAP,
-    //coins: [AssetId, AssetId],
-    gives: 20_000_000n,
-    takes: null,
-    side: Coin.COINA,
+    gives: [["",""], 10_000_000n],
+    takes: [[dummyPolicyId, fromText("DUMMY")], 0n],
   };
 
   const escrow2 = addLedgerUtxo(emulator, {
     assets: {
-      lovelace: 4_500_000n + 20_000_000n,
+      lovelace: 4_500_000n + 10_000_000n,
     },
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
@@ -621,10 +645,8 @@ async function doMintPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, fa
 async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator, userPkh: any, escrowsCount: int): any {
   const escrowInfo = {
     type: EscrowType.SWAP,
-    //coins: [AssetId, AssetId],
-    gives: 10_000_000n,
-    takes: null,
-    side: Coin.COINA,
+    gives: [["",""], 10_000_000n],
+    takes: [[dummyPolicyId, fromText("DUMMY")], 0n],
   };
   const thisDatum = orderDatum(userPkh.to_hex(), dummyPolicyId, escrowInfo);
   async function listEscrow(): Promise<TxHash> {
@@ -694,12 +716,16 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
 
   for (let e of listedEscrows) {
     if (e.escrow.type == EscrowType.SWAP) {
-      [takes, poolABL] = doSwap(e.escrow.side, e.escrow.gives, swapFees, poolABL);
+      assert(e.escrow.gives[0][0] == "");
+      assert(e.escrow.gives[0][1] == "");
+      assert(e.escrow.gives[1] != 0n);
+      assert(e.escrow.takes[1] == 0n);
+      [takes, poolABL] = doSwap(Coin.CoinA, e.escrow.gives[1], swapFees, poolABL);
       escrowTakes.push(takes);
     } else if (e.escrow.type == EscrowType.SOMETHING) {
-      throw "escrow type was 'something'";
+      throw new Error("escrow type was 'something'");
     } else {
-      throw "unexpected escrow type" + JSON.stringify(e);
+      throw new Error("unexpected escrow type" + JSON.stringify(e));
     }
   }
   log("escrowTakes:", escrowTakes);
