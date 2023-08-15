@@ -16,7 +16,7 @@ export type SwapFees = {
   denominator: bigint;
 }
 
-export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL): [bigint, ABL] {
+export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL): [ABL, ABL] {
   const diff = swapFees.denominator - swapFees.numerator;
   if (coin == Coin.CoinA) {
     const takes = (pool.b * gives * diff) / (pool.a * swapFees.denominator + gives * diff);
@@ -26,7 +26,7 @@ export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL)
         b: pool.b - takes,
         liq: pool.liq,
       };
-      return [takes, newPool];
+      return [{ a: 0n, b: takes, liq: 0n, }, newPool];
     } else {
       throw "Can't do swap";
     }
@@ -38,13 +38,37 @@ export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL)
         b: pool.b + gives,
         liq: pool.liq,
       };
-      return [takes, newPool];
+      return [{ a: takes, b: 0n, liq: 0n, }, newPool];
     } else {
       throw "Can't do swap";
     }
   } else {
     throw "Invalid coin";
   }
+}
+
+export function doDeposit(giveA: bigint, giveB: bigint, pool: ABL): [ABL, ABL] {
+  let bInUnitsOfA = giveB * pool.a / pool.b;
+  let finalA = 0n;
+  let finalB = 0n;
+  if (bInUnitsOfA > giveA) {
+    let change = pool.b * (bInUnitsOfA - giveA) / pool.a;
+    finalA = giveA;
+    finalB = giveB - change;
+  } else {
+    let change = giveA - bInUnitsOfA;
+    finalA = giveA - change;
+    finalB = giveB;
+  }
+  let issuedLPTokens = finalA * pool.liq / pool.a;
+
+  const newPool = {
+    a: pool.a + finalA,
+    b: pool.b + finalB,
+    liq: pool.liq + issuedLPTokens,
+  };
+
+  return [{ a: 0n, b: 0n, liq: issuedLPTokens }, newPool];
 }
 
 Deno.test("doSwap", () => {

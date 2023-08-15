@@ -24,7 +24,7 @@ import {
 } from "../../lucid/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
-import { ABL, Coin, SwapFees, doSwap } from "./cpp.ts";
+import { ABL, Coin, SwapFees, doSwap, doDeposit } from "./cpp.ts";
 import { Datum } from "../../lucid/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 import * as random from "https://deno.land/x/random@v1.1.2/Random.js";
 
@@ -275,9 +275,32 @@ function swapDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): 
   return out;
 }
 
+function depositDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
+  let out = "d87a9fd8799f" +
+    "581c" + userPkhHex + "ff" +
+    "1a002625a0" + // Scooper fee
+    "d8799fd8799fd8799f" +
+    "581c" + userPkhHex + "ff" + // destination pkh
+    "d87a80ff" + // No staking credential
+    "d87980ff" + // No datum
+    "d87a9f9f" +
+    cborFormatAssetId(escrow.coinA[0]) +
+    cborFormatInteger(escrow.coinA[1]) + "ff" +
+    "9f" +
+    cborFormatAssetId(escrow.coinB[0]) +
+    cborFormatInteger(escrow.coinB[1]) + "ff" +
+    "ff" +
+    "d87980" + // extra void for extension data
+    "ff";
+  console.log(out);
+  return out;
+}
+
 function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
   if (escrow.type == EscrowType.SWAP) {
     return swapDatum(userPkhHex, dummyPolicyHex, escrow);
+  } else if (escrow.type == EscrowType.DEPOSIT) {
+    return depositDatum(userPkhHex, dummyPolicyHex, escrow);
   } else {
     throw "orderDatum: unimplemented escrow type";
   }
@@ -365,6 +388,7 @@ const dummyPolicyId = await getDummyPolicyId();
 
 enum EscrowType {
   SWAP,
+  DEPOSIT,
   SOMETHING,
 }
 
@@ -372,6 +396,12 @@ interface Swap {
   type: EscrowType.SWAP;
   gives: [AssetId, bigint];
   takes: [AssetId, bigint];
+}
+
+interface Deposit {
+  type: EscrowType.DEPOSIT;
+  coinA: [AssetId, bigint];
+  coinB: [AssetId, bigint];
 }
 
 interface Something {
@@ -452,6 +482,23 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
   });
+
+  /*
+  const escrow2Info = {
+    type: EscrowType.DEPOSIT,
+    coinA: [["",""], 10_000_000n],
+    coinB: [[dummyPolicyId, fromText("DUMMY")], 10_000_000n],
+  };
+
+  const escrow2 = addLedgerUtxo(emulator, {
+    assets: {
+      lovelace: 4_500_000n + 10_000_000n,
+      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 10_000_000n,
+    },
+    address: scripts.escrowAddress,
+    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
+  });
+  */
 
   const escrowsCount = 2n;
 
@@ -677,13 +724,12 @@ async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator,
 }
 
 async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, config: any, userAddress: any, escrowsCount: int, listedEscrows: any[], pool: any, factory: any, change: any, poolId: any): any {
-  let escrowTakes: bigint[] = [];
+  let escrowTakes: ABL[] = [];
   let poolABL: ABL = {
     a: 1_000_000_000n,
     b: 1_000_000_000n,
     liq: 1_000_000_000n,
   };
-  let takes: bigint = 0n;
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
   const totalRewards = 2_500_000n * escrowsCount;
 
@@ -715,13 +761,17 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   listedEscrows.sort((a,b) => a.utxo.txHash == b.utxo.txHash ? a.utxo.outputIndex - b.utxo.outputIndex : (a.utxo.txHash < b.utxo.txHash ? -1 : 1));
 
   for (let e of listedEscrows) {
+    let res: ABL = null;
     if (e.escrow.type == EscrowType.SWAP) {
       assert(e.escrow.gives[0][0] == "");
       assert(e.escrow.gives[0][1] == "");
       assert(e.escrow.gives[1] != 0n);
       assert(e.escrow.takes[1] == 0n);
-      [takes, poolABL] = doSwap(Coin.CoinA, e.escrow.gives[1], swapFees, poolABL);
-      escrowTakes.push(takes);
+      [res, poolABL] = doSwap(Coin.CoinA, e.escrow.gives[1], swapFees, poolABL);
+      escrowTakes.push(res);
+    } else if (e.escrow.type == EscrowType.DEPOSIT) {
+      [res, poolABL] = doDeposit(e.escrow.coinA[1], e.escrow.coinB[1], poolABL);
+      escrowTakes.push(res);
     } else if (e.escrow.type == EscrowType.SOMETHING) {
       throw new Error("escrow type was 'something'");
     } else {
@@ -783,8 +833,9 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
     // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
     for(let e of escrowTakes) {
       tx.payToAddress(config.destAddress || userAddress, {
-        "lovelace": rider,
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: e,
+        "lovelace": rider + e.a,
+        [toUnit(dummyPolicyId, fromText("DUMMY"))]: e.b,
+        [toUnit(scripts.poolPolicyId, poolLqNameHex)]: e.liq,
       })
     }
     log(await tx.toString());
