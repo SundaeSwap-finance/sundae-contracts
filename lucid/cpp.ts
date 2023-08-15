@@ -51,16 +51,29 @@ export function doDeposit(giveA: bigint, giveB: bigint, pool: ABL): [ABL, ABL] {
   let bInUnitsOfA = giveB * pool.a / pool.b;
   let finalA = 0n;
   let finalB = 0n;
+  let issuedLPTokens = 0n;
+  let out: ABL = { a: 0n, b: 0n, liq: 0n, };
   if (bInUnitsOfA > giveA) {
     let change = pool.b * (bInUnitsOfA - giveA) / pool.a;
     finalA = giveA;
     finalB = giveB - change;
+    issuedLPTokens = finalA * pool.liq / pool.a;
+    out = {
+      a: 0n,
+      b: change,
+      liq: issuedLPTokens,
+    };
   } else {
     let change = giveA - bInUnitsOfA;
     finalA = giveA - change;
     finalB = giveB;
+    issuedLPTokens = finalA * pool.liq / pool.a;
+    out = {
+      a: change,
+      b: 0n,
+      liq: issuedLPTokens,
+    };
   }
-  let issuedLPTokens = finalA * pool.liq / pool.a;
 
   const newPool = {
     a: pool.a + finalA,
@@ -68,7 +81,7 @@ export function doDeposit(giveA: bigint, giveB: bigint, pool: ABL): [ABL, ABL] {
     liq: pool.liq + issuedLPTokens,
   };
 
-  return [{ a: 0n, b: 0n, liq: issuedLPTokens }, newPool];
+  return [out, newPool];
 }
 
 Deno.test("doSwap", () => {
