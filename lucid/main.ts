@@ -164,7 +164,7 @@ function factorySpendRedeemer() {
   return "d87a81d87980" // Note: wrapped in ctor-2 tag, to trick the compiler into running the spend validator
 };
 
-function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint): string {
+function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint, liq: bigint): string {
   return "d8799f" +
     "581f" + poolIDHex +
     "9f9f" +
@@ -175,7 +175,9 @@ function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint): 
     "581c" + dummyPolicyHex +
     "45" + fromText("DUMMY") +
     "ffff" +
-    "1a3b9aca000500" +
+    cborFormatInteger(liq) +
+    "05" + // fees per 10k
+    "00" + // open time
     Data.to(rewards) +
     "ff";
 }
@@ -187,6 +189,12 @@ function poolMintRedeemer(dummyPolicyHex: string) {
     "ffff" +
     "00" +
     "ff";
+}
+
+function mintLpRedeemer(poolId: string) {
+  return "d8799f" +
+  "581f" + poolId +
+  "ff";
 }
 
 function scoopRedeemer(inputOrder: bigint[]): string {
@@ -276,20 +284,20 @@ function swapDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Swap): st
 }
 
 function depositDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Deposit): string {
-  let out = "d87a9fd8799f" +
+  let out = "d8799fd8799f" +
     "581c" + userPkhHex + "ff" +
     "1a002625a0" + // Scooper fee
     "d8799fd8799fd8799f" +
     "581c" + userPkhHex + "ff" + // destination pkh
     "d87a80ff" + // No staking credential
     "d87980ff" + // No datum
-    "d87a9f9f" +
+    "d87a9f9f9f" +
     cborFormatAssetId(escrow.coinA[0]) +
     cborFormatInteger(escrow.coinA[1]) + "ff" +
     "9f" +
     cborFormatAssetId(escrow.coinB[0]) +
     cborFormatInteger(escrow.coinB[1]) + "ff" +
-    "ff" +
+    "ffff" +
     "d87980" + // extra void for extension data
     "ff";
   console.log(out);
@@ -429,7 +437,7 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
 
   const poolId = zeroPoolId();
   const poolNftNameHex = computePoolNftName(poolId);
-  const newPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2_000_000n);
+  const newPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2_000_000n, 1_000_000_000n);
 
   const change = addLedgerUtxo(emulator, {
     assets: { lovelace: 1_000_000_000_000_000_000n },
@@ -471,6 +479,7 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
   });
 
+  /*
   const escrow2Info: Escrow = {
     type: EscrowType.SWAP,
     gives: [["",""], 10_000_000n],
@@ -484,8 +493,8 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
   });
+  */
 
-  /*
   const escrow2Info = {
     type: EscrowType.DEPOSIT,
     coinA: [["",""], 10_000_000n],
@@ -500,7 +509,6 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
   });
-  */
 
   const escrowsCount = 2n;
 
@@ -641,7 +649,7 @@ async function doMintPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, fa
   log("poolNftName (hex): ", poolNftNameHex);
   log("poolLqName (hex): ", poolLqNameHex);
 
-  const newPoolDatum = poolDatum(toHex(newPoolId), dummyPolicyId, 2000000n);
+  const newPoolDatum = poolDatum(toHex(newPoolId), dummyPolicyId, 2000000n, 1_000_000_000n);
   log("newPoolDatum: ", newPoolDatum);
   log("poolMintRedeemer: ", poolMintRedeemer(dummyPolicyId));
   log("ledger before mint:", emulator.ledger);
@@ -735,10 +743,6 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
   const totalRewards = 2_500_000n * escrowsCount;
 
-  const scoopedPoolDatum = poolDatum(toHex(poolId), dummyPolicyId, 2000000n + totalRewards);
-
-  log("scoopedPoolDatum: " + scoopedPoolDatum);
-
   let toSpend: UTxO[] = [];
   toSpend.push(change);
   toSpend.push(pool);
@@ -746,7 +750,7 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   console.log(pool);
   for (let e of listedEscrows) {
     toSpend.push(e.utxo);
-  console.log("e.utxo");
+    console.log("e.utxo");
     console.log(e.utxo);
   }
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
@@ -782,7 +786,18 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   }
   log("escrowTakes:", escrowTakes);
 
-  const scoopPoolRedeemer = scoopRedeemer(indexingSet)
+  const scoopedPoolDatum = poolDatum(
+    toHex(poolId),
+    dummyPolicyId,
+    2000000n + totalRewards,
+    poolABL.liq
+  );
+
+  log("scoopedPoolDatum: " + scoopedPoolDatum);
+
+  const mintedLiq = poolABL.liq - 1_000_000_000n;
+
+  const scoopPoolRedeemer = scoopRedeemer(indexingSet);
 
   log("scoopPoolRedeemer: " + scoopPoolRedeemer);
 
@@ -831,6 +846,15 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
         [toUnit(dummyPolicyId, fromText("DUMMY"))]: poolABL.b,
         [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
       });
+
+    tx.attachMintingPolicy(scripts.poolMint);
+
+    const mintRedeemer = mintLpRedeemer(toHex(poolId));
+    if (mintedLiq != 0) {
+      tx.mintAssets({
+        [toUnit(scripts.poolPolicyId, poolLqNameHex)]: mintedLiq,
+      }, mintRedeemer);
+    }
 
     // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
     for (let e of escrowTakes) {
