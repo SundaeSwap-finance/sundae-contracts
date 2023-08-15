@@ -833,12 +833,15 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
       });
 
     // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
-    for(let e of escrowTakes) {
-      tx.payToAddress(config.destAddress || userAddress, {
-        "lovelace": rider + e.a,
-        [toUnit(dummyPolicyId, fromText("DUMMY"))]: e.b,
-        [toUnit(scripts.poolPolicyId, poolLqNameHex)]: e.liq,
-      })
+    for (let e of escrowTakes) {
+      let valueOut = { "lovelace": rider + e.a };
+      if (e.b > 0n) {
+        valueOut[toUnit(dummyPolicyId, fromText("DUMMY"))] = e.b;
+      }
+      if (e.liq > 0n) {
+        valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.liq;
+      }
+      tx.payToAddress(config.destAddress || userAddress, valueOut);
     }
     log(await tx.toString());
     try {
