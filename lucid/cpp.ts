@@ -77,10 +77,10 @@ Deno.test("doSwap", () => {
     b: 1_000_000_000n,
     liq: 1_000_000_000n,
   };
-  let takes: bigint = 0n;
+  let takes: ABL | null = null;
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
   [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
-  assertEquals(takes, 9_896_088n);
+  assertEquals(takes.b, 9_896_088n);
   [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
-  assertEquals(takes, 9_702_095n);
+  assertEquals(takes.b, 9_702_095n);
 });
