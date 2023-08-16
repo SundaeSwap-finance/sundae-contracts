@@ -24,7 +24,7 @@ import {
 } from "../../lucid/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
-import { ABL, Coin, SwapFees, doSwap, doDeposit } from "./cpp.ts";
+import { ABL, Coin, SwapFees, doSwap, doDeposit, doWithdrawal } from "./cpp.ts";
 import { Datum } from "../../lucid/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 import * as random from "https://deno.land/x/random@v1.1.2/Random.js";
 
@@ -304,11 +304,31 @@ function depositDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Deposi
   return out;
 }
 
+function withdrawalDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Withdrawal): string {
+  let out = "d8799fd8799f" +
+    "581c" + userPkhHex + "ff" +
+    "1a002625a0" + // Scooper fee
+    "d8799fd8799fd8799f" +
+    "581c" + userPkhHex + "ff" + // destination pkh
+    "d87a80ff" + // No staking credential
+    "d87980ff" + // No datum
+    "d87b9f9f" +
+    cborFormatAssetId(escrow.gives[0]) +
+    cborFormatInteger(escrow.gives[1]) + "ff" +
+    "ff" +
+    "d87980" + // extra void for extension data
+    "ff";
+  console.log(out);
+  return out;
+}
+
 function orderDatum(userPkhHex: string, dummyPolicyHex: string, escrow: Escrow): string {
   if (escrow.type == EscrowType.SWAP) {
     return swapDatum(userPkhHex, dummyPolicyHex, escrow);
   } else if (escrow.type == EscrowType.DEPOSIT) {
     return depositDatum(userPkhHex, dummyPolicyHex, escrow);
+  } else if (escrow.type == EscrowType.WITHDRAWAL) {
+    return withdrawalDatum(userPkhHex, dummyPolicyHex, escrow);
   } else {
     throw "orderDatum: unimplemented escrow type";
   }
@@ -397,6 +417,7 @@ const [dummyMintingPolicy, dummyPolicyId]: [Script, string] = await getDummyPoli
 enum EscrowType {
   SWAP,
   DEPOSIT,
+  WITHDRAWAL,
   SOMETHING,
 }
 
@@ -414,11 +435,16 @@ interface Deposit {
   coinB: [AssetId, bigint];
 }
 
+interface Withdrawal {
+  type: EscrowType.WITHDRAWAL;
+  gives: [AssetId, bigint];
+}
+
 interface Something {
   type: EscrowType.SOMETHING;
 }
 
-type Escrow = Swap | Deposit | Something
+type Escrow = Swap | Deposit | Withdrawal | Something
 
 async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: any) {
   const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
@@ -493,7 +519,6 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
   });
-  */
 
   const escrow2Info = {
     type: EscrowType.DEPOSIT,
@@ -505,6 +530,23 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     assets: {
       lovelace: 4_500_000n + 10_000_000n,
       [toUnit(dummyPolicyId, fromText("DUMMY"))]: 10_000_000n,
+    },
+    address: scripts.escrowAddress,
+    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
+  });
+  */
+
+  const poolLqNameHex = computePoolLqName(poolId);
+
+  const escrow2Info = {
+    type: EscrowType.WITHDRAWAL,
+    gives: [[scripts.poolPolicyId, poolLqNameHex], 10_000_000n],
+  };
+
+  const escrow2 = addLedgerUtxo(emulator, {
+    assets: {
+      lovelace: 4_500_000n,
+      [toUnit(scripts.poolPolicyId, poolLqNameHex)]: 10_000_000n,
     },
     address: scripts.escrowAddress,
     datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
@@ -777,6 +819,9 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
       escrowTakes.push(res);
     } else if (e.escrow.type == EscrowType.DEPOSIT) {
       [res, poolABL] = doDeposit(e.escrow.coinA[1], e.escrow.coinB[1], poolABL);
+      escrowTakes.push(res);
+    } else if (e.escrow.type == EscrowType.WITHDRAWAL) {
+      [res, poolABL] = doWithdrawal(e.escrow.gives[1], poolABL);
       escrowTakes.push(res);
     } else if (e.escrow.type == EscrowType.SOMETHING) {
       throw new Error("escrow type was 'something'");

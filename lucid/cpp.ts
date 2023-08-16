@@ -84,6 +84,25 @@ export function doDeposit(giveA: bigint, giveB: bigint, pool: ABL): [ABL, ABL] {
   return [out, newPool];
 }
 
+export function doWithdrawal(giveLP: bigint, pool: ABL): [ABL, ABL] {
+  let takesA = giveLP * pool.a / pool.liq;
+  let takesB = giveLP * pool.b / pool.liq;
+
+  const out = {
+    a: takesA,
+    b: takesB,
+    liq: 0n,
+  };
+
+  const newPool = {
+    a: pool.a - takesA,
+    b: pool.b - takesB,
+    liq: pool.liq - giveLP,
+  };
+
+  return [out, newPool];
+}
+
 Deno.test("doSwap", () => {
   let pool: ABL = {
     a: 1_000_000_000n,
