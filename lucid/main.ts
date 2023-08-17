@@ -1019,12 +1019,38 @@ async function main() {
     scripts = getScriptsPlutusTx(dummy, scriptsJson);
   }
   await expectSuccess(async () => { await validScoop(flags, scripts, dummy); });
-  //await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
+  await expectSuccess(async () => { await swapDeposit(flags, scripts, dummy); });
+  await expectFailure(async () => { await badDestination(flags, scripts, dummy); });
   //await bench_endToEndScoop(flags, scripts, dummy);
 }
 
 async function validScoop(flags: Args, scripts: Scripts, dummy: Lucid) {
   await testScoop(flags, scripts, dummy, {});
+}
+
+async function swapDeposit(flags: Args, scripts: Scripts, dummy: Lucid) {
+  const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
+  const userPublicKey = toPublicKey(userPrivateKey);
+  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+  const destPrivateKey = generatePrivateKey();
+  const editEscrowsIn = function(escrows) {
+    let escrowInfo = {
+      type: EscrowType.DEPOSIT,
+      coinA: [["",""], 10_000_000n],
+      coinB: [[dummyPolicyId, fromText("DUMMY")], 10_000_000n],
+    };
+    escrows[1].escrow = escrowInfo;
+    escrows[1].out = {
+      assets: {
+        lovelace: 4_500_000n + 10_000_000n,
+        [toUnit(dummyPolicyId, fromText("DUMMY"))]: 10_000_000n,
+      },
+      address: scripts.escrowAddress,
+      datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrowInfo),
+    };
+    return escrows;
+  };
+  await testScoop(flags, scripts, dummy, { editEscrowsIn });
 }
 
 async function badDestination(flags: Args, scripts: Scripts, dummy: Lucid) {
