@@ -491,68 +491,38 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     datum: settingsDatum,
   });
 
-  const escrow1Info: Escrow = {
+  const editEscrowsIn = config.editEscrowsIn || function(x) { return x };
+  const escrow1Info = {
     type: EscrowType.SWAP,
     gives: [["",""], 10_000_000n],
     takes: [[dummyPolicyId, fromText("DUMMY")], 0n],
   };
-
-  const escrow1 = addLedgerUtxo(emulator, {
-    assets: {
-      lovelace: 4_500_000n + 10_000_000n,
+  const escrowsIn = editEscrowsIn([
+    {
+      escrow: escrow1Info,
+      out: {
+        assets: {
+          lovelace: 4_500_000n + 10_000_000n,
+        },
+        address: scripts.escrowAddress,
+        datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
+      },
     },
-    address: scripts.escrowAddress,
-    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
-  });
-
-  /*
-  const escrow2Info: Escrow = {
-    type: EscrowType.SWAP,
-    gives: [["",""], 10_000_000n],
-    takes: [[dummyPolicyId, fromText("DUMMY")], 0n],
-  };
-
-  const escrow2 = addLedgerUtxo(emulator, {
-    assets: {
-      lovelace: 4_500_000n + 10_000_000n,
+    {
+      escrow: escrow1Info,
+      out: {
+        assets: {
+          lovelace: 4_500_000n + 10_000_000n,
+        },
+        address: scripts.escrowAddress,
+        datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow1Info),
+      },
     },
-    address: scripts.escrowAddress,
-    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
-  });
+  ]);
 
-  const escrow2Info = {
-    type: EscrowType.DEPOSIT,
-    coinA: [["",""], 10_000_000n],
-    coinB: [[dummyPolicyId, fromText("DUMMY")], 10_000_000n],
-  };
-
-  const escrow2 = addLedgerUtxo(emulator, {
-    assets: {
-      lovelace: 4_500_000n + 10_000_000n,
-      [toUnit(dummyPolicyId, fromText("DUMMY"))]: 10_000_000n,
-    },
-    address: scripts.escrowAddress,
-    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
-  });
-  */
-
-  const poolLqNameHex = computePoolLqName(poolId);
-
-  const escrow2Info = {
-    type: EscrowType.WITHDRAWAL,
-    gives: [[scripts.poolPolicyId, poolLqNameHex], 10_000_000n],
-  };
-
-  const escrow2 = addLedgerUtxo(emulator, {
-    assets: {
-      lovelace: 4_500_000n,
-      [toUnit(scripts.poolPolicyId, poolLqNameHex)]: 10_000_000n,
-    },
-    address: scripts.escrowAddress,
-    datum: orderDatum(userPkh.to_hex(), dummyPolicyId, escrow2Info),
-  });
-
-  const escrowsCount = 2n;
+  for (let e of escrowsIn) {
+    e.utxo = addLedgerUtxo(emulator, e.out);
+  }
 
   await doScoopPool(
     lucid,
@@ -560,17 +530,7 @@ async function testScoop(flags: Args, scripts: Scripts, dummy: Lucid, config: an
     emulator,
     config,
     userAddress,
-    escrowsCount,
-    [
-      {
-        utxo: escrow1,
-        escrow: escrow1Info
-      },
-      {
-        utxo: escrow2,
-        escrow: escrow2Info
-      }
-    ],
+    escrowsIn,
     pool,
     factory,
     change,
@@ -775,7 +735,7 @@ async function doListEscrows(lucid: Lucid, scripts: Scripts, emulator: Emulator,
   };
 }
 
-async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, config: any, userAddress: any, escrowsCount: bigint, listedEscrows: any[], pool: any, factory: any, change: any, poolId: any): Promise<any> {
+async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, config: any, userAddress: any, listedEscrows: any[], pool: any, factory: any, change: any, poolId: any): Promise<any> {
   let escrowTakes: ABL[] = [];
   let poolABL: ABL = {
     a: 1_000_000_000n,
@@ -783,6 +743,7 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
     liq: 1_000_000_000n,
   };
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
+  const escrowsCount = BigInt(listedEscrows.length);
   const totalRewards = 2_500_000n * escrowsCount;
 
   let toSpend: UTxO[] = [];
