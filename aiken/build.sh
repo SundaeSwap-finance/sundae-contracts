@@ -4,9 +4,9 @@ aiken() {
 
 set -e
 
-aiken build --keep-traces
+aiken build
 
-PROTOCOL_BOOT_UTXO="d8799fd8799f58200000000000000000000000000000000000000000000000000000000000000000ff00ff"
+PROTOCOL_BOOT_UTXO="d8799fd8799f5820756d2f345e3415c294025ca3e0debc7f2ab312a900e249eb84880382f5f2220dff01ff"
 aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO > tmp
 mv tmp plutus.json
 
