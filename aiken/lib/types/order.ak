@@ -2,11 +2,12 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/transaction.{Datum, NoDatum}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use shared.{SingletonValue}
+use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
 
 // A SundaeSwap order consists of
 pub type OrderDatum {
+  pool_ident: Option<Ident>,
   // An owner that's allowed to modify it
   owner: MultisigScript,
   // A fee that the scooper is allowed to take for themselves
@@ -41,6 +42,7 @@ test example_swap() {
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
+        pool_ident: None,
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
@@ -75,6 +77,7 @@ test example_deposit() {
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
+        pool_ident: None,
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),

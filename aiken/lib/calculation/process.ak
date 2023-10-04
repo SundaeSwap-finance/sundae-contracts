@@ -11,7 +11,7 @@ use calculation/shared.{PoolState,
   do_2_exp, unsafe_fast_index_skip} as calc_shared
 use calculation/swap
 use calculation/withdrawal
-use shared.{datum_of}
+use shared.{Ident, datum_of}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 use types/pool.{PoolDatum, lp_token_name}
@@ -56,7 +56,15 @@ pub fn pool_input_to_state(
   }
 }
 
+fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool {
+  when order_pool_ident is {
+    Some(i) -> i == pool_ident
+    None -> True
+  }
+}
+
 pub fn process_orders(
+  this_pool_ident: Ident,
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   input_order: List<Int>,
@@ -77,8 +85,10 @@ pub fn process_orders(
 
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
-      let OrderDatum { destination, scooper_fee, order: order_details, .. } =
+      let OrderDatum { pool_ident, destination, scooper_fee, order: order_details, .. } =
         datum
+
+      expect True = validate_pool_id(pool_ident, this_pool_ident)
 
       when order_details is {
         order.Swap(offer, min_received) -> {
@@ -92,25 +102,25 @@ pub fn process_orders(
               min_received,
               output,
             )
-          process_orders(datums, next, rest, inputs, rest_outputs, y)
+          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
         }
         order.Deposit(..) -> {
           let next = deposit.do_deposit(initial, order.value, datum, output)
-          process_orders(datums, next, rest, inputs, rest_outputs, y)
+          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
         }
         order.Withdrawal(..) -> {
           let next =
             withdrawal.do_withdrawal(initial, order.value, datum, output)
-          process_orders(datums, next, rest, inputs, rest_outputs, y)
+          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
         }
         // order.Zap(..) -> do_zap(initial, input, datum)
         order.Donation(..) -> {
           let (next, used_output) =
             donation.do_donation(initial, order.value, datum, output)
           if used_output {
-            process_orders(datums, next, rest, inputs, rest_outputs, y)
+            process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
           } else {
-            process_orders(datums, next, rest, inputs, outputs, y)
+            process_orders(this_pool_ident, datums, next, rest, inputs, outputs, y)
           }
         }
       }
@@ -137,6 +147,7 @@ test process_orders_test() {
     rewards: 2_000_000,
   }
   let order_datum = OrderDatum {
+    pool_ident: None,
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
@@ -187,7 +198,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let final_pool_state = process_orders(datums, pool_state, input_order, inputs, outputs, 0)
+  let final_pool_state = process_orders(#"", datums, pool_state, input_order, inputs, outputs, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
