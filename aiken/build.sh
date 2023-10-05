@@ -6,7 +6,7 @@ set -e
 
 aiken build
 
-PROTOCOL_BOOT_UTXO="d8799fd8799f5820756d2f345e3415c294025ca3e0debc7f2ab312a900e249eb84880382f5f2220dff01ff"
+PROTOCOL_BOOT_UTXO="d8799fd8799f5820cfdf30cedbca1549ddde1feeeed3296d4cda8cf7ef4ba12f2bb794caef7213e7ff00ff"
 aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO > tmp
 mv tmp plutus.json
 
