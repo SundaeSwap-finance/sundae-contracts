@@ -26,7 +26,7 @@ import Data.Text.Encoding qualified as Encoding
 
 import qualified System.Random as Random
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V2.Contexts
 
 {-# inlinable scriptHashAddress #-}
@@ -135,7 +135,7 @@ rawDatumOf :: TxInfo -> TxOut -> Maybe Datum
 rawDatumOf txInfo txOut =
   case txOutDatum txOut of
     OutputDatumHash d -> Map.lookup d $ txInfoData txInfo
-    OutputDatum _ -> Nothing
+    OutputDatum d -> Just d
     NoOutputDatum -> Nothing
 
 txOutDatumHash :: TxOut -> Maybe DatumHash
@@ -446,7 +446,7 @@ apCode
   => PlutusTx.CompiledCode (a -> b)
   -> a
   -> Maybe (PlutusTx.CompiledCode b)
-apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCodeDef arg
+apCode p arg = p `PlutusTx.applyCode` PlutusTx.liftCode (Core.Version 1 0 0) arg
 
 {-# inlinable onlyHas #-}
 onlyHas :: Value -> CurrencySymbol -> TokenName -> (Integer -> Bool) -> Bool

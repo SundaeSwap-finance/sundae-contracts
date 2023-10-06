@@ -4,7 +4,7 @@ import Prelude qualified
 import PlutusTx.Prelude
 import qualified PlutusTx
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Mints
@@ -22,13 +22,14 @@ factoryBootMintingScript fbs =
       Nothing -> Prelude.error "Couldn't compile factory boot minting script"
 
 -- | Pool minting script
-poolMintingScript :: FactoryBootCurrencySymbol -> OldPoolCurrencySymbol -> SerialisedScript
-poolMintingScript fbcs opcs =
+poolMintingScript
+  :: FactoryBootCurrencySymbol
+  -> SerialisedScript
+poolMintingScript fbcs =
   let
     x =
-      pure $$(PlutusTx.compile [|| poolMintingContract ||])
+      pure $$(PlutusTx.compile [|| \fbcs' -> poolMintingContract fbcs' ||])
         >>= flip apCode fbcs
-        >>= flip apCode opcs
   in
     case x of
       Just x' -> serialiseCompiledCode x'

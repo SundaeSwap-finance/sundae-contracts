@@ -2,7 +2,7 @@ module Sundae.Contracts.Factory where
 
 import PlutusTx.Prelude
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V1.Value
 
 import Sundae.Contracts.Common
@@ -40,21 +40,23 @@ import Sundae.Utilities
 {-# inlinable factoryContract #-}
 factoryContract
   :: FactoryBootCurrencySymbol
-  -> FactoryDatum
-  -> FactoryRedeemer
-  -> ScriptContext
+  -> BuiltinData -- FactoryDatum
+  -> BuiltinData -- FactoryRedeemer
+  -> BuiltinData -- ScriptContext
   -> Bool
 factoryContract
   (FactoryBootCurrencySymbol fbcs)
-  datum
-  FactoryRedeemer
-  ctx =
+  (unsafeFromBuiltinData -> (datum :: FactoryDatum))
+  _
+  (unsafeFromBuiltinData -> ctx) =
   debug "factory token not spent back"
     (hasFactoryLimited fbcs (txOutValue ownOutput)) &&
   debug "factory output not equal to input factory"
     (ownInputValue == txOutValue ownOutput) &&
   debug "datum altered"
-    (rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
+    (if poolScriptHash datum == ScriptHash mempty && poolCurrencySymbol datum == CurrencySymbol mempty
+      then True -- OK to update things if the pool info hasn't been set yet
+      else rawDatumOf txInfo ownOutput == fromBuiltinData (toBuiltinData datum)) &&
   debug "minting tokens"
     (txInfoMint == mempty)
   where

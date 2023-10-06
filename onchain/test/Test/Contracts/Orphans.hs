@@ -4,7 +4,7 @@ import Control.Lens
 import Data.Coerce
 import Data.Maybe
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V1.Value
 
 import PlutusTx.AssocMap (Map)

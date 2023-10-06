@@ -3,13 +3,14 @@
 -- | Wrappers for compiled scripts
 module Sundae.Compiled(module X, AllScripts(..), scriptsExample, makeAllScripts, testEvalEscrowScr, hashScript) where
 
-import PlutusLedgerApi.V3 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
+import PlutusLedgerApi.V2 (SerialisedScript, TxOutRef(..), toBuiltin, OutputDatum(..))
 import PlutusLedgerApi.Common (mkDynEvaluationContext, evaluateScriptCounting, PlutusLedgerLanguage(..))
 import PlutusCore.Evaluation.Machine.ExBudgetingDefaults
 import PlutusLedgerApi.Common (ProtocolVersion(..), VerboseMode(..))
 import Data.Default (def)
 import Data.Either (fromRight)
-import PlutusLedgerApi.V3 qualified as Plutus
+import Data.Proxy (Proxy(Proxy))
+import PlutusLedgerApi.V2 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), CurrencySymbol(..))
 import PlutusLedgerApi.V1.Value qualified as Plutus
 import Data.Text
@@ -17,16 +18,19 @@ import Prelude
 import GHC.Generics
 import Data.Aeson
 import Data.Text.Encoding qualified as Text
-import Data.ByteString.Hash qualified as Hash
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Short qualified as SBS
 import Data.ByteString.Base16 qualified as Base16
 import Data.Coerce (coerce)
 
+import Cardano.Crypto.Hash.Class (HashAlgorithm(digest))
+import Cardano.Crypto.Hash.Blake2b (Blake2b_224)
+
+
 import Codec.Serialise (deserialise)
 
-import Sundae.Contracts.Common (EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
+import Sundae.Contracts.Common (SteakScriptHash(..), EscrowRedeemer(..), EscrowAction(..), EscrowDatum(..), EscrowAddress(..), EscrowDestination(..), FactoryBootSettings(..), ProtocolBootUTXO(..), ScooperFeeSettings(..), FactoryBootSettings, UpgradeSettings(..), FactoryBootCurrencySymbol(..), OldFactoryBootCurrencySymbol(..), TreasuryBootSettings(..), OldPoolCurrencySymbol(..), factoryToken, PoolCurrencySymbol(..), PoolScriptHash(..), ScooperFeeHolderScriptHash(..), EscrowScriptHash(..), TreasuryScriptHash(..))
 
 import Sundae.Utilities (Coin(..))
 
@@ -69,6 +73,8 @@ data AllScripts = AllScripts
   , escrowScr :: SerialisedScript
   , escrowSH :: EscrowScriptHash
   , factoryAssetClass :: AssetClass
+  , steakScr :: SerialisedScript
+  , steakSH :: SteakScriptHash
   } deriving (Generic, Show, ToJSON)
 
 instance ToJSON AssetClass where
@@ -84,6 +90,7 @@ instance ToJSON PoolScriptHash where
 instance ToJSON PoolCurrencySymbol where
 instance ToJSON TreasuryScriptHash where
 instance ToJSON FactoryBootCurrencySymbol where
+instance ToJSON SteakScriptHash where
 
 deriving instance Generic EscrowScriptHash
 deriving instance Generic ScooperFeeHolderScriptHash
@@ -91,6 +98,7 @@ deriving instance Generic PoolScriptHash
 deriving instance Generic PoolCurrencySymbol
 deriving instance Generic TreasuryScriptHash
 deriving instance Generic FactoryBootCurrencySymbol
+deriving instance Generic SteakScriptHash
 
 instance ToJSON SerialisedScript where
   toJSON s = String $ Text.decodeUtf8 $ Base16.encode (SBS.fromShort s)
@@ -176,12 +184,14 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 
     factoryScr = factoryScript factoryBootCS
 
-    poolMintScr = poolMintingScript factoryBootCS oldPoolCurrencySymbol
+    poolMintScr = poolMintingScript factoryBootCS
     poolCS = mcs poolMintScr
-    poolScr = poolScript factoryBootCS poolCS escrowSH
+    poolScr = poolScript factoryBootCS escrowSH
     poolSH = vsh poolScr
+    steakScr = steakScript poolCS
+    steakSH = vsh steakScr
 
-    escrowScr = escrowScript poolCS
+    escrowScr = escrowScript steakSH
     escrowSH = vsh escrowScr
     factoryAssetClass = AssetClass (coerce factoryBootCS, factoryToken)
   in AllScripts {..}
@@ -195,10 +205,10 @@ makeAllScripts bootUTXO treasBootUTXO fbSettings upgradeSettings scooperFeeSetti
 hashScript :: SerialisedScript -> BS.ByteString
 hashScript script =
   let
-    -- Our scripts are plutus V3
-    babbageV3ScriptPrefixTag = "\x03"
+    -- Our scripts are plutus V2
+    babbageV2ScriptPrefixTag = "\x02"
   in
-    Hash.blake2b_256 (babbageV3ScriptPrefixTag <> SBS.fromShort script)
+    digest (Proxy @Blake2b_224) (babbageV2ScriptPrefixTag <> SBS.fromShort script)
 
 testEvalEscrowScr :: IO (Plutus.LogOutput, Either Plutus.EvaluationError Plutus.ExBudget)
 testEvalEscrowScr = do
@@ -309,7 +319,7 @@ testEvalEscrowScr = do
         }
   let out@(logOutput, result) =
         evaluateScriptCounting
-          PlutusV3
+          PlutusV2
           (ProtocolVersion 9 0)
           Verbose
           ec

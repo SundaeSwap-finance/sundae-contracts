@@ -5,12 +5,13 @@ import PlutusTx.Prelude
 import PlutusTx.Sqrt
 import PlutusTx.Numeric
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 import PlutusLedgerApi.V1.Value
 import PlutusLedgerApi.V2.Contexts (findOwnInput)
 
 import qualified PlutusTx.AssocMap as Map
 import PlutusTx.Ratio
+import PlutusTx.Builtins
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
@@ -59,14 +60,15 @@ data OrderedEscrow = OrderedEscrow
 {-# inlinable poolContract #-}
 poolContract
   :: FactoryBootCurrencySymbol
-  -> PoolCurrencySymbol
   -> EscrowScriptHash
   -> PoolDatum
   -> PoolRedeemer
   -> ScriptContext
   -> Bool
-poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
-  datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards) (PoolScoop scooperPkh order) ctx =
+poolContract (FactoryBootCurrencySymbol fbcs) _
+  (datum@(PoolDatum coins@(AB coinA coinB) poolIdent oldCirculatingLP swapFees marketOpenTime rewards))
+  (PoolScoop scooperPkh order)
+  ctx =
   let
     !init = ABL (valueOfAC oldValueSansRider coinA) (valueOfAC oldValueSansRider coinB) oldCirculatingLP
     !(ScoopResult cons newAmtA newAmtB newCirculatingLP) =
@@ -75,41 +77,35 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
   in
     debug "must have escrows"
       (not $ null escrows) &&
-    debug "issued amount or locked rewards in new datum incorrect"
-      (datumOf txInfo poolOutput ==
-        Just (datum
-          { _pool'circulatingLP = newCirculatingLP
-          , _pool'rewards = newRewardsAmt
-          })) &&
+      _pool'circulatingLP newDatum == newCirculatingLP &&
+      newRewardsAmt >= rewards + minimumScooperFee &&
     debug "extra outputs not spent"
       (all' mustSpendTo (mergeListByKey cons)) &&
     debug "issued amount does not match minted amount"
       ( if newCirculatingLP == oldCirculatingLP
         then null (flattenValue' (txInfoMint txInfo))
-        else onlyHas (txInfoMint txInfo) pcs (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
+        else onlyHas (txInfoMint txInfo) poolCS (computeLiquidityTokenName poolIdent) (== (newCirculatingLP - oldCirculatingLP))
       ) &&
     debug "pool output (excluding the rider) must contain exactly: coin a, coin b, an NFT"
-      (hasLimitedNft 3 (toPoolNft pcs poolIdent) poolOutputFunds) &&
+      (hasLimitedNft 3 (toPoolNft poolCS poolIdent) poolOutputFunds) &&
     debug "pool output does not include all expected liquidity"
       (valueOfAC poolOutputFunds coinA == newAmtA &&
         valueOfAC poolOutputFunds coinB == newAmtB) &&
     debug "must be a licensed scooper"
-      (case factoryReferenceDatum of
-        FactoryDatum scoopers _ -> elem scooperPkh scoopers) &&
+      (elem scooperPkh scoopers) &&
     debug "no swaps allowed before marketOpenTime"
       ( if earliest < marketOpenTime
         then all nonSwap escrows
         else True
       ) &&
     debug "staking key must be allowed"
-      (case factoryReferenceDatum of
-        FactoryDatum _ stakerKeySet ->
-          case poolOutput of
-            TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
-            TxOut{txOutAddress=Address _ Nothing} -> True
+      (case poolOutput of
+        TxOut{txOutAddress=Address _ (Just newStakingCred)} -> newStakingCred `elem` stakerKeySet
+        TxOut{txOutAddress=Address _ Nothing} -> True
       )
   where
-  !newRewardsAmt = rewards + minimumScooperFee
+  Just !newDatum = datumOf txInfo poolOutput
+  !newRewardsAmt = _pool'rewards newDatum
   nonSwap (EscrowWithFee fee (_, escrowAction)) =
     case escrowAction of
       EscrowSwap _ _ -> False
@@ -124,12 +120,9 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     case datumOf txInfo (txInInfoResolved factoryReference) of
       Just fac -> fac
       Nothing -> traceError "factory reference must have a factory datum"
-  scooperNFTExists :: CurrencySymbol -> TokenName -> [TxInInfo] -> Bool
-  scooperNFTExists _ _ [] = traceError "scooper token must exists in inputs"
-  scooperNFTExists sym tn ((TxInInfo _ ot) : tl)
-    | valueContains (txOutValue ot) sym tn = True
-    | otherwise = scooperNFTExists sym tn tl
+  !(FactoryDatum _poolSH !poolCS !scoopers !stakerKeySet) = factoryReferenceDatum
   UpperBound (Finite latest) _ = ivTo (txInfoValidRange txInfo)
+
   !ownInput = scriptInput ctx
   !poolOutput = uniqueElement'
     [ o
@@ -155,7 +148,7 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     | otherwise = atLeastOneSpending addr dh val count tl
   !txInfo = scriptContextTxInfo ctx
   liquidityAssetClass =
-    AssetClass (pcs, computeLiquidityTokenName poolIdent)
+    AssetClass (poolCS, computeLiquidityTokenName poolIdent)
   !totalScooperFee = foldl' (\a (EscrowWithFee f _) -> a + f) zero escrows
   !minimumScooperFee = max 0 (totalScooperFee - valueOf (txInfoFee txInfo) adaSymbol adaToken)
   !escrows =
@@ -216,11 +209,6 @@ poolContract (FactoryBootCurrencySymbol fbcs) (PoolCurrencySymbol pcs) _
     EscrowSwap (giveCoin, amt) _ ->
       valueOfAC v giveCoin >= amt && amt >= 1
 
-isFactory :: CurrencySymbol -> TxOut -> Bool
-isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
-  where
-  factoryNft = assetClass fbcs factoryToken
-
 -- Escrow contract
 --  Lock user funds, with an order to execute against a pool
 --  Parameterized by:
@@ -233,14 +221,16 @@ isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
 --    EscrowCancel - cancel the order, returning the funds
 {-# inlinable escrowContract #-}
 escrowContract
-  :: PoolCurrencySymbol
-  -> EscrowDatum
-  -> EscrowRedeemer
-  -> ScriptContext
+  :: SteakScriptHash
+  -> BuiltinData -- EscrowDatum
+  -> BuiltinData -- EscrowRedeemer
+  -> BuiltinData -- ScriptContext
   -> Bool
 escrowContract
-  (PoolCurrencySymbol pcs)
-  escrow_datum redeemer (ScriptContext tx_info _) =
+  (SteakScriptHash steakScriptHash)
+  (unsafeFromBuiltinData -> escrow_datum)
+  (unsafeFromBuiltinData -> redeemer)
+  rawCtx =
     case redeemer of
       EscrowScoop ->
         escrowScoop
@@ -248,19 +238,48 @@ escrowContract
         escrowCancel
   where
   escrowScoop =
-    debug "no pool token output present"
-      (atLeastOne (hasPoolToken . txOutValue) (txInfoOutputs $ tx_info))
-    where
-    hasPoolToken :: Value -> Bool
-    hasPoolToken v = any isPoolNft (flattenValue v)
-    isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
-    isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
+    debug "must invoke steak contract"
+      (case withdrawals of
+        [] -> False
+        ((w, _):_) ->
+          case unsafeFromBuiltinData w of
+            StakingHash (ScriptCredential s) -> s == steakScriptHash
+            _ -> False)
   escrowCancel =
     debug "the canceller did not sign the transaction"
-      (atLeastOne (\x -> atLeastOne (\a -> a == x) (txInfoSignatories tx_info)) pkhs)
+      (atLeastOne (\x -> atLeastOne (\a -> unsafeFromBuiltinData a == x) signatories) pkhs)
     where
     !(EscrowDatum escrow_addr _ _) = escrow_datum
     pkhs = escrowPubKeyHashes escrow_addr
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      _, _, _, _, _, _,
+      unsafeDataAsMap -> withdrawals,
+      _,
+      unsafeDataAsList -> signatories,
+      _, _, _
+    ])), _])) = rawCtx
+
+{-# inlinable steakContract #-}
+steakContract
+  :: PoolCurrencySymbol
+  -> BuiltinData
+  -> BuiltinData
+  -> Bool
+steakContract (PoolCurrencySymbol pcs) _ rawCtx =
+  debug "no pool nft found"
+    (atLeastOne (hasPoolToken . txOutValue . unsafeFromBuiltinData) outs)
+  where
+  hasPoolToken :: Value -> Bool
+  hasPoolToken v = any isPoolNft (flattenValue v)
+  isPoolNft :: (CurrencySymbol, TokenName, Integer) -> Bool
+  isPoolNft (cs, TokenName tk, n) = cs == pcs && takeByteString 1 tk == "p"
+  (unsafeDataAsConstr -> (_, [
+    (unsafeDataAsConstr -> (_, [
+      _, _,
+      unsafeDataAsList -> outs,
+      _, _, _, _, _, _, _, _, _
+    ])), _])) = rawCtx
 
 data ScoopResult = ScoopResult
   { poolCons :: ![(EscrowDestination, ABL Integer)]

@@ -20,19 +20,23 @@ import System.FilePath
 import Sundae.Contracts.Common
 import Sundae.Compiled
 
-import PlutusLedgerApi.V3 qualified as Plutus
+import PlutusLedgerApi.V2 qualified as Plutus
 import PlutusLedgerApi.V1.Value (AssetClass(..), assetClass)
 
 data Format = Raw | Hex | Json
+
+data Strip = Strip | Don'tStrip
 
 data CompilationSettingsSource = StdIn | InFile FilePath
 
 data Script
     = FactoryMint
     | FactoryValidator
+    | FactoryBootCS
     | PoolMint
     | PoolValidator
     | EscrowValidator
+    | SteakValidator
     deriving (Enum, Bounded)
 
 data CompilationTarget = All | Script Script
@@ -46,6 +50,7 @@ data CompileConfig = CompileConfig
     { compileTarget :: CompilationTarget
     , compileSettings :: CompilationSettingsSource
     , compileFormat :: Format
+    , compileStrip :: Strip
     , compileDestination :: Destination
     }
 
@@ -68,12 +73,14 @@ getConfig = O.execParser $ O.info parser $ mconcat
             compilationTarget <- pTarget
             settingsSource <- pSettings
             format <- pFormat
+            strip <- pStrip
             dest <- pDestination
-            pure $ CompileConfig compilationTarget settingsSource format dest
+            pure $ CompileConfig compilationTarget settingsSource format strip dest
 
         pTarget :: O.Parser CompilationTarget
         pTarget
             =     (O.flag' (Script FactoryValidator) (O.long "factory" <> O.help "compile the factory script"))
+            O.<|> (O.flag' (Script FactoryBootCS) (O.long "factory-boot-cs" <> O.help "compile the factory boot currency symbol"))
             O.<|> (O.flag' (Script FactoryMint) (O.long "factory-mint" <> O.help "compile the factory mint script"))
             O.<|> (O.flag' (Script PoolValidator) (O.long "pool" <> O.help "compile the pool script"))
             O.<|> (O.flag' (Script PoolMint) (O.long "pool-mint" <> O.help "compile the pool mint script"))
@@ -91,6 +98,9 @@ getConfig = O.execParser $ O.info parser $ mconcat
         pRaw = O.flag' Raw (O.long "raw" <> O.help "output the script as raw binary")
         pHex = O.flag' Hex (O.long "hex" <> O.help "output the script hex-encoded")
         pJson = O.flag' Json (O.long "json" <> O.help "output the script as a JSON file")
+
+        pStrip = O.flag' Strip (O.long "strip" <> O.help "strip the cbor metadata")
+          O.<|> pure Don'tStrip
 
         pDestination :: O.Parser Destination
         pDestination = OutFile <$> (O.strOption $ mconcat
@@ -113,7 +123,7 @@ makeCurrencySymbol = makeValidatorScriptHash
 main :: IO ()
 main = do
     getConfig >>= \case
-        Compile (CompileConfig target source format destination) -> do
+        Compile (CompileConfig target source format strip destination) -> do
             settings <- readFactoryBootSettings source >>= \case
                 Left e -> fail e -- todo(pi): Error messages etc.
                 Right s -> pure s
@@ -131,12 +141,15 @@ main = do
                 factoryValidatorScript = factoryScript factoryCurrencySymbol
 
                 -- Pool related scripts
-                poolMintScript = poolMintingScript factoryCurrencySymbol oldPoolCurrencySymbol
+                poolMintScript = poolMintingScript factoryCurrencySymbol
                 poolCurrencySymbol = makeCurrencySymbol poolMintScript :: PoolCurrencySymbol
-                poolValidatorScript = poolScript factoryCurrencySymbol poolCurrencySymbol escrowScriptHash
+                poolValidatorScript = poolScript factoryCurrencySymbol escrowScriptHash
+
+                steakValidatorScript = steakScript poolCurrencySymbol
+                steakScriptHash = makeValidatorScriptHash steakValidatorScript
 
                 -- Escrow related scripts
-                escrowValidatorScript = escrowScript poolCurrencySymbol
+                escrowValidatorScript = escrowScript steakScriptHash
                 escrowScriptHash = makeValidatorScriptHash escrowValidatorScript
 
                 encodeMany :: Map.Map String BS8.ByteString -> BS8.ByteString
@@ -153,13 +166,35 @@ main = do
                     [ (name, Aeson.String $ Text.decodeUtf8 $ Hex.encode script)
                     ]
 
+                stripCbor :: BS8.ByteString -> BS8.ByteString
+                stripCbor bytes = do
+                  let lenSize = \case
+                        0x58 -> Just 1
+                        0x59 -> Just 2
+                        0x5a -> Just 4
+                        0x5b -> Just 8
+                  case BS.uncons bytes of
+                    Just (hd, tl) ->
+                      case lenSize hd of
+                        Just n -> BS.drop n tl
+                        Nothing -> error "stripCbor: Unexpected CBOR format"
+                    Nothing -> error "stripCbor: Empty bytestring"
+
+                doStrip :: Strip -> BS8.ByteString -> BS8.ByteString
+                doStrip s bytes =
+                  case s of
+                    Strip -> stripCbor bytes
+                    Don'tStrip -> bytes
+
                 infoForTarget :: Script -> (String, BS8.ByteString)
                 infoForTarget = \case
-                  FactoryMint -> ("factory-mint", Short.fromShort factoryMintScript)
-                  FactoryValidator -> ("factory-validator", Short.fromShort factoryValidatorScript)
-                  PoolMint -> ("pool-mint", Short.fromShort poolMintScript)
-                  PoolValidator -> ("pool-validator", Short.fromShort poolValidatorScript)
-                  EscrowValidator -> ("escrow-validator", Short.fromShort escrowValidatorScript)
+                  FactoryMint -> ("factory-mint", doStrip strip $ Short.fromShort factoryMintScript)
+                  FactoryValidator -> ("factory-validator", doStrip strip $ Short.fromShort factoryValidatorScript)
+                  FactoryBootCS -> ("factory-boot-cs", Plutus.fromBuiltin @Plutus.BuiltinByteString $ coerce factoryCurrencySymbol)
+                  PoolMint -> ("pool-mint", doStrip strip $ Short.fromShort poolMintScript)
+                  PoolValidator -> ("pool-validator", doStrip strip $ Short.fromShort poolValidatorScript)
+                  EscrowValidator -> ("escrow-validator", doStrip strip $ Short.fromShort escrowValidatorScript)
+                  SteakValidator -> ("steak-validator", doStrip strip $ Short.fromShort steakValidatorScript)
 
                 targets :: CompilationTarget -> [(String, BS8.ByteString)]
                 targets = \case

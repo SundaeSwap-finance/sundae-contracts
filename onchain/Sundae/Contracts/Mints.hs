@@ -3,12 +3,12 @@ module Sundae.Contracts.Mints where
 import PlutusTx.Prelude
 import PlutusTx.Builtins
 
-import PlutusLedgerApi.V3
-
 import qualified PlutusTx.AssocMap as Map
 
 import Sundae.Contracts.Common
 import Sundae.Utilities
+
+import PlutusLedgerApi.V2
 
 ownCurrencySymbol :: ScriptContext -> CurrencySymbol
 ownCurrencySymbol (ScriptContext _ purpose) =
@@ -25,8 +25,8 @@ ownCurrencySymbol (ScriptContext _ purpose) =
 --    - Initializing the new "post-upgrade" factory token
 --    - Minting scooper license tokens
 {-# inlinable factoryBootMintingContract #-}
-factoryBootMintingContract :: FactoryBootSettings -> FactoryBootMintRedeemer -> ScriptContext -> Bool
-factoryBootMintingContract fbs redeemer ctx = case redeemer of
+factoryBootMintingContract :: FactoryBootSettings -> BuiltinData -> BuiltinData -> Bool
+factoryBootMintingContract fbs (unsafeFromBuiltinData -> redeemer) (unsafeFromBuiltinData -> ctx) = case redeemer of
   MakeFactory ->
     debug "not minting a factory token"
       (Map.lookup ocs (getValue txInfoMint) == Just (Map.singleton factoryToken 1)) &&
@@ -66,27 +66,19 @@ factoryBootMintingContract fbs redeemer ctx = case redeemer of
 {-# inlinable poolMintingContract #-}
 poolMintingContract
   :: FactoryBootCurrencySymbol
-  -> OldPoolCurrencySymbol
-  -> PoolCurrencySymbol
-  -> PoolScriptHash
-  -> PoolMintRedeemer
-  -> ScriptContext
+  -> BuiltinData -- PoolMintRedeemer
+  -> BuiltinData -- ScriptContext
   -> ()
 poolMintingContract
   (FactoryBootCurrencySymbol fbcs)
-  (OldPoolCurrencySymbol oldPcs)
-  (PoolCurrencySymbol pcs)
-  (PoolScriptHash poolScriptHash)
-  redeemer
-  (ScriptContext txInfo purpose) = check $
+  (unsafeFromBuiltinData -> redeemer)
+  rawCtx = check $
     case redeemer of
       MintLP poolIdent ->
         let
           poolTokenName = computePoolTokenName poolIdent
           allowsToSpend !v =
             if valueContains v ocs poolTokenName then
-              True
-            else if valueContains v oldPcs poolTokenName then
               True
             else
               valueContains v fbcs factoryToken
@@ -115,8 +107,9 @@ poolMintingContract
           !poolOutput = uniqueElement' $
             filter (\case
               TxOut{txOutAddress, txOutValue}
-                | valueContains txOutValue pcs (computePoolTokenName newPoolIdent)
-                , txOutAddress == scriptHashAddress poolScriptHash -> True
+                | valueContains txOutValue ocs (computePoolTokenName newPoolIdent)
+                , txOutAddress == scriptHashAddress poolSH
+                -> True
               _ -> False
               ) (txInfoOutputs txInfo)
           !poolOutputValue = txOutValue poolOutput
@@ -130,7 +123,7 @@ poolMintingContract
           (coinA < coinB) &&
         debug "minted something other than: a single pool token + correct amount of initial liquidity" (
           txInfoMint txInfo == Value (
-            Map.singleton pcs $ Map.fromList
+            Map.singleton ocs $ Map.fromList
               [ (computePoolTokenName newPoolIdent, 1)
               , (computeLiquidityTokenName newPoolIdent, initialLiquidityTokens)
               ]
@@ -138,7 +131,7 @@ poolMintingContract
         debug "liquidity and/or pool NFT not spent to pool"
           ( valueOfAC poolOutputValueSansRider coinA >= 1 &&
             valueOfAC poolOutputValueSansRider coinB >= 1 &&
-            hasLimitedNft 3 (toPoolNft pcs newPoolIdent) poolOutputValueSansRider ) &&
+            hasLimitedNft 3 (toPoolNft ocs newPoolIdent) poolOutputValueSansRider ) &&
         debug "pool datum not properly initialized"
           (case datumOf txInfo poolOutput of
             Just PoolDatum{..} ->
@@ -149,5 +142,15 @@ poolMintingContract
             Nothing -> error ()
           )
   where
-  Minting ocs = purpose
+  ScriptContext txInfo (Minting ocs) = unsafeFromBuiltinData rawCtx
   ins = txInfoInputs txInfo
+  !factoryReference = uniqueElement'
+    [ o
+    | o <- txInfoReferenceInputs txInfo
+    , isFactory fbcs (txInInfoResolved o)
+    ]
+  !factoryReferenceDatum =
+    case datumOf txInfo (txInInfoResolved factoryReference) of
+      Just fac -> (fac :: FactoryDatum)
+      Nothing -> traceError "factory reference must have a factory datum"
+  !(FactoryDatum !poolSH _poolCS _ _) = factoryReferenceDatum

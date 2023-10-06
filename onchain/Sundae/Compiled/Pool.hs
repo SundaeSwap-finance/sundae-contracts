@@ -4,7 +4,7 @@ import Prelude qualified
 import PlutusTx.Prelude
 import qualified PlutusTx
 
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 
 import Sundae.Contracts.Common
 import Sundae.Contracts.Pool
@@ -12,16 +12,17 @@ import Sundae.Utilities
 
 poolScript
   :: FactoryBootCurrencySymbol
-  -> PoolCurrencySymbol
   -> EscrowScriptHash
   -> SerialisedScript
-poolScript fbcs pcs esh =
+poolScript fbcs esh =
   let
     x =
-      pure $$(PlutusTx.compile [|| \fbcs' pcs' esh' datum redeemer ctx ->
-        check $ poolContract fbcs' pcs' esh' (PlutusTx.unsafeFromBuiltinData datum) (PlutusTx.unsafeFromBuiltinData redeemer) (PlutusTx.unsafeFromBuiltinData ctx) ||])
+      pure $$(PlutusTx.compile [|| \fbcs' esh' datum redeemer ctx ->
+        check $ poolContract fbcs' esh'
+          (PlutusTx.unsafeFromBuiltinData datum)
+          (PlutusTx.unsafeFromBuiltinData redeemer)
+          (PlutusTx.unsafeFromBuiltinData ctx) ||])
         >>= flip apCode fbcs
-        >>= flip apCode pcs
         >>= flip apCode esh
   in
     case x of
@@ -29,14 +30,27 @@ poolScript fbcs pcs esh =
       Nothing -> Prelude.error "Couldn't compile pool script"
 
 escrowScript
-  :: PoolCurrencySymbol
+  :: SteakScriptHash
   -> SerialisedScript
-escrowScript pcs =
+escrowScript ssh =
   let
     x =
-      pure $$(PlutusTx.compile [|| \pcs' d r p -> check $ escrowContract pcs' (PlutusTx.unsafeFromBuiltinData d) (PlutusTx.unsafeFromBuiltinData r) (PlutusTx.unsafeFromBuiltinData p) ||])
-        >>= flip apCode pcs
+      pure $$(PlutusTx.compile [|| \ssh' d r ctx -> check $ escrowContract ssh' d r ctx ||])
+        >>= flip apCode ssh
   in
     case x of
       Just x' -> serialiseCompiledCode x'
       Nothing -> Prelude.error "Couldn't compile escrow script"
+
+steakScript
+  :: PoolCurrencySymbol
+  -> SerialisedScript
+steakScript pcs =
+  let
+    x =
+      pure $$(PlutusTx.compile [|| \pcs' r ctx -> check $ steakContract pcs' r ctx ||])
+        >>= flip apCode pcs
+  in
+    case x of
+      Just x' -> serialiseCompiledCode x'
+      Nothing -> Prelude.error "Couldn't compile steak script"

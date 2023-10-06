@@ -11,7 +11,7 @@ import Data.ByteString.Base16 qualified as Base16
 import Data.Text.Encoding qualified as Text
 
 import PlutusLedgerApi.V1.Value
-import PlutusLedgerApi.V3
+import PlutusLedgerApi.V2
 
 import qualified PlutusTx
 import qualified PlutusTx.AssocMap as Map
@@ -163,7 +163,9 @@ instance ToJSON ScriptHash where
 instance FromJSON ScriptHash where
 
 data FactoryDatum = FactoryDatum
-  { scooperSet :: ![PubKeyHash]
+  { poolScriptHash :: ScriptHash
+  , poolCurrencySymbol :: CurrencySymbol
+  , scooperSet :: ![PubKeyHash]
   -- permissible staking credentials for pool
   , poolStakingCredSet :: ![StakingCredential]
   }
@@ -172,13 +174,16 @@ data FactoryDatum = FactoryDatum
 
 instance Eq FactoryDatum where
   {-# inlinable (==) #-}
-  FactoryDatum scooperSet' poolStakingCredSet' ==
-    FactoryDatum scooperSet'' poolStakingCredSet'' =
-      scooperSet' == scooperSet'' && poolStakingCredSet' == poolStakingCredSet''
+  FactoryDatum poolSH' poolCS' scooperSet' poolStakingCredSet' ==
+    FactoryDatum poolSH'' poolCS'' scooperSet'' poolStakingCredSet'' =
+      poolSH' == poolSH'' &&
+      poolCS' == poolCS'' &&
+      scooperSet' == scooperSet'' &&
+      poolStakingCredSet' == poolStakingCredSet''
 
 -- | Action on factory script
 data FactoryRedeemer
-  = FactoryRedeemer
+  = FactorySetPoolScriptInfo
   --deriving (Generic, ToJSON, FromJSON)
 
 instance Eq FactoryRedeemer where
@@ -286,6 +291,8 @@ newtype FactoryScriptHash = FactoryScriptHash ScriptHash
   deriving stock Prelude.Show
 newtype TreasuryScriptHash = TreasuryScriptHash ScriptHash
   deriving stock Prelude.Show
+newtype SteakScriptHash = SteakScriptHash ScriptHash
+  deriving stock Prelude.Show
 
 newtype FactoryBootCurrencySymbol = FactoryBootCurrencySymbol CurrencySymbol
   deriving stock Prelude.Show
@@ -331,7 +338,7 @@ PlutusTx.makeLift ''UpgradeSettings
 PlutusTx.makeLift ''ScooperFeeSettings
 PlutusTx.makeIsDataIndexed ''FactoryBootMintRedeemer [('MakeFactory, 0), ('MakeScooperToken, 1)]
 PlutusTx.makeIsDataIndexed ''FactoryDatum [('FactoryDatum, 0)]
-PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('FactoryRedeemer, 0)]
+PlutusTx.makeIsDataIndexed ''FactoryRedeemer [('FactorySetPoolScriptInfo, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeDatum [('ScooperFeeDatum, 0)]
 PlutusTx.makeIsDataIndexed ''ScooperFeeRedeemer [('ScooperCollectScooperFees, 0)]
 PlutusTx.makeIsDataIndexed ''PoolRedeemer [('PoolScoop, 0)]
@@ -342,6 +349,7 @@ PlutusTx.makeIsDataIndexed ''EscrowDestination [('EscrowDestination, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowAddress [('EscrowAddress, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowDatum [('EscrowDatum, 0)]
 PlutusTx.makeIsDataIndexed ''EscrowRedeemer [('EscrowScoop, 0), ('EscrowCancel, 1)]
+PlutusTx.makeIsDataIndexed ''PoolMintRedeemer [('MintLP, 0), ('CreatePool, 1)]
 PlutusTx.makeLift ''FactoryBootCurrencySymbol
 PlutusTx.makeLift ''TreasuryBootCurrencySymbol
 PlutusTx.makeLift ''FactoryScriptHash
@@ -351,6 +359,7 @@ PlutusTx.makeLift ''ScooperFeeHolderScriptHash
 PlutusTx.makeLift ''PoolCurrencySymbol
 PlutusTx.makeLift ''OldPoolCurrencySymbol
 PlutusTx.makeLift ''EscrowScriptHash
+PlutusTx.makeLift ''SteakScriptHash
 
 --instance Scripts.ValidatorTypes Factory where
 --  type instance DatumType Factory = FactoryDatum
@@ -479,3 +488,9 @@ toPoolNft cs poolIdent = assetClass cs (computePoolTokenName poolIdent)
 
 makeLenses ''PoolDatum
 makeLenses ''EscrowDatum
+
+{-# inlinable isFactory #-}
+isFactory :: CurrencySymbol -> TxOut -> Bool
+isFactory fbcs o = assetClassValueOf (txOutValue o) factoryNft == 1
+  where
+  factoryNft = assetClass fbcs factoryToken
