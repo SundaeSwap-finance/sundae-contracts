@@ -975,7 +975,7 @@ async function bench_endToEndScoop(flags: Args, scripts: Scripts, dummy: Lucid) 
       .ledger["00000000000000000000000000000000000000000000000000000000000000000"]
       .utxo;
 
-    await doScoopPool(lucid, scripts, emulator, {}, userAddress, escrowsCount, listedEscrows, pool, factory, change, newPoolId);
+    await doScoopPool(lucid, scripts, emulator, {}, userAddress, listedEscrows, pool, factory, change, newPoolId);
   }
 }
 
