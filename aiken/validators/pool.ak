@@ -123,7 +123,7 @@ validator(settings_policy_id: PolicyId) {
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
     let PoolDatum {
-      identifier: _actual_identifier,
+      identifier: actual_identifier,
       circulating_lp: actual_circulating_lp,
       rewards: actual_rewards,
       ..
@@ -147,6 +147,7 @@ validator(settings_policy_id: PolicyId) {
     // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
     let outcome =
       process_orders(
+        actual_identifier,
         datums,
         initial_state,
         input_order,
@@ -560,6 +561,7 @@ fn scoop(options: ScoopTestOptions) {
     Swap((#"", #"", 10_000_000), (dummy_policy_id, dummy_asset_name, 0))
   let escrow_datum =
     OrderDatum {
+      pool_ident: None,
       owner,
       scooper_fee: 2_500_000,
       destination: dest,
@@ -719,6 +721,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name, 10_000_000),
     ))
   let escrow_datum_1 = OrderDatum {
+    pool_ident: None,
     owner: owner,
     scooper_fee: 2_500_000,
     destination: dest,
@@ -726,6 +729,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     extension: builtin.i_data(0),
   }
   let escrow_datum_2 = OrderDatum {
+    pool_ident: None,
     owner: owner,
     scooper_fee: 2_500_000,
     destination: dest,

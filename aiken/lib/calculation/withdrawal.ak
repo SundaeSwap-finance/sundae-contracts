@@ -129,6 +129,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     value.from_lovelace(4_500_000)
       |> value.add(lp.1st, lp.2nd, 10_000_000)
   let order = OrderDatum {
+    pool_ident: None,
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
