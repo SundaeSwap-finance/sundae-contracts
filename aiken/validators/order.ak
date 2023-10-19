@@ -17,6 +17,7 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
         )
       }
       Scoop -> {
+        //TODO: prefer builtin head
         expect [head] = dict.to_list(ctx.transaction.withdrawals)
         when head is {
           (Inline(ScriptCredential(script)), _) -> script == stake_script_hash

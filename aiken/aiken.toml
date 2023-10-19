@@ -13,7 +13,3 @@ name = "aiken-lang/stdlib"
 version = "main"
 source = "github"
 
-[[dependencies]]
-name = "SundaeSwap-finance/aicone"
-version = "main"
-source = "github"

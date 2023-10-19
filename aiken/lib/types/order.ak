@@ -64,14 +64,16 @@ test example_deposit() {
     )
   let dest = Destination { address: addr, datum: NoDatum }
   let deposit =
-    Deposit((
-      (#"", #"", 10000000),
+    Deposit(
       (
-        #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
-        #"44554d4d59",
-        10000000,
+        (#"", #"", 10000000),
+        (
+          #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
+          #"44554d4d59",
+          10000000,
+        ),
       ),
-    ))
+    )
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
@@ -102,7 +104,7 @@ test example_withdrawal() {
       (
         #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
         #"6c",
-        10000000
+        10000000,
       ),
     )
   trace bytearray.to_hex(
@@ -120,7 +122,6 @@ test example_withdrawal() {
   )
   True
 }
-
 
 // A destination consists of
 pub type Destination {

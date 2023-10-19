@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
@@ -53,6 +54,20 @@ pub fn is_after(range: Interval<PosixTime>, point: PosixTime) {
       }
     _ -> False
   }
+}
+
+pub fn get_unique_token_count(val: value.Value) -> Int {
+  list.foldr(
+    dict.to_list(value.to_dict(val)),
+    0,
+    fn(tk_pair, total) {
+      list.foldr(
+        dict.to_list(builtin.snd_pair(tk_pair)),
+        0,
+        fn(_tn, tn_length) { tn_length + 1 },
+      ) + total
+    },
+  )
 }
 
 pub fn get_input_with_token(

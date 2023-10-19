@@ -2,7 +2,10 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
-use aiken/transaction.{InlineDatum, NoDatum, Input, Output, OutputReference, TransactionId}
+use aiken/list
+use aiken/transaction.{
+  InlineDatum, Input, NoDatum, Output, OutputReference, TransactionId,
+}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
@@ -15,6 +18,19 @@ use shared.{datum_of}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 use types/pool.{PoolDatum, lp_token_name}
+
+pub fn count_script_inputs(tx_inputs: List<Input>) -> Int {
+  list.foldl(
+    tx_inputs,
+    0,
+    fn(input, total) {
+      when input.output.address.payment_credential is {
+        VerificationKeyCredential(_) -> total
+        _ -> total + 1
+      }
+    },
+  )
+}
 
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
@@ -127,67 +143,79 @@ test process_orders_test() {
       None,
     )
   let ada = (#"", #"")
-  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let rberry =
+    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_000_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
-    rewards: 2_000_000,
-  }
-  let order_datum = OrderDatum {
-    owner: multisig.Signature(
-      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-    ),
-    scooper_fee: 2_500_000,
-    destination: Destination {
-      address: addr,
-      datum: NoDatum,
-    },
-    order: order.Donation {
-      assets: ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000)),
-    },
-    extension: Void,
-  }
+  let pool_state =
+    PoolState {
+      quantity_a: (#"", #"", 1_000_000_000),
+      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
+      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
+      fees_per_10_thousand: 5,
+      rewards: 2_000_000,
+    }
+  let order_datum =
+    OrderDatum {
+      owner: multisig.Signature(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      scooper_fee: 2_500_000,
+      destination: Destination { address: addr, datum: NoDatum },
+      order: order.Donation {
+        assets: (
+          (ada.1st, ada.2nd, 1_000_000),
+          (rberry.1st, rberry.2nd, 1_000_000),
+        ),
+      },
+      extension: Void,
+    }
   // There's no remainder so do_donation totally ignores this Output record
-  let output = Output {
-    address: addr,
-    value: value.from_lovelace(999_999_999_999_999_999),
-    datum: NoDatum,
-    reference_script: None,
-  }
+  let output =
+    Output {
+      address: addr,
+      value: value.from_lovelace(999_999_999_999_999_999),
+      datum: NoDatum,
+      reference_script: None,
+    }
 
-  let order_output = Output {
-    address: addr,
-    value: value.from_lovelace(1_000_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000),
-    datum: InlineDatum(order_datum),
-    reference_script: None,
-  }
+  let order_output =
+    Output {
+      address: addr,
+      value: value.from_lovelace(1_000_000)
+        |> value.add(rberry.1st, rberry.2nd, 1_000_000),
+      datum: InlineDatum(order_datum),
+      reference_script: None,
+    }
 
   let order_datum_data: Data = order_datum
-  let datums = dict.new()
-    |> dict.insert(
-         key: hash.blake2b_256(cbor.serialise(order_datum)),
-         value: order_datum_data,
-         compare: bytearray.compare)
+  let datums =
+    dict.new()
+      |> dict.insert(
+           key: hash.blake2b_256(cbor.serialise(order_datum)),
+           value: order_datum_data,
+           compare: bytearray.compare,
+         )
 
-  let input = Input {
-    output_reference: OutputReference {
-      transaction_id: TransactionId {
-        hash: #"0000000000000000000000000000000000000000000000000000000000000000"
+  let input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: TransactionId {
+          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+        },
+        output_index: 0,
       },
-      output_index: 0,
-    },
-    output: order_output,
-  }
+      output: order_output,
+    }
 
-  let input_order = [0]
-  let inputs = [input]
-  let outputs = [output]
+  let input_order =
+    [0]
+  let inputs =
+    [input]
+  let outputs =
+    [output]
 
-  let final_pool_state = process_orders(datums, pool_state, input_order, inputs, outputs, 0)
+  let final_pool_state =
+    process_orders(datums, pool_state, input_order, inputs, outputs, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
