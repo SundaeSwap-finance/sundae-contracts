@@ -24,7 +24,7 @@ pub fn pool_input_to_state(
 ) -> PoolState {
   let PoolDatum {
     assets,
-    rewards,
+    protocol_fees,
     identifier,
     circulating_lp,
     fees_per_10_thousand,
@@ -35,7 +35,7 @@ pub fn pool_input_to_state(
   let (asset_b_policy_id, asset_b_name) = asset_b
   let min_utxo =
     if asset_a_policy_id == value.ada_policy_id {
-      rewards
+      protocol_fees
     } else {
       0
     }
@@ -52,8 +52,8 @@ pub fn pool_input_to_state(
     ),
     quantity_lp: (pool_token_policy, lp_token_name(identifier), circulating_lp),
     fees_per_10_thousand,
-    // Pay the transaction fee out of the rewards
-    rewards,
+    // Pay the transaction fee out of the protocol_fees
+    protocol_fees,
   }
 }
 
@@ -93,7 +93,7 @@ pub fn process_orders(
 
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
-      let OrderDatum { pool_ident, destination, scooper_fee, order: order_details, .. } =
+      let OrderDatum { pool_ident, destination, protocol_fee, order: order_details, .. } =
         datum
 
       expect True = validate_pool_id(pool_ident, this_pool_ident)
@@ -105,7 +105,7 @@ pub fn process_orders(
               initial,
               order.value,
               destination,
-              scooper_fee,
+              protocol_fee,
               offer,
               min_received,
               output,
@@ -202,14 +202,14 @@ test process_orders_test() {
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     fees_per_10_thousand: 5,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let order_datum = OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -260,6 +260,6 @@ test process_orders_test() {
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

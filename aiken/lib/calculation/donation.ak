@@ -47,7 +47,7 @@ pub fn do_donation(
       ),
       quantity_lp: pool_state.quantity_lp,
       fees_per_10_thousand: pool_state.fees_per_10_thousand,
-      rewards: pool_state.rewards + order.scooper_fee,
+      protocol_fees: pool_state.protocol_fees + order.protocol_fee,
     },
     has_remainder,
   )
@@ -71,7 +71,7 @@ test donation() {
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
       fees_per_10_thousand: 5,
-      rewards: 2_000_000,
+      protocol_fees: 2_000_000,
     }
   let input_value =
     value.from_lovelace(1_000_000)
@@ -82,7 +82,7 @@ test donation() {
       owner: multisig.Signature(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
-      scooper_fee: 2_500_000,
+      protocol_fee: 2_500_000,
       destination: Destination { address: addr, datum: NoDatum },
       order: order.Donation {
         assets: (
@@ -105,6 +105,6 @@ test donation() {
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

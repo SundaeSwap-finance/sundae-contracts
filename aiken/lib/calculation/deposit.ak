@@ -28,7 +28,7 @@ pub fn do_deposit(
   let user_gives_a = {
     let extra_ada =
       if asset_a.1st == "" {
-        2_000_000 + order.scooper_fee
+        2_000_000 + order.protocol_fee
       } else {
         0
       }
@@ -65,7 +65,7 @@ pub fn do_deposit(
   let remainder =
     shared.to_value((asset_a.1st, asset_a.2nd, final_a))
       |> value.merge(shared.to_value((asset_b.1st, asset_b.2nd, final_b)))
-      |> value.merge(shared.to_value(("", "", order.scooper_fee)))
+      |> value.merge(shared.to_value(("", "", order.protocol_fee)))
       |> value.negate
       |> value.merge(input_value)
       |> value.merge(
@@ -96,7 +96,7 @@ pub fn do_deposit(
       pool_state.quantity_lp.3rd + issued_lp_tokens,
     ),
     fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    rewards: pool_state.rewards + order.scooper_fee,
+    protocol_fees: pool_state.protocol_fees + order.protocol_fee,
   }
 }
 
@@ -116,7 +116,7 @@ test deposit_test() {
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     fees_per_10_thousand: 5,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(14_500_000)
@@ -126,7 +126,7 @@ test deposit_test() {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -146,6 +146,6 @@ test deposit_test() {
   let final_pool_state = do_deposit(pool_state, input_value, order, output)
   expect final_pool_state.quantity_a.3rd == 1_010_000_000
   expect final_pool_state.quantity_b.3rd == 1_010_000_000
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

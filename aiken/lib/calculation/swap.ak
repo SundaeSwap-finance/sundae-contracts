@@ -17,7 +17,7 @@ pub fn swap_takes(
   pool_give: Int,
   pool_take: Int,
   fees_per_10_thousand: Int,
-  scooper_fee: Int,
+  protocol_fees: Int,
   order_give: Int,
   input_value: Value,
 ) -> (Int, Value) {
@@ -35,7 +35,7 @@ pub fn swap_takes(
   let remainder =
     input_value
       |> value.add(give_policy_id, give_asset_name, -order_give)
-      |> value.add(ada_policy_id, ada_asset_name, -scooper_fee)
+      |> value.add(ada_policy_id, ada_asset_name, -protocol_fees)
   // And then add in the `takes` value
   let out_value = value.add(remainder, take_policy_id, take_asset_name, takes)
 
@@ -52,7 +52,7 @@ pub fn do_swap(
   pool_state: PoolState,
   input_value: Value,
   destination: Destination,
-  scooper_fee: Int,
+  protocol_fee: Int,
   offer: SingletonValue,
   min_received: SingletonValue,
   output: Output,
@@ -63,7 +63,7 @@ pub fn do_swap(
     quantity_b,
     quantity_lp,
     fees_per_10_thousand,
-    rewards,
+    protocol_fees,
   } = pool_state
   let (a_policy_id, a_asset_name, a_amt) = quantity_a
   let (b_policy_id, b_asset_name, b_amt) = quantity_b
@@ -80,7 +80,7 @@ pub fn do_swap(
         a_amt,
         b_amt,
         fees_per_10_thousand,
-        scooper_fee,
+        protocol_fee,
         offer_amt,
         input_value,
       )
@@ -96,7 +96,7 @@ pub fn do_swap(
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp,
       fees_per_10_thousand,
-      rewards: rewards + scooper_fee,
+      protocol_fees: protocol_fees + protocol_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     expect min_received.1st == a_policy_id
@@ -110,7 +110,7 @@ pub fn do_swap(
         b_amt,
         a_amt,
         fees_per_10_thousand,
-        scooper_fee,
+        protocol_fee,
         offer_amt,
         input_value,
       )
@@ -125,7 +125,7 @@ pub fn do_swap(
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp,
       fees_per_10_thousand,
-      rewards: rewards + scooper_fee,
+      protocol_fees: protocol_fees + protocol_fee,
     }
   } else {
     fail
@@ -151,7 +151,7 @@ test swap_mintakes_too_high() fail {
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     fees_per_10_thousand: 5,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(14_500_000)
@@ -162,7 +162,7 @@ test swap_mintakes_too_high() fail {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -177,9 +177,9 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, order.scooper_fee, swap_offer, swap_min_received, output)
+  let final_pool_state = do_swap(pool_state, input_value, order.destination, order.protocol_fee, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

@@ -27,7 +27,7 @@ pub fn do_withdrawal(
     withdrawn * pool_state.quantity_b.3rd / pool_state.quantity_lp.3rd
   let remainder =
     shared.to_value((lp_policy, lp_asset_name, withdrawn))
-      |> value.merge(shared.to_value(("", "", order.scooper_fee)))
+      |> value.merge(shared.to_value(("", "", order.protocol_fee)))
       |> value.negate
       |> value.merge(input_value)
       |> value.merge(
@@ -64,7 +64,7 @@ pub fn do_withdrawal(
       pool_state.quantity_lp.3rd - withdrawn,
     ),
     fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    rewards: pool_state.rewards + order.scooper_fee,
+    protocol_fees: pool_state.protocol_fees + order.protocol_fee,
   }
 }
 
@@ -123,7 +123,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
     fees_per_10_thousand: 5,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(4_500_000)
@@ -133,7 +133,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -156,6 +156,6 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
   let final_pool_state = do_withdrawal(pool_state, input_value, order, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

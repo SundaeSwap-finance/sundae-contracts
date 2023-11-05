@@ -10,7 +10,7 @@ pub type PoolDatum {
   circulating_lp: Int,
   fees_per_10_thousand: Int,
   market_open: PosixTime,
-  rewards: Int,
+  protocol_fees: Int,
 }
 
 test example_pool_datum() {
@@ -28,7 +28,7 @@ test example_pool_datum() {
         circulating_lp: 20229488080013,
         fees_per_10_thousand: 3,
         market_open: 100,
-        rewards: 10000000,
+        protocol_fees: 10000000,
       },
     ),
   )

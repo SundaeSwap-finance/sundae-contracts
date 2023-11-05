@@ -10,9 +10,9 @@ pub type OrderDatum {
   pool_ident: Option<Ident>,
   // An owner that's allowed to modify it
   owner: MultisigScript,
-  // A fee that the scooper is allowed to take for themselves
+  // A fee that is paid to the protocol, to pay for scoopers, etc.
   // TODO: can we make this a value?
-  scooper_fee: Int,
+  protocol_fee: Int,
   // A destination that the results of the order must be sent to
   destination: Destination,
   // And the actual order to execute
@@ -46,7 +46,7 @@ test example_swap() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        scooper_fee: 2500000,
+        protocol_fee: 2500000,
         destination: dest,
         order: swap,
         extension: Void,
@@ -81,7 +81,7 @@ test example_deposit() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        scooper_fee: 2500000,
+        protocol_fee: 2500000,
         destination: dest,
         order: deposit,
         extension: Void,
@@ -115,7 +115,7 @@ test example_withdrawal() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        scooper_fee: 2500000,
+        protocol_fee: 2500000,
         destination: dest,
         order: withdrawal,
         extension: Void,

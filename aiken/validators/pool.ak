@@ -53,12 +53,12 @@ fn has_expected_pool_value(
   outcome: PoolState,
 ) -> Bool {
   // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  let PoolState { quantity_a, quantity_b, rewards, .. } = outcome
+  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   if quantity_a_policy_id == ada_policy_id {
     expect 3 == list.length(value.flatten(output_value))
-    expect value.lovelace_of(output_value) == rewards + quantity_a_amt
+    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
     expect
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
     expect
@@ -70,7 +70,7 @@ fn has_expected_pool_value(
     True
   } else {
     expect 4 == list.length(value.flatten(output_value))
-    expect value.lovelace_of(output_value) == rewards
+    expect value.lovelace_of(output_value) == protocol_fees
     expect
       value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
     expect
@@ -125,7 +125,7 @@ validator(settings_policy_id: PolicyId) {
     let PoolDatum {
       identifier: actual_identifier,
       circulating_lp: actual_circulating_lp,
-      rewards: actual_rewards,
+      protocol_fees: actual_protocol_fees,
       ..
     } = output_datum
 
@@ -160,12 +160,12 @@ validator(settings_policy_id: PolicyId) {
     trace @"Done"
     let PoolState {
       quantity_lp: expected_circulating_lp,
-      rewards: expected_rewards,
+      protocol_fees: expected_protocol_fees,
       ..
     } = outcome
 
     // The pool should have all of the scooper fees, and the quantity of each token of the outcome
-    // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
+    // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
     // Calculate all the neccesary and sufficient conditions
     let minted_correct_lp_tokens =
       minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
@@ -197,8 +197,8 @@ validator(settings_policy_id: PolicyId) {
     // expect pool_output_correct
     // Must update the circulating LP if tokens are minted
     expect actual_circulating_lp == expected_circulating_lp.3rd
-    // Must update the rewards field as expected
-    expect actual_rewards == expected_rewards
+    // Must update the protocol fees field as expected
+    expect actual_protocol_fees == expected_protocol_fees
     // Must not update the immutable fields
     expect datum.identifier == output_datum.identifier
     expect datum.assets == output_datum.assets
@@ -534,7 +534,7 @@ fn scoop(options: ScoopTestOptions) {
       circulating_lp: 1_000_000_000,
       fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
       market_open: 0,
-      rewards: 2_000_000,
+      protocol_fees: 2_000_000,
     }
   let pool_out_datum =
     PoolDatum {
@@ -543,7 +543,7 @@ fn scoop(options: ScoopTestOptions) {
       circulating_lp: 1_000_000_000,
       fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
       market_open: 0,
-      rewards: 7_000_000,
+      protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let pool_address = script_address(hash_of_pool_script)
@@ -566,7 +566,7 @@ fn scoop(options: ScoopTestOptions) {
     OrderDatum {
       pool_ident: None,
       owner,
-      scooper_fee: 2_500_000,
+      protocol_fee: 2_500_000,
       destination: dest,
       order: swap,
       extension: builtin.i_data(0),
@@ -686,7 +686,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     circulating_lp: 1_000_000_000,
     fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
     market_open: 0,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let pool_out_datum = PoolDatum {
     identifier: pool_id,
@@ -697,7 +697,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     circulating_lp: 1_009_900_990,
     fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
     market_open: 0,
-    rewards: 7_000_000,
+    protocol_fees: 7_000_000,
   }
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let pool_address = script_address(hash_of_pool_script)
@@ -726,7 +726,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow_datum_1 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: dest,
     order: swap,
     extension: builtin.i_data(0),
@@ -734,7 +734,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow_datum_2 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    scooper_fee: 2_500_000,
+    protocol_fee: 2_500_000,
     destination: dest,
     order: deposit,
     extension: builtin.i_data(0),
