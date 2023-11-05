@@ -102,43 +102,47 @@ fn int_to_ident(n: Int) -> Ident {
 
 validator(settings_policy_id: PolicyId) {
   fn spend(datum: PoolDatum, redeemer: PoolRedeemer, ctx: ScriptContext) {
+    let transaction = ctx.transaction
+    let Transaction {
+      inputs,
+      outputs,
+      reference_inputs,
+      mint,
+      datums,
+      extra_signatories,
+      validity_range,
+      ..
+    } = transaction
+
+    // Find the input being spent
+    let pool_input = spent_output(ctx)
+
+    // Find the pool output
+    expect Some(pool_output) = list.head(outputs)
+    expect pool_output.address == pool_input.address
+    expect InlineDatum(output_datum) = pool_output.datum
+    expect output_datum: PoolDatum = output_datum
+
+    let PoolDatum {
+      identifier: actual_identifier,
+      circulating_lp: actual_circulating_lp,
+      protocol_fees: actual_protocol_fees,
+      ..
+    } = output_datum
+
+    // Find the settings datum
+    let settings_output = builtin.head_list(reference_inputs).output
+    let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
+    expect [_, (found_policy_id, settings_dict)] = settings_value_list
+    expect found_policy_id == settings_policy_id
+    expect dict.to_list(settings_dict) == [(shared.settings_nft_name, 1)]
+    expect InlineDatum(settings_datum) = settings_output.datum
+    expect settings_datum: SettingsDatum = settings_datum
+
     when redeemer is {
       PoolScoop{ signatory_index, scooper_index, input_order } -> {
 
-        let transaction = ctx.transaction
-        let Transaction {
-          inputs,
-          outputs,
-          reference_inputs,
-          mint,
-          datums,
-          extra_signatories,
-          validity_range,
-          ..
-        } = transaction
-        // Grab the fields we'll need to determine whether we can execute this tx
-        // Find the input being spent
-        let pool_input = spent_output(ctx)
-        // Assume the first output is the pool output
-        expect Some(pool_output) = list.head(outputs)
-        expect pool_output.address == pool_input.address
-        expect InlineDatum(output_datum) = pool_output.datum
-        expect output_datum: PoolDatum = output_datum
-        let PoolDatum {
-          identifier: actual_identifier,
-          circulating_lp: actual_circulating_lp,
-          protocol_fees: actual_protocol_fees,
-          ..
-        } = output_datum
-
-        // Find the reference input with the settings token and it's datum
-        let settings_output = builtin.head_list(reference_inputs).output
-        let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
-        expect [_, (found_policy_id, settings_dict)] = settings_value_list
-        expect found_policy_id == settings_policy_id
-        expect dict.to_list(settings_dict) == [(shared.settings_nft_name, 1)]
-        expect InlineDatum(settings_datum) = settings_output.datum
-        expect settings_datum: SettingsDatum = settings_datum
+        // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { pool_script_hash, authorized_scoopers, .. } =
           settings_datum
 
@@ -211,7 +215,18 @@ validator(settings_policy_id: PolicyId) {
         True
       }
       WithdrawFees { amount } -> {
-        False
+        let PoolDatum {
+          protocol_fees: initial_protocol_fees,
+          ..
+        } = datum
+        expect amount <= initial_protocol_fees
+        expect actual_protocol_fees == initial_protocol_fees - amount
+        // TODO:
+        // - pool output has correct value
+        // - rest of datum unchanged
+        // - signed by treasury admin
+        // - amount - (amount * allowance.numerator / allowance.denominator) sent to treasury address
+        True
       }
     }
   }
