@@ -345,7 +345,14 @@ fn mk_settings_input(
     SettingsDatum {
       pool_script_hash: psh,
       settings_admin: multisig.AnyOf([]),
-      rewards_admin: multisig.AnyOf([]),
+      treasury_admin: multisig.AnyOf([]),
+      treasury_address: Address(
+        VerificationKeyCredential(
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+        ),
+        None,
+      ),
+      treasury_allowance: (1, 10),
       authorized_scoopers: scoopers,
       authorized_staking_keys: [],
     }
@@ -499,7 +506,14 @@ test scooper_not_in_settings() fail {
           SettingsDatum {
             pool_script_hash: hash_of_pool_script,
             settings_admin: multisig.AnyOf([]),
-            rewards_admin: multisig.AnyOf([]),
+            treasury_admin: multisig.AnyOf([]),
+            treasury_address: Address(
+              VerificationKeyCredential(
+                #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+              ),
+              None,
+            ),
+            treasury_allowance: (1, 10),
             authorized_scoopers: [somebody],
             authorized_staking_keys: [],
           },
