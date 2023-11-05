@@ -147,8 +147,7 @@ validator(settings_policy_id: PolicyId) {
           settings_datum
 
         // Construct the initial pool state from the datum and the locked values
-        let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input)
-
+        let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
         let outcome =
@@ -226,6 +225,7 @@ validator(settings_policy_id: PolicyId) {
           assets: datum.assets,
           circulating_lp: datum.circulating_lp,
           fees_per_10_thousand: datum.fees_per_10_thousand,
+          fee_finalized: datum.fee_finalized,
           market_open: datum.market_open,
           protocol_fees: initial_protocol_fees - amount,
         }
@@ -327,10 +327,8 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.identifier == new_pool_id && pool_output_datum.assets == (
             asset_a,
             asset_b,
-          ) && pool_output_datum.circulating_lp == initial_lq && list.has(
-            shared.legal_swap_fees(),
-            pool_output_datum.fees_per_10_thousand,
-          )
+          ) && pool_output_datum.circulating_lp == initial_lq
+          && pool_output_datum.market_open <= pool_output_datum.fee_finalized
 
         coin_pair_ordering_is_canonical && mint_is_correct && funds_spent_to_pool && pool_output_datum_correct
       }
@@ -422,7 +420,7 @@ type ScoopTestOptions {
   edit_escrow_2_value: Option<Value>,
   edit_escrow_destination: Option<Address>,
   edit_fee: Option<Value>,
-  edit_swap_fees: Option<Int>,
+  edit_swap_fees: Option<(Int,Int)>,
   edit_pool_output_value: Option<Value>,
   edit_settings_datum: Option<Datum>,
 }
@@ -500,7 +498,7 @@ test scoop_high_swap_fees() {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_swap_fees: Some(swap_fee),
+      edit_swap_fees: Some((swap_fee, swap_fee)),
       edit_escrow_1_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 9_802_950),
@@ -593,8 +591,9 @@ fn scoop(options: ScoopTestOptions) {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
       market_open: 0,
+      fee_finalized: 100,
       protocol_fees: 2_000_000,
     }
   let pool_out_datum =
@@ -602,8 +601,9 @@ fn scoop(options: ScoopTestOptions) {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
       market_open: 0,
+      fee_finalized: 0,
       protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(pool_id)
@@ -745,8 +745,9 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
     market_open: 0,
+    fee_finalized: 0,
     protocol_fees: 2_000_000,
   }
   let pool_out_datum = PoolDatum {
@@ -756,8 +757,9 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_009_900_990,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
     market_open: 0,
+    fee_finalized: 0,
     protocol_fees: 7_000_000,
   }
   let pool_nft_name = shared.pool_nft_name(pool_id)

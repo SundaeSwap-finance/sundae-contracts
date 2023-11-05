@@ -8,8 +8,9 @@ pub type PoolDatum {
   identifier: Ident,
   assets: (AssetClass, AssetClass),
   circulating_lp: Int,
-  fees_per_10_thousand: Int,
+  fees_per_10_thousand: (Int, Int),
   market_open: PosixTime,
+  fee_finalized: PosixTime,
   protocol_fees: Int,
 }
 
@@ -26,8 +27,9 @@ test example_pool_datum() {
           ),
         ),
         circulating_lp: 20229488080013,
-        fees_per_10_thousand: 3,
+        fees_per_10_thousand: (2000, 500),
         market_open: 100,
+        fee_finalized: 1000,
         protocol_fees: 10000000,
       },
     ),

@@ -2,9 +2,11 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
+use aiken/interval.{IntervalBound, NegativeInfinity, Finite}
 use aiken/transaction.{InlineDatum, NoDatum, Input, Output, OutputReference, TransactionId}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{PolicyId}
+use aiken/time.{PosixTime}
 use calculation/deposit
 use calculation/donation
 use calculation/shared.{
@@ -21,6 +23,7 @@ pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
   datum: PoolDatum,
   input: Output,
+  valid_from: IntervalBound<PosixTime>,
 ) -> PoolState {
   let PoolDatum {
     assets,
@@ -28,7 +31,8 @@ pub fn pool_input_to_state(
     identifier,
     circulating_lp,
     fees_per_10_thousand,
-    ..
+    market_open,
+    fee_finalized,
   } = datum
   let (asset_a, asset_b) = assets
   let (asset_a_policy_id, asset_a_name) = asset_a
@@ -38,6 +42,25 @@ pub fn pool_input_to_state(
       protocol_fees
     } else {
       0
+    }
+  let valid_from = when valid_from.bound_type is {
+    NegativeInfinity -> market_open
+    Finite(t) -> t
+    _ -> error
+  }
+  // Let the fees decay linearly up until fee_finalized
+  let fees =
+    if valid_from > fee_finalized {
+      fees_per_10_thousand.2nd
+    } else {
+      let duration = fee_finalized - market_open
+      if duration == 0 {
+        fees_per_10_thousand.2nd
+      } else {
+        let elapsed = valid_from - market_open
+        let range = fees_per_10_thousand.2nd - fees_per_10_thousand.1st
+        fees_per_10_thousand.1st + (elapsed * range / duration)
+      }
     }
   PoolState {
     quantity_a: (
@@ -51,7 +74,7 @@ pub fn pool_input_to_state(
       value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     ),
     quantity_lp: (pool_token_policy, lp_token_name(identifier), circulating_lp),
-    fees_per_10_thousand,
+    fees_per_10_thousand: fees,
     // Pay the transaction fee out of the protocol_fees
     protocol_fees,
   }
