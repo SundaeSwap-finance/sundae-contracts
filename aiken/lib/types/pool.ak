@@ -36,15 +36,29 @@ test example_pool_datum() {
 }
 
 pub type PoolRedeemer {
-  signatory_index: Int,
-  scooper_index: Int,
-  input_order: List<Int>,
+  PoolScoop {
+    signatory_index: Int,
+    scooper_index: Int,
+    input_order: List<Int>,
+  }
+  WithdrawFees {
+    amount: Int
+  }
 }
 
-test example_pool_redeemer() {
+test example_pool_scoop_redeemer() {
   trace bytearray.to_hex(
     cbor.serialise(
-      PoolRedeemer { signatory_index: 0, scooper_index: 0, input_order: [1] },
+      PoolScoop { signatory_index: 0, scooper_index: 0, input_order: [1] },
+    ),
+  )
+  True
+}
+
+test example_pool_withdraw_fees_redeemer() {
+  trace bytearray.to_hex(
+    cbor.serialise(
+      WithdrawFees { amount: 100 },
     ),
   )
   True
