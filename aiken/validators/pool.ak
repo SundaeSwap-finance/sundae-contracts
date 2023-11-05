@@ -178,11 +178,9 @@ validator(settings_policy_id: PolicyId) {
 
         // OPTIMIZATION: skip 10 entries at a time
         // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
-        let licensed_scooper =
-          list.at(extra_signatories, signatory_index) == list.at(
-            authorized_scoopers,
-            scooper_index,
-          )
+        expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
+        expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
+        let licensed_scooper = scooper_sig == scooper
         let market_open = is_after(validity_range, datum.market_open)
 
         // expect pool_can_be_scooped
@@ -214,18 +212,45 @@ validator(settings_policy_id: PolicyId) {
           pool_input.address.stake_credential == pool_output.address.stake_credential
         True
       }
-      WithdrawFees { amount } -> {
+      WithdrawFees { amount, treasury_output } -> {
         let PoolDatum {
           protocol_fees: initial_protocol_fees,
           ..
         } = datum
+        // Can't withdraw more than we've collected
         expect amount <= initial_protocol_fees
-        expect actual_protocol_fees == initial_protocol_fees - amount
-        // TODO:
-        // - pool output has correct value
-        // - rest of datum unchanged
-        // - signed by treasury admin
-        // - amount - (amount * allowance.numerator / allowance.denominator) sent to treasury address
+
+        // Must update the protocol fees and nothing else
+        let expected_datum = PoolDatum {
+          identifier: datum.identifier,
+          assets: datum.assets,
+          circulating_lp: datum.circulating_lp,
+          fees_per_10_thousand: datum.fees_per_10_thousand,
+          market_open: datum.market_open,
+          protocol_fees: initial_protocol_fees - amount,
+        }
+        expect output_datum == expected_datum
+
+        // Must withdraw only what we claim to withdraw
+        let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
+        expect pool_output.value == expected_output_value
+
+        // Must be signed by the treasury admin multisig
+        expect multisig.satisfied(
+          settings_datum.treasury_admin,
+          extra_signatories,
+          validity_range,
+        )
+
+        // Some portion of the treasury can be withdrawn for administrative purposes
+        // such as paying scooper fees, etc.
+        let allowance = amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let to_treasury = amount - allowance
+        expect Some(treasury_output) = list.at(outputs, treasury_output)
+        // The remainder must be sent to the treasury address with the Void datum
+        expect treasury_output.address == settings_datum.treasury_address
+        expect treasury_output.datum == InlineDatum(Void)
+        expect value.lovelace_of(treasury_output.value) >= to_treasury
         True
       }
     }

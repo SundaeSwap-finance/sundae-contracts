@@ -42,7 +42,8 @@ pub type PoolRedeemer {
     input_order: List<Int>,
   }
   WithdrawFees {
-    amount: Int
+    amount: Int,
+    treasury_output: Int,
   }
 }
 
@@ -58,7 +59,7 @@ test example_pool_scoop_redeemer() {
 test example_pool_withdraw_fees_redeemer() {
   trace bytearray.to_hex(
     cbor.serialise(
-      WithdrawFees { amount: 100 },
+      WithdrawFees { amount: 100, treasury_output: 1 },
     ),
   )
   True
