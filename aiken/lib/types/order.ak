@@ -111,6 +111,7 @@ test example_withdrawal() {
   trace bytearray.to_hex(
     cbor.serialise(
       OrderDatum {
+        pool_ident: None,
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),

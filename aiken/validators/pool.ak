@@ -151,10 +151,13 @@ validator(settings_policy_id: PolicyId) {
         datums,
         initial_state,
         input_order,
+        0,
+        inputs,
         inputs,
         list.drop(outputs, 1),
         0,
       )
+    trace @"Done"
     let PoolState {
       quantity_lp: expected_circulating_lp,
       rewards: expected_rewards,

@@ -7,8 +7,9 @@ use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{PolicyId}
 use calculation/deposit
 use calculation/donation
-use calculation/shared.{PoolState,
-  do_2_exp, unsafe_fast_index_skip} as calc_shared
+use calculation/shared.{
+  PoolState, check_and_set_unique, unsafe_fast_index_skip_with_tail,
+} as calc_shared
 use calculation/swap
 use calculation/withdrawal
 use shared.{Ident, datum_of}
@@ -68,7 +69,9 @@ pub fn process_orders(
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   input_order: List<Int>,
-  inputs: List<Input>,
+  prev_index: Int,
+  all_inputs: List<Input>,
+  remaining_inputs: List<Input>,
   outputs: List<Output>,
   uniqueness_flag: Int,
 ) -> PoolState {
@@ -76,11 +79,16 @@ pub fn process_orders(
     [] -> initial
     [idx, ..rest] -> {
       // Check that this idx is unique
-      let n = do_2_exp(idx)
-      let n_2 = 2 * n
-      let y = uniqueness_flag + n
-      expect uniqueness_flag % n_2 < y % n_2
-      let order = unsafe_fast_index_skip(inputs, idx).output
+      let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
+      let next_input_list =
+        if idx >= prev_index {
+          unsafe_fast_index_skip_with_tail(remaining_inputs, idx - prev_index)
+        } else {
+          unsafe_fast_index_skip_with_tail(all_inputs, idx)
+        }
+      expect [input_to_process, ..rest_of_input_list] = next_input_list
+
+      let order = input_to_process.output
       expect [output, ..rest_outputs] = outputs
 
       expect Some(datum) = datum_of(datums, order)
@@ -102,25 +110,75 @@ pub fn process_orders(
               min_received,
               output,
             )
-          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
+          process_orders(
+            this_pool_ident,
+            datums,
+            next,
+            rest,
+            idx + 1,
+            all_inputs,
+            rest_of_input_list,
+            rest_outputs,
+            next_uniqueness_flag,
+          )
         }
         order.Deposit(..) -> {
           let next = deposit.do_deposit(initial, order.value, datum, output)
-          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
+          process_orders(
+            this_pool_ident,
+            datums,
+            next,
+            rest,
+            idx,
+            all_inputs,
+            rest_of_input_list,
+            rest_outputs,
+            next_uniqueness_flag,
+          )
         }
         order.Withdrawal(..) -> {
           let next =
             withdrawal.do_withdrawal(initial, order.value, datum, output)
-          process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
+          process_orders(
+            this_pool_ident,
+            datums,
+            next,
+            rest,
+            idx,
+            all_inputs,
+            rest_of_input_list,
+            rest_outputs,
+            next_uniqueness_flag,
+          )
         }
         // order.Zap(..) -> do_zap(initial, input, datum)
         order.Donation(..) -> {
           let (next, used_output) =
             donation.do_donation(initial, order.value, datum, output)
           if used_output {
-            process_orders(this_pool_ident, datums, next, rest, inputs, rest_outputs, y)
+            process_orders(
+              this_pool_ident,
+              datums,
+              next,
+              rest,
+              idx,
+              all_inputs,
+              rest_of_input_list,
+              rest_outputs,
+              next_uniqueness_flag,
+            )
           } else {
-            process_orders(this_pool_ident, datums, next, rest, inputs, outputs, y)
+            process_orders(
+              this_pool_ident,
+              datums,
+              next,
+              rest,
+              idx,
+              all_inputs,
+              rest_of_input_list,
+              outputs,
+              next_uniqueness_flag,
+            )
           }
         }
       }
@@ -198,7 +256,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let final_pool_state = process_orders(#"", datums, pool_state, input_order, inputs, outputs, 0)
+  let final_pool_state = process_orders(#"", datums, pool_state, input_order, 0, inputs, inputs, outputs, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000

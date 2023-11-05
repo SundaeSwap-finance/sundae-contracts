@@ -17,9 +17,9 @@ pub type PoolState {
   rewards: Int,
 }
 
-pub fn unsafe_fast_index_skip(inputs: List<a>, idx: Int) -> a {
+pub fn unsafe_fast_index_skip_with_tail(inputs: List<a>, idx: Int) -> List<a> {
   if idx >= 15 {
-    unsafe_fast_index_skip(
+    unsafe_fast_index_skip_with_tail(
       inputs
         |> builtin.tail_list
         |> builtin.tail_list
@@ -39,7 +39,7 @@ pub fn unsafe_fast_index_skip(inputs: List<a>, idx: Int) -> a {
       idx - 15,
     )
   } else if idx >= 7 {
-    unsafe_fast_index_skip(
+    unsafe_fast_index_skip_with_tail(
       inputs
         |> builtin.tail_list
         |> builtin.tail_list
@@ -51,16 +51,27 @@ pub fn unsafe_fast_index_skip(inputs: List<a>, idx: Int) -> a {
       idx - 7,
     )
   } else {
-    unsafe_fast_index(inputs, idx)
+    unsafe_fast_index_with_tail(inputs, idx)
   }
 }
 
-fn unsafe_fast_index(inputs: List<a>, idx: Int) -> a {
+fn unsafe_fast_index_with_tail(inputs: List<a>, idx: Int) -> List<a> {
   if idx == 0 {
-    builtin.head_list(inputs)
+    inputs
   } else {
-    unsafe_fast_index(builtin.tail_list(inputs), idx - 1)
+    unsafe_fast_index_with_tail(builtin.tail_list(inputs), idx - 1)
   }
+}
+
+pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
+  expect index >= 0
+  let bit = do_2_exp(index)
+  let bit_shifted = 2 * bit
+
+  let flag_set = uniqueness_flags + bit
+
+  expect flag_set % bit_shifted > uniqueness_flags % bit_shifted
+  flag_set
 }
 
 pub fn do_2_exp(n: Int) -> Int {

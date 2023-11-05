@@ -22,3 +22,7 @@ name = "SundaeSwap-finance/aicone"
 version = "main"
 requirements = []
 source = "github"
+
+[etags]
+"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1699157144, nanos_since_epoch = 336435279 }, "cfca6dccedde619aab2de3ac1cf7eb7679914726f672b06363f99d4989672b16"]
+"aiken-lang/stdlib@main" = [{ secs_since_epoch = 1699156927, nanos_since_epoch = 486752449 }, "a721cf2738274f806efefb5a33c6ff9ae049476f0d45a42049b71793949f4d1d"]
