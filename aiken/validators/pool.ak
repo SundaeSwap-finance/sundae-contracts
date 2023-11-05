@@ -16,12 +16,11 @@ use aiken/transaction/credential.{
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, is_after, spent_output}
+use shared.{AssetClass, Ident, is_after, spent_output, pool_nft_name, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
-  CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees, lp_token_name,
-  pool_token_name,
+  CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
 }
 use types/settings.{SettingsDatum}
 
@@ -39,7 +38,7 @@ fn minted_correct_pool_tokens(
   } else {
     dict.to_list(minted_tokens) == [
       (
-        lp_token_name(datum.identifier),
+        pool_lp_name(datum.identifier),
         outcome.quantity_lp.3rd - datum.circulating_lp,
       ),
     ]
@@ -65,7 +64,7 @@ fn has_expected_pool_value(
       value.quantity_of(
         output_value,
         pool_script_hash,
-        pool_token_name(identifier),
+        pool_nft_name(identifier),
       ) == 1
     True
   } else {
@@ -79,7 +78,7 @@ fn has_expected_pool_value(
       value.quantity_of(
         output_value,
         pool_script_hash,
-        pool_token_name(identifier),
+        pool_nft_name(identifier),
       ) == 1
     True
   }
@@ -150,6 +149,7 @@ validator(settings_policy_id: PolicyId) {
         let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
+        trace @"Start"
         let outcome =
           process_orders(
             actual_identifier,
@@ -258,7 +258,8 @@ validator(settings_policy_id: PolicyId) {
 
   fn mint(r: PoolMintRedeemer, ctx: ScriptContext) {
     when r is {
-      CreatePool(assets, pool_output_ix) -> {
+      CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+        // The assets on the pool must be sorted
         let (asset_a, asset_b) = assets
         let coin_pair_ordering_is_canonical =
           compare_asset_class(asset_a, asset_b) == Less
@@ -266,14 +267,21 @@ validator(settings_policy_id: PolicyId) {
         expect Some(first_input) = list.at(ctx.transaction.inputs, 0)
         let first_input_index =
           int_to_ident(first_input.output_reference.output_index)
+
+        // Calculate the identifier by hashing the txRef of the first input
+        // this makes the pool unique
+        // With CIP-68 identifiers, we have 28 bytes of space; ideally we'd use blake2b-224,
+        // but that won't be on-chain until plutus v3;
+        // So, we use blake2b-256 and drop 4 bytes; this is still 112 bits of security against collisions
         let new_pool_id =
           first_input.output_reference.transaction_id.hash
             |> bytearray.concat(#"23") // '#' character
             |> bytearray.concat(first_input_index)
             |> hash.blake2b_256
-            |> bytearray.drop(1)
-        let new_pool_p_token = shared.pool_nft_name(new_pool_id)
-        let new_pool_l_token = shared.pool_lq_name(new_pool_id)
+            |> bytearray.drop(4) 
+
+        // Derive the CIP-68 token identifiers
+        let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(new_pool_id)
 
         let reference_inputs = ctx.transaction.reference_inputs
 
@@ -300,14 +308,14 @@ validator(settings_policy_id: PolicyId) {
 
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
 
-        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_p_token)
-        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_l_token)
+        let new_pool_ref = (settings_datum.pool_script_hash, new_pool_ref_token)
+        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_nft_token)
+        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_lp_token)
 
         let expected_mint =
-          shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1))
-            |> value.merge(
-                 shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)),
-               )
+              shared.to_value((new_pool_ref.1st, new_pool_ref.2nd, 1))
+            |> value.merge(shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1)))
+            |> value.merge(shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)))
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
@@ -317,8 +325,14 @@ validator(settings_policy_id: PolicyId) {
           ) <= 3 && value.quantity_of(
             pool_output.value,
             settings_datum.pool_script_hash,
-            new_pool_p_token,
+            new_pool_lp_token,
           ) == 1
+        
+        // Make sure we send the pool metadata token to the metadata admin
+        expect Some(metadata_output) =
+          list.at(ctx.transaction.outputs, metadata_output_ix)
+        expect metadata_output.address == settings_datum.metadata_admin
+        expect value.quantity_of(metadata_output.value, settings_datum.pool_script_hash, new_pool_ref_token) == 1
 
         expect InlineDatum(d) = pool_output.datum
         expect pool_output_datum: PoolDatum = d
@@ -340,11 +354,7 @@ validator(settings_policy_id: PolicyId) {
         let pool_nft_name = shared.pool_nft_name(pool_ident)
         let allows_to_spend =
           fn(v) {
-            value.quantity_of(v, own_policy_id, pool_nft_name) >= 1 || value.quantity_of(
-              v,
-              settings_policy_id,
-              shared.settings_nft_name,
-            ) >= 1
+            value.quantity_of(v, own_policy_id, pool_nft_name) == 1
           }
         list.any(
           ctx.transaction.inputs,
@@ -390,6 +400,12 @@ fn mk_settings_input(
     SettingsDatum {
       pool_script_hash: psh,
       settings_admin: multisig.AnyOf([]),
+      metadata_admin: Address(
+        VerificationKeyCredential(
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+        ),
+        None,
+      ),
       treasury_admin: multisig.AnyOf([]),
       treasury_address: Address(
         VerificationKeyCredential(
@@ -489,7 +505,7 @@ test pool_validator_ignores_fee() {
 test scoop_high_swap_fees() {
   let hash_of_pool_script =
     #"00000000000000000000000000000000000000000000000000000000"
-  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let dummy_policy_id =
     #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -551,6 +567,12 @@ test scooper_not_in_settings() fail {
           SettingsDatum {
             pool_script_hash: hash_of_pool_script,
             settings_admin: multisig.AnyOf([]),
+            metadata_admin: Address(
+              VerificationKeyCredential(
+                #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+              ),
+              None,
+            ),
             treasury_admin: multisig.AnyOf([]),
             treasury_address: Address(
               VerificationKeyCredential(
@@ -585,7 +607,7 @@ fn scoop(options: ScoopTestOptions) {
     multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     )
-  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_datum =
     PoolDatum {
       identifier: pool_id,
@@ -844,7 +866,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow2_out = Output {
     address: option.or_else(options.edit_escrow_destination, user_addr),
     value: value.from_lovelace(2_000_000)
-      |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+      |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
       |> value.add(dummy_policy_id, dummy_asset_name, 196_990),
     datum: NoDatum,
     reference_script: None,
@@ -867,7 +889,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
       mint: value.to_minted_value(
         value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+          |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
       ),
       certificates: [],
       withdrawals: dict.new(),

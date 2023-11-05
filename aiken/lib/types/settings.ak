@@ -8,6 +8,7 @@ use shared.{Rational}
 pub type SettingsDatum {
   pool_script_hash: Hash<Blake2b_224, Script>,
   settings_admin: MultisigScript, // Who can update the updatable settings?
+  metadata_admin: Address, // Who or what governs the evolution of CIP-68 token metadata
   treasury_admin: MultisigScript, // Who can withdraw to the treasury
   treasury_address: Address, // Where to withdraw treasury funds
   treasury_allowance: Rational, // When withdrawing, what percentage can be released for administrative purposes?
@@ -30,6 +31,12 @@ test example_settings_datum() {
         pool_script_hash: #"596a9815c479a00f894a5a61f64d1f508635dd4e809b29ce1c4afadc",
         settings_admin: multisig.Signature(
           #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+        ),
+        metadata_admin: Address(
+          VerificationKeyCredential(
+            #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+          ),
+          None,
         ),
         treasury_admin: multisig.Signature(
           #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",

@@ -83,10 +83,22 @@ pub fn legal_swap_fees() -> List<Int> {
 
 pub const settings_nft_name: AssetName = "settings"
 
-pub fn pool_nft_name(pool_ident: Ident) {
-  bytearray.concat(#"70", pool_ident)
+pub fn pool_token_names(pool_ident: Ident) {
+  (
+    pool_ref_name(pool_ident),
+    pool_nft_name(pool_ident),
+    pool_lp_name(pool_ident),
+  )
 }
 
-pub fn pool_lq_name(pool_ident: Ident) {
-  bytearray.concat(#"6c", pool_ident)
+pub fn pool_ref_name(pool_ident: Ident) {
+  bytearray.concat(#"000643b0", pool_ident)
+}
+
+pub fn pool_nft_name(pool_ident: Ident) {
+  bytearray.concat(#"000de140", pool_ident)
+}
+
+pub fn pool_lp_name(pool_ident: Ident) {
+  bytearray.concat(#"0014df10", pool_ident)
 }

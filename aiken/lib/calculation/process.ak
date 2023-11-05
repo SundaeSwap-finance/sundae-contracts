@@ -14,10 +14,10 @@ use calculation/shared.{
 } as calc_shared
 use calculation/swap
 use calculation/withdrawal
-use shared.{Ident, datum_of}
+use shared.{Ident, datum_of, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
-use types/pool.{PoolDatum, lp_token_name}
+use types/pool.{PoolDatum}
 
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
@@ -73,7 +73,7 @@ pub fn pool_input_to_state(
       asset_b_name,
       value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     ),
-    quantity_lp: (pool_token_policy, lp_token_name(identifier), circulating_lp),
+    quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
     fees_per_10_thousand: fees,
     // Pay the transaction fee out of the protocol_fees
     protocol_fees,

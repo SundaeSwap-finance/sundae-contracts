@@ -1,7 +1,6 @@
 use aiken/bytearray
 use aiken/cbor
 use aiken/time.{PosixTime}
-use aiken/transaction/value.{AssetName, PolicyId}
 use shared.{AssetClass, Ident}
 
 pub type PoolDatum {
@@ -69,7 +68,7 @@ test example_pool_withdraw_fees_redeemer() {
 
 pub type PoolMintRedeemer {
   MintLP { identifier: Ident }
-  CreatePool { assets: (AssetClass, AssetClass), pool_output: Int }
+  CreatePool { assets: (AssetClass, AssetClass), pool_output: Int, metadata_output: Int }
 }
 
 test example_pool_mint_redeemer() {
@@ -84,24 +83,9 @@ test example_pool_mint_redeemer() {
           ),
         ),
         pool_output: 0,
+        metadata_output: 1,
       },
     ),
   )
   True
-}
-
-pub fn pool_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
-  (policy_id, bytearray.concat("p", ident))
-}
-
-pub fn pool_token_name(ident: Ident) -> AssetName {
-  bytearray.concat("p", ident)
-}
-
-pub fn lp_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
-  (policy_id, bytearray.concat("l", ident))
-}
-
-pub fn lp_token_name(ident: Ident) -> AssetName {
-  bytearray.concat("l", ident)
 }
