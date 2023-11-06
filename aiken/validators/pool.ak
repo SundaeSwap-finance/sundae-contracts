@@ -22,7 +22,7 @@ use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
 }
-use types/settings.{SettingsDatum}
+use types/settings.{SettingsDatum, find_settings_datum}
 
 fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
@@ -130,13 +130,7 @@ validator(settings_policy_id: PolicyId) {
     } = output_datum
 
     // Find the settings datum
-    let settings_output = builtin.head_list(reference_inputs).output
-    let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
-    expect [_, (found_policy_id, settings_dict)] = settings_value_list
-    expect found_policy_id == settings_policy_id
-    expect dict.to_list(settings_dict) == [(shared.settings_nft_name, 1)]
-    expect InlineDatum(settings_datum) = settings_output.datum
-    expect settings_datum: SettingsDatum = settings_datum
+    let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
     when redeemer is {
       PoolScoop{ signatory_index, scooper_index, input_order } -> {
@@ -285,9 +279,7 @@ validator(settings_policy_id: PolicyId) {
 
         let reference_inputs = ctx.transaction.reference_inputs
 
-        let settings_output = builtin.head_list(reference_inputs).output
-        expect InlineDatum(settings_datum) = settings_output.datum
-        expect settings_datum: SettingsDatum = settings_datum
+        let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
 
         expect Some(pool_output) =
           list.at(ctx.transaction.outputs, pool_output_ix)
