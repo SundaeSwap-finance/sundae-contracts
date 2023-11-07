@@ -16,7 +16,7 @@ use aiken/transaction/credential.{
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count}
 use sundae/multisig
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
@@ -56,7 +56,7 @@ fn has_expected_pool_value(
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   if quantity_a_policy_id == ada_policy_id {
-    expect 3 == list.length(value.flatten(output_value))
+    expect has_exact_token_count(output_value, 3)
     expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
     expect
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
@@ -68,7 +68,7 @@ fn has_expected_pool_value(
       ) == 1
     True
   } else {
-    expect 4 == list.length(value.flatten(output_value))
+    expect has_exact_token_count(output_value, 4)
     expect value.lovelace_of(output_value) == protocol_fees
     expect
       value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt

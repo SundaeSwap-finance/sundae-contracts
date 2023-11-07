@@ -63,6 +63,49 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
   input.output
 }
 
+fn has_exact_token_count_per_asset(entries: List<(AssetName, Int)>, count: Int) -> Int {
+  when entries is {
+    [] -> count
+    [_, ..rest] -> {
+      has_exact_token_count_per_asset(rest, count - 1)
+    }
+  }
+}
+
+fn has_exact_token_count_per_policy(entries: List<(PolicyId, Dict<AssetName, Int>)>, count: Int) -> Bool {
+  if count < 0 {
+    False
+  } else {
+    when entries is {
+      [] -> count == 0
+      [(_, head), ..rest] -> {
+        let remaining = has_exact_token_count_per_asset(dict.to_list(head), count)
+        has_exact_token_count_per_policy(rest, remaining)
+      }
+    }
+  }
+}
+
+pub fn has_exact_token_count(val: value.Value, count: Int) {
+  has_exact_token_count_per_policy(dict.to_list(value.to_dict(val)), count)
+}
+
+test test_has_exact_token_count() {
+  let val = value.from_lovelace(100)
+    |> value.add("abc", "def", 100)
+    |> value.add("xyz", "www", 200)
+  expect has_exact_token_count(val, 3)
+
+  let val = value.from_lovelace(100)
+    |> value.add("abc", "def", 100)
+  expect has_exact_token_count(val, 2)
+
+  let val = value.from_lovelace(100)
+    |> value.add("abc", "def", 100)
+  expect !has_exact_token_count(val, 3)
+  True
+}
+
 pub fn pool_token_names(pool_ident: Ident) {
   (
     pool_ref_name(pool_ident),
