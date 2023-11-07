@@ -95,13 +95,16 @@ pub fn process_order(
   tx_valid_range: ValidityRange,
   value: Value,
   details: Order,
+  max_protocol_fee: Int,
   datum: OrderDatum,
   destination: Destination,
-  actual_protocol_fee: Int,
+  amortized_base_fee: Int,
+  simple_fee: Int,
+  strategy_fee: Int,
   output: Output,
   outputs: List<Output>,
   rest_outputs: List<Output>
-) -> (PoolState, List<Output>) {
+) -> (PoolState, List<Output>, Int) {
   when details is {
     order.Strategy(signer) -> {
       expect Some(execution) = signed_execution
@@ -118,44 +121,61 @@ pub fn process_order(
         tx_valid_range,
         value,
         details,
+        max_protocol_fee,
         datum,
         destination,
-        actual_protocol_fee,
+        amortized_base_fee,
+        // We pass strategy_fee here, instead of simple_fee,
+        // reuse the code to calculate the result, but charge the higher fee
+        strategy_fee,
+        strategy_fee,
         output,
         outputs,
         rest_outputs,
       )
     }
     order.Swap(offer, min_received) -> {
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
       let next =
         swap.do_swap(
           initial,
           value,
           destination,
-          actual_protocol_fee,
+          fee,
           offer,
           min_received,
           output,
         )
-      (next, rest_outputs)
+      (next, rest_outputs, fee)
     }
     order.Deposit(..) -> {
-      let next = deposit.do_deposit(initial, value, datum, actual_protocol_fee, output)
-      (next, rest_outputs)
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
+      let next = deposit.do_deposit(initial, value, datum, fee, output)
+      (next, rest_outputs, fee)
     }
     order.Withdrawal(..) -> {
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
       let next =
-        withdrawal.do_withdrawal(initial, value, datum, actual_protocol_fee, output)
-      (next, rest_outputs)
+        withdrawal.do_withdrawal(initial, value, datum, fee, output)
+      (next, rest_outputs, fee)
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
     order.Donation(..) -> {
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
       let (next, used_output) =
-        donation.do_donation(initial, value, datum, actual_protocol_fee, output)
+        donation.do_donation(initial, value, datum, fee, output)
       if used_output {
-        (next, rest_outputs)
+        (next, rest_outputs, fee)
       } else {
-        (next, outputs)
+        (next, outputs, fee)
       }
     }
   }
@@ -167,16 +187,20 @@ pub fn process_orders(
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   input_order: List<(Int, Option<SignedStrategyExecution>)>,
-  actual_protocol_fee: Int,
+  amortized_base_fee: Int,
+  simple_fee: Int,
+  strategy_fee: Int,
   prev_index: Int,
   all_inputs: List<Input>,
   remaining_inputs: List<Input>,
   outputs: List<Output>,
   uniqueness_flag: Int,
-  count: Int,
-) -> (PoolState, Int) {
+  simple_count: Int,
+  strategy_count: Int,
+  total_fee: Int,
+) -> (PoolState, Int, Int, Int) {
   when input_order is {
-    [] -> (initial, count)
+    [] -> (initial, simple_count, strategy_count, total_fee)
     [(idx, sse), ..rest] -> {
       // Check that this idx is unique
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -197,20 +221,25 @@ pub fn process_orders(
         datum
 
       expect validate_pool_id(pool_ident, this_pool_ident)
-
-      // Make sure the scooper can only take up to the max fee the user has agreed to
-      expect max_protocol_fee >= actual_protocol_fee
       
-      let (next_state, next_orders) = process_order(
+      let (next_simple_count, next_strategy_count) = when details is {
+        order.Strategy(..) -> (simple_count, strategy_count + 1)
+        _ -> (simple_count + 1, strategy_count)
+      }
+
+      let (next_state, next_orders, fee) = process_order(
         initial,
         sse,
         output_reference,
         tx_valid_range,
         order.value,
         details,
+        max_protocol_fee,
         datum, // TODO: can we get rid of this?
         destination,
-        actual_protocol_fee,
+        amortized_base_fee,
+        simple_fee,
+        strategy_fee,
         output,
         outputs,
         rest_outputs,
@@ -222,13 +251,17 @@ pub fn process_orders(
         datums,
         next_state,
         rest,
-        actual_protocol_fee,
+        amortized_base_fee,
+        simple_fee,
+        strategy_fee,
         idx + 1,
         all_inputs,
         rest_of_input_list,
         next_orders,
         next_uniqueness_flag,
-        count + 1,
+        next_simple_count,
+        next_strategy_count,
+        total_fee + fee
       )
     }
   }
@@ -305,11 +338,13 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, count) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, inputs, inputs, outputs, 0, 0)
+  let (final_pool_state, simple, strategies, fee) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
   expect final_pool_state.protocol_fees == 4_500_000
-  expect count == 1
+  expect simple == 1
+  expect strategies == 0
+  expect fee == 2_500_000
   True
 }

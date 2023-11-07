@@ -22,7 +22,8 @@ pub type SettingsDatum {
   authorized_staking_keys: List<VerificationKey>,
 
   base_fee: Int,
-  incremental_fee: Int,
+  simple_fee: Int,
+  strategy_fee: Int,
 
   extensions: Data,
 }
@@ -79,7 +80,8 @@ test example_settings_datum() {
           #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
         ],
         base_fee: 1_000_000,
-        incremental_fee: 100_000,
+        simple_fee: 100_000,
+        strategy_fee: 200_000,
         extensions: Void,
       },
     ),

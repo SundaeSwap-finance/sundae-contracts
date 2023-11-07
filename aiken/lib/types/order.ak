@@ -11,6 +11,7 @@ pub type OrderDatum {
   // An owner that's allowed to modify it
   owner: MultisigScript,
   // The maximum amount of ADA that can be taken as a protocol fee
+  // TODO: consider; with strategies, is this too dangerous?
   max_protocol_fee: Int,
   // A destination that the results of the order must be sent to
   destination: Destination,

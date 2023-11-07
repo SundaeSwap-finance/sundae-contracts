@@ -133,10 +133,10 @@ validator(settings_policy_id: PolicyId) {
     let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
     when redeemer is {
-      PoolScoop{ signatory_index, scooper_index, actual_protocol_fee, input_order } -> {
+      PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
 
         // Deconstruct the settings datum with the fields we need for a scoop
-        let SettingsDatum { pool_script_hash, authorized_scoopers, base_fee, incremental_fee, .. } =
+        let SettingsDatum { pool_script_hash, authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
 
         // Construct the initial pool state from the datum and the locked values
@@ -144,18 +144,22 @@ validator(settings_policy_id: PolicyId) {
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
         trace @"Start"
-        let (outcome, order_count) =
+        let (outcome, simple_count, strategy_count, total_protocol_fee) =
           process_orders(
             actual_identifier,
             validity_range,
             datums,
             initial_state,
             input_order,
-            actual_protocol_fee,
+            amortized_base_fee,
+            simple_fee,
+            strategy_fee,
             0,
             inputs,
             inputs,
             list.drop(outputs, 1),
+            0,
+            0,
             0,
             0,
           )
@@ -168,7 +172,7 @@ validator(settings_policy_id: PolicyId) {
 
         // TODO: cherry-pick Philips fix that counts orders
         let real_order_count = count_orders(inputs)
-        expect order_count == real_order_count
+        expect simple_count + strategy_count == real_order_count
 
         // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
         // but we can't enforce that it takes *exactly* this amount, because of rounding
@@ -177,10 +181,9 @@ validator(settings_policy_id: PolicyId) {
         // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
         // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
         // and at most max_protocol_fee 
-        let max_protocol_fee = base_fee + order_count * incremental_fee
-        let total_protocol_fee = order_count * actual_protocol_fee
+        let max_protocol_fee = base_fee + simple_count * simple_fee + strategy_count * strategy_fee
 
-        expect total_protocol_fee > 0
+        expect amortized_base_fee >= 0
         expect total_protocol_fee <= max_protocol_fee
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
@@ -429,7 +432,8 @@ fn mk_settings_input(
       authorized_scoopers: scoopers,
       authorized_staking_keys: [],
       base_fee: 0,
-      incremental_fee: 2_500_000,
+      simple_fee: 2_500_000,
+      strategy_fee: 5_000_000,
       extensions: Void,
     }
   let settings_input =
@@ -599,7 +603,8 @@ test scooper_not_in_settings() fail {
             authorized_scoopers: [somebody],
             authorized_staking_keys: [],
             base_fee: 0,
-            incremental_fee: 2_500_000,
+            simple_fee: 2_500_000,
+            strategy_fee: 5_000_000,
             extensions: Void,
           },
         ),
@@ -759,7 +764,7 @@ fn scoop(options: ScoopTestOptions) {
       },
       purpose: Spend(pool_input.output_reference),
     }
-  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [(1, None), (2, None)])
+  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None), (2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
@@ -919,7 +924,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [(1, None),(2, None)])
+  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None),(2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
