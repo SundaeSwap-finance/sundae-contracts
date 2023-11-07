@@ -147,6 +147,7 @@ validator(settings_policy_id: PolicyId) {
         let (outcome, order_count) =
           process_orders(
             actual_identifier,
+            validity_range,
             datums,
             initial_state,
             input_order,
