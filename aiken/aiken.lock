@@ -24,5 +24,5 @@ requirements = []
 source = "github"
 
 [etags]
-"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1699373130, nanos_since_epoch = 954158000 }, "9be98e1dccac7e0968bdde05764096b7d1000c828c0fc8683e798da884dab5fd"]
-"aiken-lang/stdlib@main" = [{ secs_since_epoch = 1699373130, nanos_since_epoch = 711398000 }, "a721cf2738274f806efefb5a33c6ff9ae049476f0d45a42049b71793949f4d1d"]
+"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1699387107, nanos_since_epoch = 634558000 }, "9be98e1dccac7e0968bdde05764096b7d1000c828c0fc8683e798da884dab5fd"]
+"aiken-lang/stdlib@main" = [{ secs_since_epoch = 1699387107, nanos_since_epoch = 388202000 }, "cf946239d3dd481ed41f20e56bf24910b5229ea35aa171a708edc2a47fc20a7b"]

@@ -13,7 +13,7 @@ pub fn do_donation(
   actual_protocol_fee: Int,
   output: Output,
 ) -> (PoolState, Bool) {
-  expect order.Donation { assets } = order.order
+  expect order.Donation { assets } = order.details
   expect assets.1st.1st == pool_state.quantity_a.1st
   expect assets.1st.2nd == pool_state.quantity_a.2nd
   expect assets.2nd.1st == pool_state.quantity_b.1st
@@ -85,7 +85,7 @@ test donation() {
       ),
       max_protocol_fee: 2_500_000,
       destination: Destination { address: addr, datum: NoDatum },
-      order: order.Donation {
+      details: order.Donation {
         assets: (
           (ada.1st, ada.2nd, 1_000_000),
           (rberry.1st, rberry.2nd, 1_000_000),

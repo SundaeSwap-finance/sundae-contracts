@@ -168,7 +168,7 @@ test swap_mintakes_too_high() fail {
       address: addr,
       datum: NoDatum,
     },
-    order: order.Swap { offer: swap_offer, min_received: swap_min_received, },
+    details: order.Swap { offer: swap_offer, min_received: swap_min_received, },
     extension: Void,
   }
   let output = Output {

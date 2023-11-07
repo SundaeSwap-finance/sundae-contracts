@@ -668,7 +668,7 @@ fn scoop(options: ScoopTestOptions) {
       owner,
       max_protocol_fee: 2_500_000,
       destination: dest,
-      order: swap,
+      details: swap,
       extension: builtin.i_data(0),
     }
   let escrow_address = script_address(hash_of_escrow_script)
@@ -758,7 +758,7 @@ fn scoop(options: ScoopTestOptions) {
       },
       purpose: Spend(pool_input.output_reference),
     }
-  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [1, 2])
+  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [(1, None), (2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
@@ -830,7 +830,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     owner: owner,
     max_protocol_fee: 2_500_000,
     destination: dest,
-    order: swap,
+    details: swap,
     extension: builtin.i_data(0),
   }
   let escrow_datum_2 = OrderDatum {
@@ -838,7 +838,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     owner: owner,
     max_protocol_fee: 2_500_000,
     destination: dest,
-    order: deposit,
+    details: deposit,
     extension: builtin.i_data(0),
   }
   let escrow_address = script_address(hash_of_escrow_script)
@@ -918,7 +918,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [1,2])
+  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [(1, None),(2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }

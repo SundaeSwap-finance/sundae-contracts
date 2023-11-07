@@ -13,7 +13,7 @@ pub fn do_deposit(
   actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
-  expect order.Deposit { assets } = order.order
+  expect order.Deposit { assets } = order.details
   let (asset_a, asset_b) = assets
 
   // Policy ID and token name of the assets must match the pool.
@@ -129,7 +129,7 @@ test deposit_test() {
       address: addr,
       datum: NoDatum,
     },
-    order: order.Deposit {
+    details: order.Deposit {
       assets: ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000)),
     },
     extension: Void,

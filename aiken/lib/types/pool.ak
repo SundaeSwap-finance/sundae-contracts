@@ -2,6 +2,7 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/time.{PosixTime}
 use shared.{AssetClass, Ident}
+use types/order.{SignedStrategyExecution}
 
 pub type PoolDatum {
   identifier: Ident,
@@ -41,7 +42,7 @@ pub type PoolRedeemer {
     signatory_index: Int,
     scooper_index: Int,
     actual_protocol_fee: Int,
-    input_order: List<Int>,
+    input_order: List<(Int, Option<SignedStrategyExecution>)>,
   }
   WithdrawFees {
     amount: Int,
@@ -52,7 +53,7 @@ pub type PoolRedeemer {
 test example_pool_scoop_redeemer() {
   trace bytearray.to_hex(
     cbor.serialise(
-      PoolScoop { signatory_index: 0, scooper_index: 0, actual_protocol_fee: 2_500_000, input_order: [1] },
+      PoolScoop { signatory_index: 0, scooper_index: 0, actual_protocol_fee: 2_500_000, input_order: [(1, None)] },
     ),
   )
   True

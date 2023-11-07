@@ -14,7 +14,7 @@ pub fn do_withdrawal(
   actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
-  expect order.Withdrawal { amount } = order.order
+  expect order.Withdrawal { amount } = order.details
   let (lp_policy, lp_asset_name, amount) = amount
 
   expect lp_policy == pool_state.quantity_lp.1st
@@ -135,7 +135,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       address: addr,
       datum: NoDatum,
     },
-    order: order.Withdrawal {
+    details: order.Withdrawal {
       amount: (lp.1st, lp.2nd, 10_000_000),
     },
     extension: Void,

@@ -16,7 +16,7 @@ use calculation/swap
 use calculation/withdrawal
 use shared.{Ident, datum_of, pool_lp_name}
 use sundae/multisig
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
 
 pub fn pool_input_to_state(
@@ -91,7 +91,7 @@ pub fn process_orders(
   this_pool_ident: Ident,
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
-  input_order: List<Int>,
+  input_order: List<(Int, Option<SignedStrategyExecution>)>,
   actual_protocol_fee: Int,
   prev_index: Int,
   all_inputs: List<Input>,
@@ -102,7 +102,7 @@ pub fn process_orders(
 ) -> (PoolState, Int) {
   when input_order is {
     [] -> (initial, count)
-    [idx, ..rest] -> {
+    [(idx, _), ..rest] -> {
       // Check that this idx is unique
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
       let next_input_list =
@@ -118,7 +118,7 @@ pub fn process_orders(
 
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
-      let OrderDatum { pool_ident, destination, max_protocol_fee, order: order_details, .. } =
+      let OrderDatum { pool_ident, destination, max_protocol_fee, details, .. } =
         datum
 
       expect validate_pool_id(pool_ident, this_pool_ident)
@@ -126,7 +126,8 @@ pub fn process_orders(
       // Make sure the scooper can only take up to the max fee the user has agreed to
       expect max_protocol_fee >= actual_protocol_fee
 
-      when order_details is {
+      when details is {
+        order.Strategy(..) -> todo
         order.Swap(offer, min_received) -> {
           let next =
             swap.do_swap(
@@ -252,7 +253,7 @@ test process_orders_test() {
       address: addr,
       datum: NoDatum,
     },
-    order: order.Donation {
+    details: order.Donation {
       assets: ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000)),
     },
     extension: Void,
@@ -290,7 +291,7 @@ test process_orders_test() {
     output: order_output,
   }
 
-  let input_order = [0]
+  let input_order = [(0, None)]
   let inputs = [input]
   let outputs = [output]
 
