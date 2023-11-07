@@ -98,9 +98,10 @@ pub fn process_orders(
   remaining_inputs: List<Input>,
   outputs: List<Output>,
   uniqueness_flag: Int,
-) -> PoolState {
+  count: Int,
+) -> (PoolState, Int) {
   when input_order is {
-    [] -> initial
+    [] -> (initial, count)
     [idx, ..rest] -> {
       // Check that this idx is unique
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -148,6 +149,7 @@ pub fn process_orders(
             rest_of_input_list,
             rest_outputs,
             next_uniqueness_flag,
+            count + 1,
           )
         }
         order.Deposit(..) -> {
@@ -163,6 +165,7 @@ pub fn process_orders(
             rest_of_input_list,
             rest_outputs,
             next_uniqueness_flag,
+            count + 1,
           )
         }
         order.Withdrawal(..) -> {
@@ -179,6 +182,7 @@ pub fn process_orders(
             rest_of_input_list,
             rest_outputs,
             next_uniqueness_flag,
+            count + 1,
           )
         }
         // order.Zap(..) -> do_zap(initial, input, datum)
@@ -197,6 +201,7 @@ pub fn process_orders(
               rest_of_input_list,
               rest_outputs,
               next_uniqueness_flag,
+              count + 1,
             )
           } else {
             process_orders(
@@ -210,6 +215,7 @@ pub fn process_orders(
               rest_of_input_list,
               outputs,
               next_uniqueness_flag,
+              count + 1,
             )
           }
         }
@@ -288,10 +294,11 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let final_pool_state = process_orders(#"", datums, pool_state, input_order, 2_500_000, 0, inputs, inputs, outputs, 0)
+  let (final_pool_state, count) = process_orders(#"", datums, pool_state, input_order, 2_500_000, 0, inputs, inputs, outputs, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
   expect final_pool_state.protocol_fees == 4_500_000
+  expect count == 1
   True
 }

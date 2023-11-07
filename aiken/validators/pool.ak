@@ -16,7 +16,7 @@ use aiken/transaction/credential.{
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count, count_orders}
 use sundae/multisig
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
@@ -144,7 +144,7 @@ validator(settings_policy_id: PolicyId) {
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
         trace @"Start"
-        let outcome =
+        let (outcome, order_count) =
           process_orders(
             actual_identifier,
             datums,
@@ -156,6 +156,7 @@ validator(settings_policy_id: PolicyId) {
             inputs,
             list.drop(outputs, 1),
             0,
+            0,
           )
         trace @"Done"
         let PoolState {
@@ -165,7 +166,8 @@ validator(settings_policy_id: PolicyId) {
         } = outcome
 
         // TODO: cherry-pick Philips fix that counts orders
-        let real_order_count = list.length(input_order)
+        let real_order_count = count_orders(inputs)
+        expect order_count == real_order_count
 
         // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
         // but we can't enforce that it takes *exactly* this amount, because of rounding
@@ -174,8 +176,8 @@ validator(settings_policy_id: PolicyId) {
         // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
         // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
         // and at most max_protocol_fee 
-        let max_protocol_fee = base_fee + real_order_count * incremental_fee
-        let total_protocol_fee = real_order_count * actual_protocol_fee
+        let max_protocol_fee = base_fee + order_count * incremental_fee
+        let total_protocol_fee = order_count * actual_protocol_fee
 
         expect total_protocol_fee > 0
         expect total_protocol_fee <= max_protocol_fee
