@@ -63,31 +63,18 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
   input.output
 }
 
-fn has_exact_token_count_per_asset(entries: List<(AssetName, Int)>, count: Int) -> Int {
-  when entries is {
-    [] -> count
-    [_, ..rest] -> {
-      has_exact_token_count_per_asset(rest, count - 1)
-    }
-  }
-}
-
-fn has_exact_token_count_per_policy(entries: List<(PolicyId, Dict<AssetName, Int>)>, count: Int) -> Bool {
-  if count < 0 {
-    False
-  } else {
-    when entries is {
-      [] -> count == 0
-      [(_, head), ..rest] -> {
-        let remaining = has_exact_token_count_per_asset(dict.to_list(head), count)
-        has_exact_token_count_per_policy(rest, remaining)
-      }
-    }
-  }
-}
-
 pub fn has_exact_token_count(val: value.Value, count: Int) {
-  has_exact_token_count_per_policy(dict.to_list(value.to_dict(val)), count)
+  count == list.foldl(
+    dict.to_list(value.to_dict(val)),
+    0,
+    fn(tk_pair, total) {
+      list.foldl(
+        dict.to_list(builtin.snd_pair(tk_pair)),
+        0,
+        fn(_tn, tn_length) { tn_length + 1 },
+      ) + total
+    },
+  )
 }
 
 test test_has_exact_token_count() {
