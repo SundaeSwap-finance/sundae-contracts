@@ -16,7 +16,7 @@ use aiken/transaction/credential.{
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, is_after, spent_output, pool_nft_name, pool_lp_name}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
@@ -191,7 +191,7 @@ validator(settings_policy_id: PolicyId) {
         expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
         expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
         let licensed_scooper = scooper_sig == scooper
-        let market_open = is_after(validity_range, datum.market_open)
+        let market_open = interval.is_entirely_after(validity_range, datum.market_open)
 
         // expect pool_can_be_scooped
         // expect !list.is_empty(orders)
@@ -748,7 +748,7 @@ fn scoop(options: ScoopTestOptions) {
         mint: value.to_minted_value(value.from_lovelace(0)),
         certificates: [],
         withdrawals: dict.new(),
-        validity_range: interval.between(0, 1),
+        validity_range: interval.between(1, 2),
         extra_signatories: [scooper],
         redeemers: dict.new(),
         datums: dict.new(),
@@ -908,7 +908,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       ),
       certificates: [],
       withdrawals: dict.new(),
-      validity_range: interval.between(0, 1),
+      validity_range: interval.between(1, 2),
       extra_signatories: [scooper],
       redeemers: dict.new(),
       datums: dict.new(),

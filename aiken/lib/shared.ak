@@ -1,9 +1,7 @@
 use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
-use aiken/interval.{Finite, Interval}
 use aiken/list
-use aiken/time.{PosixTime}
 use aiken/transaction.{
   DatumHash, InlineDatum, Input, NoDatum, Output, ScriptContext, Spend,
   find_input,
@@ -41,18 +39,6 @@ pub fn spent_output(ctx: ScriptContext) -> Output {
   expect Spend(out_ref) = ctx.purpose
   expect Some(input) = find_input(ctx.transaction.inputs, out_ref)
   input.output
-}
-
-pub fn is_after(range: Interval<PosixTime>, point: PosixTime) {
-  when range.lower_bound.bound_type is {
-    Finite(low) ->
-      if range.lower_bound.is_inclusive {
-        point <= low
-      } else {
-        point < low
-      }
-    _ -> False
-  }
 }
 
 pub fn get_input_with_token(
