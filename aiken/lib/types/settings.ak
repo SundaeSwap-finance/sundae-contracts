@@ -23,6 +23,8 @@ pub type SettingsDatum {
 
   base_fee: Int,
   incremental_fee: Int,
+
+  extensions: Data,
 }
 
 pub type SettingsRedeemer {
@@ -78,6 +80,7 @@ test example_settings_datum() {
         ],
         base_fee: 1_000_000,
         incremental_fee: 100_000,
+        extensions: Void,
       },
     ),
   )

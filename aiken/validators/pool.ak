@@ -427,6 +427,7 @@ fn mk_settings_input(
       authorized_staking_keys: [],
       base_fee: 0,
       incremental_fee: 2_500_000,
+      extensions: Void,
     }
   let settings_input =
     Input {
@@ -596,6 +597,7 @@ test scooper_not_in_settings() fail {
             authorized_staking_keys: [],
             base_fee: 0,
             incremental_fee: 2_500_000,
+            extensions: Void,
           },
         ),
       ),
