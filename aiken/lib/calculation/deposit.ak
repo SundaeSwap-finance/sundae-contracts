@@ -1,9 +1,8 @@
 use aiken/math
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value}
+use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
-use shared
 use sundae/multisig
 use types/order.{Destination, Deposit, OrderDatum}
 
@@ -11,6 +10,7 @@ pub fn do_deposit(
   pool_state: PoolState,
   input_value: Value,
   order: OrderDatum,
+  actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
   expect order.Deposit { assets } = order.order
@@ -28,7 +28,8 @@ pub fn do_deposit(
   let user_gives_a = {
     let extra_ada =
       if asset_a.1st == "" {
-        2_000_000 + order.protocol_fee
+        // TODO: public constant for the deposit
+        2_000_000 + actual_protocol_fee
       } else {
         0
       }
@@ -62,23 +63,20 @@ pub fn do_deposit(
   let issued_lp_tokens =
     final_a * pool_state.quantity_lp.3rd / pool_state.quantity_a.3rd
 
-  let remainder =
-    shared.to_value((asset_a.1st, asset_a.2nd, final_a))
-      |> value.merge(shared.to_value((asset_b.1st, asset_b.2nd, final_b)))
-      |> value.merge(shared.to_value(("", "", order.protocol_fee)))
-      |> value.negate
-      |> value.merge(input_value)
-      |> value.merge(
-           value.from_asset(
-             pool_state.quantity_lp.1st,
-             pool_state.quantity_lp.2nd,
-             issued_lp_tokens,
-           ),
-         )
+  let out_value =
+    input_value
+      |> value.add(asset_a.1st, asset_a.2nd, -final_a)
+      |> value.add(asset_b.1st, asset_b.2nd, -final_b)
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(
+          pool_state.quantity_lp.1st,
+          pool_state.quantity_lp.2nd,
+          issued_lp_tokens,
+        )
 
   expect output.address == order.destination.address
   expect output.datum == order.destination.datum
-  expect output.value == remainder
+  expect output.value == out_value
   PoolState {
     quantity_a: (
       pool_state.quantity_a.1st,
@@ -96,7 +94,7 @@ pub fn do_deposit(
       pool_state.quantity_lp.3rd + issued_lp_tokens,
     ),
     fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    protocol_fees: pool_state.protocol_fees + order.protocol_fee,
+    protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
   }
 }
 
@@ -126,7 +124,7 @@ test deposit_test() {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    protocol_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -143,7 +141,7 @@ test deposit_test() {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_deposit(pool_state, input_value, order, output)
+  let final_pool_state = do_deposit(pool_state, input_value, order, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_010_000_000
   expect final_pool_state.quantity_b.3rd == 1_010_000_000
   expect final_pool_state.protocol_fees == 4_500_000

@@ -10,6 +10,7 @@ pub fn do_donation(
   pool_state: PoolState,
   input_value: Value,
   order: OrderDatum,
+  actual_protocol_fee: Int,
   output: Output,
 ) -> (PoolState, Bool) {
   expect order.Donation { assets } = order.order
@@ -47,7 +48,7 @@ pub fn do_donation(
       ),
       quantity_lp: pool_state.quantity_lp,
       fees_per_10_thousand: pool_state.fees_per_10_thousand,
-      protocol_fees: pool_state.protocol_fees + order.protocol_fee,
+      protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
     },
     has_remainder,
   )
@@ -82,7 +83,7 @@ test donation() {
       owner: multisig.Signature(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
-      protocol_fee: 2_500_000,
+      max_protocol_fee: 2_500_000,
       destination: Destination { address: addr, datum: NoDatum },
       order: order.Donation {
         assets: (
@@ -101,7 +102,7 @@ test donation() {
       reference_script: None,
     }
   let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input_value, order, output)
+    do_donation(pool_state, input_value, order, 2_500_000, output)
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000

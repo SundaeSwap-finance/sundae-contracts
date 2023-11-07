@@ -17,7 +17,7 @@ pub fn swap_takes(
   pool_give: Int,
   pool_take: Int,
   fees_per_10_thousand: Int,
-  protocol_fees: Int,
+  actual_protocol_fee: Int,
   order_give: Int,
   input_value: Value,
 ) -> (Int, Value) {
@@ -30,14 +30,15 @@ pub fn swap_takes(
     pool_take * order_give * difference / (
       pool_give * 10000 + order_give * difference
     )
-
-  // And then compute the remainder, using the input value minus the given amount
-  let remainder =
+  
+  // And then compute the desired output
+  // which is the input value, minus the tokens being swapped, minus the protocol fee
+  // plus the asset that we get as part of the swap
+  let out_value =
     input_value
       |> value.add(give_policy_id, give_asset_name, -order_give)
-      |> value.add(ada_policy_id, ada_asset_name, -protocol_fees)
-  // And then add in the `takes` value
-  let out_value = value.add(remainder, take_policy_id, take_asset_name, takes)
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(take_policy_id, take_asset_name, takes)
 
   (takes, out_value)
 }
@@ -52,7 +53,7 @@ pub fn do_swap(
   pool_state: PoolState,
   input_value: Value,
   destination: Destination,
-  protocol_fee: Int,
+  actual_protocol_fee: Int,
   offer: SingletonValue,
   min_received: SingletonValue,
   output: Output,
@@ -80,7 +81,7 @@ pub fn do_swap(
         a_amt,
         b_amt,
         fees_per_10_thousand,
-        protocol_fee,
+        actual_protocol_fee,
         offer_amt,
         input_value,
       )
@@ -96,7 +97,7 @@ pub fn do_swap(
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp,
       fees_per_10_thousand,
-      protocol_fees: protocol_fees + protocol_fee,
+      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     expect min_received.1st == a_policy_id
@@ -110,7 +111,7 @@ pub fn do_swap(
         b_amt,
         a_amt,
         fees_per_10_thousand,
-        protocol_fee,
+        actual_protocol_fee,
         offer_amt,
         input_value,
       )
@@ -125,7 +126,7 @@ pub fn do_swap(
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp,
       fees_per_10_thousand,
-      protocol_fees: protocol_fees + protocol_fee,
+      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else {
     fail
@@ -162,7 +163,7 @@ test swap_mintakes_too_high() fail {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    protocol_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -177,7 +178,7 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, order.protocol_fee, swap_offer, swap_min_received, output)
+  let final_pool_state = do_swap(pool_state, input_value, order.destination, 2_500_000, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
   expect final_pool_state.protocol_fees == 4_500_000

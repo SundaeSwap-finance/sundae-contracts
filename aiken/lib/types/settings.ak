@@ -20,6 +20,9 @@ pub type SettingsDatum {
   treasury_allowance: Rational, // When withdrawing, what percentage can be released for administrative purposes?
   authorized_scoopers: List<VerificationKey>,
   authorized_staking_keys: List<VerificationKey>,
+
+  base_fee: Int,
+  incremental_fee: Int,
 }
 
 pub type SettingsRedeemer {
@@ -73,6 +76,8 @@ test example_settings_datum() {
         authorized_staking_keys: [
           #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
         ],
+        base_fee: 1_000_000,
+        incremental_fee: 100_000,
       },
     ),
   )

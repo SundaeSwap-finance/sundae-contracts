@@ -10,9 +10,8 @@ pub type OrderDatum {
   pool_ident: Option<Ident>,
   // An owner that's allowed to modify it
   owner: MultisigScript,
-  // A fee that is paid to the protocol, to pay for scoopers, etc.
-  // TODO: can we make this a value?
-  protocol_fee: Int,
+  // The maximum amount of ADA that can be taken as a protocol fee
+  max_protocol_fee: Int,
   // A destination that the results of the order must be sent to
   destination: Destination,
   // And the actual order to execute
@@ -46,7 +45,7 @@ test example_swap() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        protocol_fee: 2500000,
+        max_protocol_fee: 2500000,
         destination: dest,
         order: swap,
         extension: Void,
@@ -81,7 +80,7 @@ test example_deposit() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        protocol_fee: 2500000,
+        max_protocol_fee: 2500000,
         destination: dest,
         order: deposit,
         extension: Void,
@@ -115,7 +114,7 @@ test example_withdrawal() {
         owner: multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
         ),
-        protocol_fee: 2500000,
+        max_protocol_fee: 2500000,
         destination: dest,
         order: withdrawal,
         extension: Void,

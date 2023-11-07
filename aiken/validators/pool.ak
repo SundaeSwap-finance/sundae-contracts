@@ -133,10 +133,10 @@ validator(settings_policy_id: PolicyId) {
     let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
     when redeemer is {
-      PoolScoop{ signatory_index, scooper_index, input_order } -> {
+      PoolScoop{ signatory_index, scooper_index, actual_protocol_fee, input_order } -> {
 
         // Deconstruct the settings datum with the fields we need for a scoop
-        let SettingsDatum { pool_script_hash, authorized_scoopers, .. } =
+        let SettingsDatum { pool_script_hash, authorized_scoopers, base_fee, incremental_fee, .. } =
           settings_datum
 
         // Construct the initial pool state from the datum and the locked values
@@ -150,6 +150,7 @@ validator(settings_policy_id: PolicyId) {
             datums,
             initial_state,
             input_order,
+            actual_protocol_fee,
             0,
             inputs,
             inputs,
@@ -162,6 +163,22 @@ validator(settings_policy_id: PolicyId) {
           protocol_fees: expected_protocol_fees,
           ..
         } = outcome
+
+        // TODO: cherry-pick Philips fix that counts orders
+        let real_order_count = list.length(input_order)
+
+        // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
+        // but we can't enforce that it takes *exactly* this amount, because of rounding
+        // imagine with 30 orders, the max_protocol_fee is 1 ada + 30 * 0.1 ada = 4 ada
+        // the per-order fee would then be 0.133333 repeating; if we round up,
+        // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
+        // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
+        // and at most max_protocol_fee 
+        let max_protocol_fee = base_fee + real_order_count * incremental_fee
+        let total_protocol_fee = real_order_count * actual_protocol_fee
+
+        expect total_protocol_fee > 0
+        expect total_protocol_fee <= max_protocol_fee
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
@@ -408,6 +425,8 @@ fn mk_settings_input(
       treasury_allowance: (1, 10),
       authorized_scoopers: scoopers,
       authorized_staking_keys: [],
+      base_fee: 0,
+      incremental_fee: 2_500_000,
     }
   let settings_input =
     Input {
@@ -575,6 +594,8 @@ test scooper_not_in_settings() fail {
             treasury_allowance: (1, 10),
             authorized_scoopers: [somebody],
             authorized_staking_keys: [],
+            base_fee: 0,
+            incremental_fee: 2_500_000,
           },
         ),
       ),
@@ -641,7 +662,7 @@ fn scoop(options: ScoopTestOptions) {
     OrderDatum {
       pool_ident: None,
       owner,
-      protocol_fee: 2_500_000,
+      max_protocol_fee: 2_500_000,
       destination: dest,
       order: swap,
       extension: builtin.i_data(0),
@@ -733,7 +754,7 @@ fn scoop(options: ScoopTestOptions) {
       },
       purpose: Spend(pool_input.output_reference),
     }
-  let pool_redeemer = PoolScoop(0, 0, [1, 2])
+  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [1, 2])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
@@ -803,7 +824,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow_datum_1 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    protocol_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: dest,
     order: swap,
     extension: builtin.i_data(0),
@@ -811,7 +832,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow_datum_2 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    protocol_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: dest,
     order: deposit,
     extension: builtin.i_data(0),
@@ -893,7 +914,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let pool_redeemer = PoolScoop(0, 0, [1,2])
+  let pool_redeemer = PoolScoop(0, 0, 2_500_000, [1,2])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }

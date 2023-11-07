@@ -92,6 +92,7 @@ pub fn process_orders(
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   input_order: List<Int>,
+  actual_protocol_fee: Int,
   prev_index: Int,
   all_inputs: List<Input>,
   remaining_inputs: List<Input>,
@@ -116,10 +117,13 @@ pub fn process_orders(
 
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
-      let OrderDatum { pool_ident, destination, protocol_fee, order: order_details, .. } =
+      let OrderDatum { pool_ident, destination, max_protocol_fee, order: order_details, .. } =
         datum
 
-      expect True = validate_pool_id(pool_ident, this_pool_ident)
+      expect validate_pool_id(pool_ident, this_pool_ident)
+
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      expect max_protocol_fee >= actual_protocol_fee
 
       when order_details is {
         order.Swap(offer, min_received) -> {
@@ -128,7 +132,7 @@ pub fn process_orders(
               initial,
               order.value,
               destination,
-              protocol_fee,
+              actual_protocol_fee,
               offer,
               min_received,
               output,
@@ -138,6 +142,7 @@ pub fn process_orders(
             datums,
             next,
             rest,
+            actual_protocol_fee,
             idx + 1,
             all_inputs,
             rest_of_input_list,
@@ -146,12 +151,13 @@ pub fn process_orders(
           )
         }
         order.Deposit(..) -> {
-          let next = deposit.do_deposit(initial, order.value, datum, output)
+          let next = deposit.do_deposit(initial, order.value, datum, actual_protocol_fee, output)
           process_orders(
             this_pool_ident,
             datums,
             next,
             rest,
+            actual_protocol_fee,
             idx,
             all_inputs,
             rest_of_input_list,
@@ -161,12 +167,13 @@ pub fn process_orders(
         }
         order.Withdrawal(..) -> {
           let next =
-            withdrawal.do_withdrawal(initial, order.value, datum, output)
+            withdrawal.do_withdrawal(initial, order.value, datum, actual_protocol_fee, output)
           process_orders(
             this_pool_ident,
             datums,
             next,
             rest,
+            actual_protocol_fee,
             idx,
             all_inputs,
             rest_of_input_list,
@@ -177,13 +184,14 @@ pub fn process_orders(
         // order.Zap(..) -> do_zap(initial, input, datum)
         order.Donation(..) -> {
           let (next, used_output) =
-            donation.do_donation(initial, order.value, datum, output)
+            donation.do_donation(initial, order.value, datum, actual_protocol_fee, output)
           if used_output {
             process_orders(
               this_pool_ident,
               datums,
               next,
               rest,
+              actual_protocol_fee,
               idx,
               all_inputs,
               rest_of_input_list,
@@ -196,6 +204,7 @@ pub fn process_orders(
               datums,
               next,
               rest,
+              actual_protocol_fee,
               idx,
               all_inputs,
               rest_of_input_list,
@@ -232,7 +241,7 @@ test process_orders_test() {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    protocol_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
@@ -279,7 +288,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let final_pool_state = process_orders(#"", datums, pool_state, input_order, 0, inputs, inputs, outputs, 0)
+  let final_pool_state = process_orders(#"", datums, pool_state, input_order, 2_500_000, 0, inputs, inputs, outputs, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
