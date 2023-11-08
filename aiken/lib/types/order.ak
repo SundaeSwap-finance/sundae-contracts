@@ -144,8 +144,9 @@ pub type Order {
   Deposit { assets: (SingletonValue, SingletonValue) }
   // A withdrawal of at most this many LP tokens
   Withdrawal { amount: SingletonValue }
-  // A zap of at most these assets on either side of the pair
-  // Zap { assets: (SingletonValue, SingletonValue) }
+  // Deposit these assets into the pool, and mint the appropriate number of LP tokens
+  // ZapIn { assets: (SingletonValue, SingletonValue) }
+  // ZapOut { assets: (Int, Int) }
   // Donate some value to the pool
   Donation { assets: (SingletonValue, SingletonValue) }
 }

@@ -170,7 +170,8 @@ validator(settings_policy_id: PolicyId) {
           ..
         } = outcome
 
-        // TODO: cherry-pick Philips fix that counts orders
+        // We need to make sure that the number of orders matches the amount that we processed
+        // so the scooper doesn't "under-report" the orders and steal the funds on the order
         let real_order_count = count_orders(inputs)
         expect simple_count + strategy_count == real_order_count
 
@@ -189,23 +190,18 @@ validator(settings_policy_id: PolicyId) {
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
         // Calculate all the neccesary and sufficient conditions
-        let minted_correct_lp_tokens =
-          minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
+        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
 
         // OPTIMIZATION: skip 10 entries at a time
         // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
         expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
         expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
-        let licensed_scooper = scooper_sig == scooper
-        let market_open = interval.is_entirely_after(validity_range, datum.market_open)
+        // must be an authorized scooper
+        expect scooper_sig == scooper
+        // the market must have opened
+        expect interval.is_entirely_after(validity_range, datum.market_open)
 
-        // expect pool_can_be_scooped
-        // expect !list.is_empty(orders)
-        // Must have at least one order
-        expect market_open
-        expect licensed_scooper
         // expect funds_moved_correctly
-        expect minted_correct_lp_tokens
         expect output_datum.circulating_lp == outcome.quantity_lp.3rd
         expect
           has_expected_pool_value(

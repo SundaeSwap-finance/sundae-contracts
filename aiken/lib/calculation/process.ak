@@ -4,7 +4,7 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{IntervalBound, NegativeInfinity, Finite}
 use aiken/transaction.{InlineDatum, NoDatum, Input, Output, OutputReference, TransactionId, ValidityRange}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
+use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
 use aiken/transaction/value.{Value, PolicyId}
 use aiken/time.{PosixTime}
 use calculation/deposit
@@ -15,7 +15,7 @@ use calculation/shared.{
 use calculation/swap
 use calculation/withdrawal
 use calculation/strategy
-use shared.{Ident, datum_of, pool_lp_name}
+use shared.{Ident, datum_of, pool_lp_name, is_script}
 use sundae/multisig
 use types/order.{Order, Destination, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
@@ -215,6 +215,9 @@ pub fn process_orders(
       let Input{ output_reference, output: order } = input_to_process
       expect [output, ..rest_outputs] = outputs
 
+      // make sure we only process scripts; this is so that our "order count" and "indexing set" logic is correct
+      expect is_script(order.address.payment_credential)
+
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
       let OrderDatum { pool_ident, destination, max_protocol_fee, details, .. } =
@@ -309,7 +312,10 @@ test process_orders_test() {
   }
 
   let order_output = Output {
-    address: addr,
+    address: Address(
+      ScriptCredential(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
+      None,
+    ),
     value: value.from_lovelace(1_000_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000),
     datum: InlineDatum(order_datum),

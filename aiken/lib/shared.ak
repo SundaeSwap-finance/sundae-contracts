@@ -7,7 +7,7 @@ use aiken/transaction.{
   DatumHash, InlineDatum, Input, NoDatum, Output, ScriptContext, Spend,
   find_input,
 }
-use aiken/transaction/credential.{VerificationKeyCredential}
+use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
 
 pub type Ident =
@@ -82,15 +82,19 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
 // - the input list will include the pool script, which will fail to parse
 const exact_non_order_script_inputs = 1
 
+pub fn is_script(credential: Credential) -> Bool {
+  when credential is {
+    ScriptCredential(_) -> True
+    _ -> False
+  }
+}
+
 pub fn count_orders(tx_inputs: List<Input>) -> Int {
   list.foldl(
     tx_inputs,
     0,
     fn(input, total) {
-      when input.output.address.payment_credential is {
-        VerificationKeyCredential(_) -> total
-        _ -> total + 1
-      }
+      total + if is_script(input.output.address.payment_credential) { 1 } else { 0 }
     },
   ) - exact_non_order_script_inputs
 }
