@@ -1,16 +1,17 @@
 use aiken/bytearray
 use aiken/cbor
 use aiken/time.{PosixTime}
-use aiken/transaction/value.{AssetName, PolicyId}
 use shared.{AssetClass, Ident}
+use types/order.{SignedStrategyExecution}
 
 pub type PoolDatum {
   identifier: Ident,
   assets: (AssetClass, AssetClass),
   circulating_lp: Int,
-  fees_per_10_thousand: Int,
+  fees_per_10_thousand: (Int, Int),
   market_open: PosixTime,
-  rewards: Int,
+  fee_finalized: PosixTime,
+  protocol_fees: Int,
 }
 
 test example_pool_datum() {
@@ -26,9 +27,10 @@ test example_pool_datum() {
           ),
         ),
         circulating_lp: 20229488080013,
-        fees_per_10_thousand: 3,
+        fees_per_10_thousand: (2000, 500),
         market_open: 100,
-        rewards: 10000000,
+        fee_finalized: 1000,
+        protocol_fees: 10000000,
       },
     ),
   )
@@ -36,15 +38,31 @@ test example_pool_datum() {
 }
 
 pub type PoolRedeemer {
-  signatory_index: Int,
-  scooper_index: Int,
-  input_order: List<Int>,
+  PoolScoop {
+    signatory_index: Int,
+    scooper_index: Int,
+    amortized_base_fee: Int,
+    input_order: List<(Int, Option<SignedStrategyExecution>)>,
+  }
+  WithdrawFees {
+    amount: Int,
+    treasury_output: Int,
+  }
 }
 
-test example_pool_redeemer() {
+test example_pool_scoop_redeemer() {
   trace bytearray.to_hex(
     cbor.serialise(
-      PoolRedeemer { signatory_index: 0, scooper_index: 0, input_order: [1] },
+      PoolScoop { signatory_index: 0, scooper_index: 0, amortized_base_fee: 2_500_000, input_order: [(1, None)] },
+    ),
+  )
+  True
+}
+
+test example_pool_withdraw_fees_redeemer() {
+  trace bytearray.to_hex(
+    cbor.serialise(
+      WithdrawFees { amount: 100, treasury_output: 1 },
     ),
   )
   True
@@ -52,7 +70,7 @@ test example_pool_redeemer() {
 
 pub type PoolMintRedeemer {
   MintLP { identifier: Ident }
-  CreatePool { assets: (AssetClass, AssetClass), pool_output: Int }
+  CreatePool { assets: (AssetClass, AssetClass), pool_output: Int, metadata_output: Int }
 }
 
 test example_pool_mint_redeemer() {
@@ -67,24 +85,9 @@ test example_pool_mint_redeemer() {
           ),
         ),
         pool_output: 0,
+        metadata_output: 1,
       },
     ),
   )
   True
-}
-
-pub fn pool_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
-  (policy_id, bytearray.concat("p", ident))
-}
-
-pub fn pool_token_name(ident: Ident) -> AssetName {
-  bytearray.concat("p", ident)
-}
-
-pub fn lp_token(policy_id: PolicyId, ident: Ident) -> AssetClass {
-  (policy_id, bytearray.concat("l", ident))
-}
-
-pub fn lp_token_name(ident: Ident) -> AssetName {
-  bytearray.concat("l", ident)
 }

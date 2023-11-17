@@ -2,9 +2,8 @@ use aiken/option
 use aiken/math
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value}
+use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
-use shared
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
@@ -12,9 +11,10 @@ pub fn do_withdrawal(
   pool_state: PoolState,
   input_value: Value,
   order: OrderDatum,
+  actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
-  expect order.Withdrawal { amount } = order.order
+  expect order.Withdrawal { amount } = order.details
   let (lp_policy, lp_asset_name, amount) = amount
 
   expect lp_policy == pool_state.quantity_lp.1st
@@ -26,22 +26,19 @@ pub fn do_withdrawal(
   let withdrawn_b =
     withdrawn * pool_state.quantity_b.3rd / pool_state.quantity_lp.3rd
   let remainder =
-    shared.to_value((lp_policy, lp_asset_name, withdrawn))
-      |> value.merge(shared.to_value(("", "", order.scooper_fee)))
-      |> value.negate
-      |> value.merge(input_value)
-      |> value.merge(
-           value.from_asset(
-             pool_state.quantity_a.1st,
-             pool_state.quantity_a.2nd,
-             withdrawn_a,
-           ))
-      |> value.merge(
-           value.from_asset(
-             pool_state.quantity_b.1st,
-             pool_state.quantity_b.2nd,
-             withdrawn_b,
-           ))
+    input_value
+      |> value.add(lp_policy, lp_asset_name, -withdrawn)
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(
+          pool_state.quantity_a.1st,
+          pool_state.quantity_a.2nd,
+          withdrawn_a,
+        )
+      |> value.add(
+          pool_state.quantity_b.1st,
+          pool_state.quantity_b.2nd,
+          withdrawn_b,
+        )
 
   // Check that the payout is satisfied by the next output
   expect output.address == order.destination.address
@@ -64,7 +61,7 @@ pub fn do_withdrawal(
       pool_state.quantity_lp.3rd - withdrawn,
     ),
     fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    rewards: pool_state.rewards + order.scooper_fee,
+    protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
   }
 }
 
@@ -123,7 +120,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
     fees_per_10_thousand: 5,
-    rewards: 2_000_000,
+    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(4_500_000)
@@ -133,12 +130,12 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     owner: multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
-    scooper_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: Destination {
       address: addr,
       datum: NoDatum,
     },
-    order: order.Withdrawal {
+    details: order.Withdrawal {
       amount: (lp.1st, lp.2nd, 10_000_000),
     },
     extension: Void,
@@ -153,9 +150,9 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_withdrawal(pool_state, input_value, order, output)
+  let final_pool_state = do_withdrawal(pool_state, input_value, order, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
-  expect final_pool_state.rewards == 4_500_000
+  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

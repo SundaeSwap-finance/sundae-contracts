@@ -164,7 +164,7 @@ function factorySpendRedeemer() {
   return "d87a81d87980" // Note: wrapped in ctor-2 tag, to trick the compiler into running the spend validator
 };
 
-function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint, liq: bigint): string {
+function poolDatum(poolIDHex: string, dummyPolicyHex: string, protocol_fees: bigint, liq: bigint): string {
   return "d8799f" +
     "581f" + poolIDHex +
     "9f9f" +
@@ -178,7 +178,7 @@ function poolDatum(poolIDHex: string, dummyPolicyHex: string, rewards: bigint, l
     cborFormatInteger(liq) +
     "05" + // fees per 10k
     "00" + // open time
-    Data.to(rewards) +
+    Data.to(protocol_fees) +
     "ff";
 }
 
@@ -744,7 +744,7 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   };
   const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
   const escrowsCount = BigInt(listedEscrows.length);
-  const totalRewards = 2_500_000n * escrowsCount;
+  const totalProtocolFees = 2_500_000n * escrowsCount;
 
   let toSpend: UTxO[] = [];
   toSpend.push(change);
@@ -795,7 +795,7 @@ async function doScoopPool(lucid: Lucid, scripts: Scripts, emulator: Emulator, c
   const scoopedPoolDatum = poolDatum(
     toHex(poolId),
     dummyPolicyId,
-    2000000n + totalRewards,
+    2000000n + totalProtocolFees,
     poolABL.liq
   );
 

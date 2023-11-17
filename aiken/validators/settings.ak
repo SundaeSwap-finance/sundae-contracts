@@ -2,8 +2,7 @@ use aiken/list
 use aiken/transaction.{InlineDatum, Spend, Mint, ScriptContext, OutputReference}
 use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value
-use shared
-use types/settings.{SettingsDatum, SettingsMintRedeemer, SettingsRedeemer}
+use types/settings.{SettingsDatum, SettingsMintRedeemer, SettingsRedeemer, settings_nft_name}
 
 validator(protocol_boot_utxo: OutputReference) {
   fn spend(d: SettingsDatum, _r: SettingsRedeemer, ctx: ScriptContext) {
@@ -23,7 +22,7 @@ validator(protocol_boot_utxo: OutputReference) {
       value.quantity_of(
         own_output.value,
         own_script_hash,
-        shared.settings_nft_name) == 1
+        settings_nft_name) == 1
 
     let value_not_changed =
       own_output.value == own_input.output.value
@@ -45,7 +44,7 @@ validator(protocol_boot_utxo: OutputReference) {
     expect Mint(own_policy_id) = ctx.purpose
     let mints_exactly_one_settings_nft =
       value.from_minted_value(ctx.transaction.mint) ==
-        value.from_asset(own_policy_id, shared.settings_nft_name, 1)
+        value.from_asset(own_policy_id, settings_nft_name, 1)
 
     let spends_protocol_boot_utxo =
       list.any(ctx.transaction.inputs, fn(input) {

@@ -16,14 +16,13 @@ use aiken/transaction/credential.{
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, is_after, spent_output}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count, count_orders}
 use sundae/multisig
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
-  CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, lp_token_name,
-  pool_token_name,
+  CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
 }
-use types/settings.{SettingsDatum}
+use types/settings.{SettingsDatum, find_settings_datum}
 
 fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
@@ -39,7 +38,7 @@ fn minted_correct_pool_tokens(
   } else {
     dict.to_list(minted_tokens) == [
       (
-        lp_token_name(datum.identifier),
+        pool_lp_name(datum.identifier),
         outcome.quantity_lp.3rd - datum.circulating_lp,
       ),
     ]
@@ -53,24 +52,24 @@ fn has_expected_pool_value(
   outcome: PoolState,
 ) -> Bool {
   // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  let PoolState { quantity_a, quantity_b, rewards, .. } = outcome
+  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   if quantity_a_policy_id == ada_policy_id {
-    expect 3 == list.length(value.flatten(output_value))
-    expect value.lovelace_of(output_value) == rewards + quantity_a_amt
+    expect has_exact_token_count(output_value, 3)
+    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
     expect
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
     expect
       value.quantity_of(
         output_value,
         pool_script_hash,
-        pool_token_name(identifier),
+        pool_nft_name(identifier),
       ) == 1
     True
   } else {
-    expect 4 == list.length(value.flatten(output_value))
-    expect value.lovelace_of(output_value) == rewards
+    expect has_exact_token_count(output_value, 4)
+    expect value.lovelace_of(output_value) == protocol_fees
     expect
       value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
     expect
@@ -79,7 +78,7 @@ fn has_expected_pool_value(
       value.quantity_of(
         output_value,
         pool_script_hash,
-        pool_token_name(identifier),
+        pool_nft_name(identifier),
       ) == 1
     True
   }
@@ -113,105 +112,167 @@ validator(settings_policy_id: PolicyId) {
       validity_range,
       ..
     } = transaction
-    let PoolRedeemer { signatory_index, scooper_index, input_order } = redeemer
-    // Grab the fields we'll need to determine whether we can execute this tx
+
     // Find the input being spent
     let pool_input = spent_output(ctx)
-    // Assume the first output is the pool output
+
+    // Find the pool output
     expect Some(pool_output) = list.head(outputs)
     expect pool_output.address == pool_input.address
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
+
     let PoolDatum {
       identifier: actual_identifier,
       circulating_lp: actual_circulating_lp,
-      rewards: actual_rewards,
+      protocol_fees: actual_protocol_fees,
       ..
     } = output_datum
 
-    // Find the reference input with the settings token and it's datum
-    let settings_output = builtin.head_list(reference_inputs).output
-    let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
-    expect [_, (found_policy_id, settings_dict)] = settings_value_list
-    expect found_policy_id == settings_policy_id
-    expect dict.to_list(settings_dict) == [(shared.settings_nft_name, 1)]
-    expect InlineDatum(settings_datum) = settings_output.datum
-    expect settings_datum: SettingsDatum = settings_datum
-    let SettingsDatum { pool_script_hash, authorized_scoopers, .. } =
-      settings_datum
+    // Find the settings datum
+    let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
-    // Construct the initial pool state from the datum and the locked values
-    let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input)
+    when redeemer is {
+      PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
 
-    // Process the orders in order, and decide the final pool state we should see
-    // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
-    let outcome =
-      process_orders(
-        actual_identifier,
-        datums,
-        initial_state,
-        input_order,
-        0,
-        inputs,
-        inputs,
-        list.drop(outputs, 1),
-        0,
-      )
-    trace @"Done"
-    let PoolState {
-      quantity_lp: expected_circulating_lp,
-      rewards: expected_rewards,
-      ..
-    } = outcome
+        // Deconstruct the settings datum with the fields we need for a scoop
+        let SettingsDatum { pool_script_hash, authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
+          settings_datum
 
-    // The pool should have all of the scooper fees, and the quantity of each token of the outcome
-    // Note that initializing the state with `-transaction.fee` means this gets subracted out of the rewards
-    // Calculate all the neccesary and sufficient conditions
-    let minted_correct_lp_tokens =
-      minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
+        // Construct the initial pool state from the datum and the locked values
+        let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        // Process the orders in order, and decide the final pool state we should see
+        // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
+        trace @"Start"
+        let (outcome, simple_count, strategy_count, total_protocol_fee) =
+          process_orders(
+            actual_identifier,
+            validity_range,
+            datums,
+            initial_state,
+            input_order,
+            amortized_base_fee,
+            simple_fee,
+            strategy_fee,
+            0,
+            inputs,
+            inputs,
+            list.drop(outputs, 1),
+            0,
+            0,
+            0,
+            0,
+          )
+        trace @"Done"
+        let PoolState {
+          quantity_lp: expected_circulating_lp,
+          protocol_fees: expected_protocol_fees,
+          ..
+        } = outcome
 
-    // OPTIMIZATION: skip 10 entries at a time
-    // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
-    let licensed_scooper =
-      list.at(extra_signatories, signatory_index) == list.at(
-        authorized_scoopers,
-        scooper_index,
-      )
-    let market_open = is_after(validity_range, datum.market_open)
+        // We need to make sure that the number of orders matches the amount that we processed
+        // so the scooper doesn't "under-report" the orders and steal the funds on the order
+        let real_order_count = count_orders(inputs)
+        expect simple_count + strategy_count == real_order_count
 
-    // expect pool_can_be_scooped
-    // expect !list.is_empty(orders)
-    // Must have at least one order
-    expect market_open
-    expect licensed_scooper
-    // expect funds_moved_correctly
-    expect minted_correct_lp_tokens
-    expect output_datum.circulating_lp == outcome.quantity_lp.3rd
-    expect
-      has_expected_pool_value(
-        pool_script_hash,
-        output_datum.identifier,
-        pool_output.value,
-        outcome,
-      )
-    // expect pool_output_correct
-    // Must update the circulating LP if tokens are minted
-    expect actual_circulating_lp == expected_circulating_lp.3rd
-    // Must update the rewards field as expected
-    expect actual_rewards == expected_rewards
-    // Must not update the immutable fields
-    expect datum.identifier == output_datum.identifier
-    expect datum.assets == output_datum.assets
-    expect datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
-    expect datum.market_open == output_datum.market_open
-    expect
-      pool_input.address.stake_credential == pool_output.address.stake_credential
-    True
+        // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
+        // but we can't enforce that it takes *exactly* this amount, because of rounding
+        // imagine with 30 orders, the max_protocol_fee is 1 ada + 30 * 0.1 ada = 4 ada
+        // the per-order fee would then be 0.133333 repeating; if we round up,
+        // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
+        // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
+        // and at most max_protocol_fee 
+        let max_protocol_fee = base_fee + simple_count * simple_fee + strategy_count * strategy_fee
+
+        expect amortized_base_fee >= 0
+        expect total_protocol_fee <= max_protocol_fee
+
+        // The pool should have all of the scooper fees, and the quantity of each token of the outcome
+        // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
+        // Calculate all the neccesary and sufficient conditions
+        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
+
+        // OPTIMIZATION: skip 10 entries at a time
+        // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
+        expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
+        expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
+        // must be an authorized scooper
+        expect scooper_sig == scooper
+        // the market must have opened
+        expect interval.is_entirely_after(validity_range, datum.market_open)
+
+        // expect funds_moved_correctly
+        expect output_datum.circulating_lp == outcome.quantity_lp.3rd
+        expect
+          has_expected_pool_value(
+            pool_script_hash,
+            output_datum.identifier,
+            pool_output.value,
+            outcome,
+          )
+        // expect pool_output_correct
+        // Must update the circulating LP if tokens are minted
+        expect actual_circulating_lp == expected_circulating_lp.3rd
+        // Must update the protocol fees field as expected
+        expect actual_protocol_fees == expected_protocol_fees
+        // Must not update the immutable fields
+        expect datum.identifier == output_datum.identifier
+        expect datum.assets == output_datum.assets
+        expect datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
+        expect datum.market_open == output_datum.market_open
+        expect
+          pool_input.address.stake_credential == pool_output.address.stake_credential
+        True
+      }
+      WithdrawFees { amount, treasury_output } -> {
+        let PoolDatum {
+          protocol_fees: initial_protocol_fees,
+          ..
+        } = datum
+        // Can't withdraw more than we've collected
+        expect amount <= initial_protocol_fees
+
+        // Must update the protocol fees and nothing else
+        let expected_datum = PoolDatum {
+          identifier: datum.identifier,
+          assets: datum.assets,
+          circulating_lp: datum.circulating_lp,
+          fees_per_10_thousand: datum.fees_per_10_thousand,
+          fee_finalized: datum.fee_finalized,
+          market_open: datum.market_open,
+          protocol_fees: initial_protocol_fees - amount,
+        }
+        expect output_datum == expected_datum
+
+        // Must withdraw only what we claim to withdraw
+        let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
+        expect pool_output.value == expected_output_value
+
+        // Must be signed by the treasury admin multisig
+        expect multisig.satisfied(
+          settings_datum.treasury_admin,
+          extra_signatories,
+          validity_range,
+        )
+
+        // Some portion of the treasury can be withdrawn for administrative purposes
+        // such as paying scooper fees, etc.
+        let allowance = amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let to_treasury = amount - allowance
+        expect Some(treasury_output) = list.at(outputs, treasury_output)
+        // The remainder must be sent to the treasury address with the Void datum
+        expect treasury_output.address == settings_datum.treasury_address
+        expect treasury_output.datum == InlineDatum(Void)
+        expect value.lovelace_of(treasury_output.value) >= to_treasury
+        True
+      }
+    }
   }
 
   fn mint(r: PoolMintRedeemer, ctx: ScriptContext) {
     when r is {
-      CreatePool(assets, pool_output_ix) -> {
+      CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+        // The assets on the pool must be sorted
         let (asset_a, asset_b) = assets
         let coin_pair_ordering_is_canonical =
           compare_asset_class(asset_a, asset_b) == Less
@@ -219,20 +280,25 @@ validator(settings_policy_id: PolicyId) {
         expect Some(first_input) = list.at(ctx.transaction.inputs, 0)
         let first_input_index =
           int_to_ident(first_input.output_reference.output_index)
+
+        // Calculate the identifier by hashing the txRef of the first input
+        // this makes the pool unique
+        // With CIP-68 identifiers, we have 28 bytes of space; ideally we'd use blake2b-224,
+        // but that won't be on-chain until plutus v3;
+        // So, we use blake2b-256 and drop 4 bytes; this is still 112 bits of security against collisions
         let new_pool_id =
           first_input.output_reference.transaction_id.hash
             |> bytearray.concat(#"23") // '#' character
             |> bytearray.concat(first_input_index)
             |> hash.blake2b_256
-            |> bytearray.drop(1)
-        let new_pool_p_token = shared.pool_nft_name(new_pool_id)
-        let new_pool_l_token = shared.pool_lq_name(new_pool_id)
+            |> bytearray.drop(4) 
+
+        // Derive the CIP-68 token identifiers
+        let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(new_pool_id)
 
         let reference_inputs = ctx.transaction.reference_inputs
 
-        let settings_output = builtin.head_list(reference_inputs).output
-        expect InlineDatum(settings_datum) = settings_output.datum
-        expect settings_datum: SettingsDatum = settings_datum
+        let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
 
         expect Some(pool_output) =
           list.at(ctx.transaction.outputs, pool_output_ix)
@@ -253,14 +319,14 @@ validator(settings_policy_id: PolicyId) {
 
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
 
-        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_p_token)
-        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_l_token)
+        let new_pool_ref = (settings_datum.pool_script_hash, new_pool_ref_token)
+        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_nft_token)
+        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_lp_token)
 
         let expected_mint =
-          shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1))
-            |> value.merge(
-                 shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)),
-               )
+              shared.to_value((new_pool_ref.1st, new_pool_ref.2nd, 1))
+            |> value.merge(shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1)))
+            |> value.merge(shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)))
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
@@ -270,8 +336,14 @@ validator(settings_policy_id: PolicyId) {
           ) <= 3 && value.quantity_of(
             pool_output.value,
             settings_datum.pool_script_hash,
-            new_pool_p_token,
+            new_pool_lp_token,
           ) == 1
+        
+        // Make sure we send the pool metadata token to the metadata admin
+        expect Some(metadata_output) =
+          list.at(ctx.transaction.outputs, metadata_output_ix)
+        expect metadata_output.address == settings_datum.metadata_admin
+        expect value.quantity_of(metadata_output.value, settings_datum.pool_script_hash, new_pool_ref_token) == 1
 
         expect InlineDatum(d) = pool_output.datum
         expect pool_output_datum: PoolDatum = d
@@ -280,10 +352,8 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.identifier == new_pool_id && pool_output_datum.assets == (
             asset_a,
             asset_b,
-          ) && pool_output_datum.circulating_lp == initial_lq && list.has(
-            shared.legal_swap_fees(),
-            pool_output_datum.fees_per_10_thousand,
-          )
+          ) && pool_output_datum.circulating_lp == initial_lq
+          && pool_output_datum.market_open <= pool_output_datum.fee_finalized
 
         coin_pair_ordering_is_canonical && mint_is_correct && funds_spent_to_pool && pool_output_datum_correct
       }
@@ -295,11 +365,7 @@ validator(settings_policy_id: PolicyId) {
         let pool_nft_name = shared.pool_nft_name(pool_ident)
         let allows_to_spend =
           fn(v) {
-            value.quantity_of(v, own_policy_id, pool_nft_name) >= 1 || value.quantity_of(
-              v,
-              settings_policy_id,
-              shared.settings_nft_name,
-            ) >= 1
+            value.quantity_of(v, own_policy_id, pool_nft_name) == 1
           }
         list.any(
           ctx.transaction.inputs,
@@ -345,9 +411,26 @@ fn mk_settings_input(
     SettingsDatum {
       pool_script_hash: psh,
       settings_admin: multisig.AnyOf([]),
-      rewards_admin: multisig.AnyOf([]),
+      metadata_admin: Address(
+        VerificationKeyCredential(
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+        ),
+        None,
+      ),
+      treasury_admin: multisig.AnyOf([]),
+      treasury_address: Address(
+        VerificationKeyCredential(
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+        ),
+        None,
+      ),
+      treasury_allowance: (1, 10),
       authorized_scoopers: scoopers,
       authorized_staking_keys: [],
+      base_fee: 0,
+      simple_fee: 2_500_000,
+      strategy_fee: 5_000_000,
+      extensions: Void,
     }
   let settings_input =
     Input {
@@ -368,7 +451,7 @@ type ScoopTestOptions {
   edit_escrow_2_value: Option<Value>,
   edit_escrow_destination: Option<Address>,
   edit_fee: Option<Value>,
-  edit_swap_fees: Option<Int>,
+  edit_swap_fees: Option<(Int,Int)>,
   edit_pool_output_value: Option<Value>,
   edit_settings_datum: Option<Datum>,
 }
@@ -437,7 +520,7 @@ test pool_validator_ignores_fee() {
 test scoop_high_swap_fees() {
   let hash_of_pool_script =
     #"00000000000000000000000000000000000000000000000000000000"
-  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let dummy_policy_id =
     #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -446,7 +529,7 @@ test scoop_high_swap_fees() {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_swap_fees: Some(swap_fee),
+      edit_swap_fees: Some((swap_fee, swap_fee)),
       edit_escrow_1_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 9_802_950),
@@ -499,9 +582,26 @@ test scooper_not_in_settings() fail {
           SettingsDatum {
             pool_script_hash: hash_of_pool_script,
             settings_admin: multisig.AnyOf([]),
-            rewards_admin: multisig.AnyOf([]),
+            metadata_admin: Address(
+              VerificationKeyCredential(
+                #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+              ),
+              None,
+            ),
+            treasury_admin: multisig.AnyOf([]),
+            treasury_address: Address(
+              VerificationKeyCredential(
+                #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+              ),
+              None,
+            ),
+            treasury_allowance: (1, 10),
             authorized_scoopers: [somebody],
             authorized_staking_keys: [],
+            base_fee: 0,
+            simple_fee: 2_500_000,
+            strategy_fee: 5_000_000,
+            extensions: Void,
           },
         ),
       ),
@@ -526,24 +626,26 @@ fn scoop(options: ScoopTestOptions) {
     multisig.Signature(
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     )
-  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_datum =
     PoolDatum {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
       market_open: 0,
-      rewards: 2_000_000,
+      fee_finalized: 100,
+      protocol_fees: 2_000_000,
     }
   let pool_out_datum =
     PoolDatum {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
       market_open: 0,
-      rewards: 7_000_000,
+      fee_finalized: 0,
+      protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let pool_address = script_address(hash_of_pool_script)
@@ -566,9 +668,9 @@ fn scoop(options: ScoopTestOptions) {
     OrderDatum {
       pool_ident: None,
       owner,
-      scooper_fee: 2_500_000,
+      max_protocol_fee: 2_500_000,
       destination: dest,
-      order: swap,
+      details: swap,
       extension: builtin.i_data(0),
     }
   let escrow_address = script_address(hash_of_escrow_script)
@@ -650,7 +752,7 @@ fn scoop(options: ScoopTestOptions) {
         mint: value.to_minted_value(value.from_lovelace(0)),
         certificates: [],
         withdrawals: dict.new(),
-        validity_range: interval.between(0, 1),
+        validity_range: interval.between(1, 2),
         extra_signatories: [scooper],
         redeemers: dict.new(),
         datums: dict.new(),
@@ -658,7 +760,7 @@ fn scoop(options: ScoopTestOptions) {
       },
       purpose: Spend(pool_input.output_reference),
     }
-  let pool_redeemer = PoolRedeemer(0, 0, [1, 2])
+  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None), (2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
@@ -684,9 +786,10 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
     market_open: 0,
-    rewards: 2_000_000,
+    fee_finalized: 0,
+    protocol_fees: 2_000_000,
   }
   let pool_out_datum = PoolDatum {
     identifier: pool_id,
@@ -695,9 +798,10 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_009_900_990,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, 5),
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
     market_open: 0,
-    rewards: 7_000_000,
+    fee_finalized: 0,
+    protocol_fees: 7_000_000,
   }
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let pool_address = script_address(hash_of_pool_script)
@@ -726,17 +830,17 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow_datum_1 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    scooper_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: dest,
-    order: swap,
+    details: swap,
     extension: builtin.i_data(0),
   }
   let escrow_datum_2 = OrderDatum {
     pool_ident: None,
     owner: owner,
-    scooper_fee: 2_500_000,
+    max_protocol_fee: 2_500_000,
     destination: dest,
-    order: deposit,
+    details: deposit,
     extension: builtin.i_data(0),
   }
   let escrow_address = script_address(hash_of_escrow_script)
@@ -781,7 +885,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow2_out = Output {
     address: option.or_else(options.edit_escrow_destination, user_addr),
     value: value.from_lovelace(2_000_000)
-      |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+      |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
       |> value.add(dummy_policy_id, dummy_asset_name, 196_990),
     datum: NoDatum,
     reference_script: None,
@@ -804,11 +908,11 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
       mint: value.to_minted_value(
         value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, lp_token_name(pool_id), 9_900_990)
+          |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
       ),
       certificates: [],
       withdrawals: dict.new(),
-      validity_range: interval.between(0, 1),
+      validity_range: interval.between(1, 2),
       extra_signatories: [scooper],
       redeemers: dict.new(),
       datums: dict.new(),
@@ -816,7 +920,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let pool_redeemer = PoolRedeemer(0, 0, [1,2])
+  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None),(2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
