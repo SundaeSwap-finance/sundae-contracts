@@ -336,7 +336,7 @@ validator(settings_policy_id: PolicyId) {
           ) <= 3 && value.quantity_of(
             pool_output.value,
             settings_datum.pool_script_hash,
-            new_pool_lp_token,
+            new_pool_nft_token,
           ) == 1
         
         // Make sure we send the pool metadata token to the metadata admin
