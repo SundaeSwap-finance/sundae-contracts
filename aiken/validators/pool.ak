@@ -924,3 +924,94 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
+
+test mint_test() {
+  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
+  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+  let pool_address = script_address(hash_of_pool_script)
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+  let user_address =
+    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
+  let settings_input = mk_settings_input(hash_of_pool_script, [], 1)
+  let funds_input = Input {
+    output_reference: OutputReference {
+      transaction_id: mk_tx_hash(0),
+      output_index: 0
+    },
+    output: Output {
+      address: user_address,
+      value: value.from_lovelace(10_000_000_000)
+        |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+  let pool_id =
+    funds_input.output_reference.transaction_id.hash
+      |> bytearray.concat(#"23") // '#' character
+      |>
+      bytearray.concat(int_to_ident(funds_input.output_reference.output_index))
+      |> hash.blake2b_256
+      |> bytearray.drop(4)
+  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(pool_id)
+  let pool_output = Output {
+    address: pool_address,
+    value: value.from_lovelace(1_002_000_000)
+      |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
+      |> value.add(hash_of_pool_script, new_pool_nft_token, 1),
+    datum: InlineDatum(PoolDatum {
+      identifier: pool_id,
+      assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
+      circulating_lp: 1_000_000_000,
+      fees_per_10_thousand: (5, 5),
+      market_open: 0,
+      fee_finalized: 0,
+      protocol_fees: 2_000_000,
+    }),
+    reference_script: None,
+  }
+  let lp_output = Output {
+    address: user_address,
+    value: value.from_lovelace(2_000_000)
+      |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 1_000_000_000),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let ref_output = Output {
+    address: user_address,
+    value: value.from_lovelace(2_000_000)
+      |> value.add(hash_of_pool_script, new_pool_ref_token, 1),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let poolMintRedeemer = CreatePool {
+    assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
+    pool_output: 0,
+    metadata_output: 2,
+  }
+  let ctx = ScriptContext {
+    transaction: Transaction {
+      inputs: [funds_input],
+      reference_inputs: [settings_input],
+      outputs: [pool_output, lp_output, ref_output],
+      fee: value.from_lovelace(1_000_000),
+      mint: value.to_minted_value(
+        value.from_lovelace(0)
+          |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
+          |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
+          |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
+      ),
+      certificates: [],
+      withdrawals: dict.new(),
+      validity_range: interval.between(1, 2),
+      extra_signatories: [],
+      redeemers: dict.new(),
+      datums: dict.new(),
+      id: mk_tx_hash(1),
+    },
+    purpose: Mint(hash_of_pool_script),
+  }
+  let result = mint(settings_policy_id, poolMintRedeemer, ctx)
+  result
+}
