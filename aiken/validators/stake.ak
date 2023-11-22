@@ -18,8 +18,9 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
         let pool_tokens_list = dict.to_list(pool_tokens)
         let is_pool_nft =
           fn(kvp: (ByteArray, Int)) {
-            // p == 112
-            builtin.index_bytearray(kvp.1st, 0) == 112
+            // distinguish the pool nft token name by the second byte of its
+            // cip68 label
+            builtin.index_bytearray(kvp.1st, 1) == 0x0d
           }
         list.any(pool_tokens_list, is_pool_nft)
       }
