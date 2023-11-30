@@ -68,7 +68,6 @@ validator(protocol_boot_utxo: OutputReference) {
             && output_datum.metadata_admin == d.metadata_admin
             && output_datum.treasury_admin == d.treasury_admin
             && output_datum.authorized_scoopers == d.authorized_scoopers
-            && output_datum.authorized_staking_keys == d.authorized_staking_keys
             && output_datum.base_fee == d.base_fee
             && output_datum.simple_fee == d.simple_fee
             && output_datum.strategy_fee == d.strategy_fee
