@@ -3,7 +3,7 @@ use aiken/transaction.{InlineDatum, Spend, Mint, ScriptContext, OutputReference}
 use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value
 use sundae/multisig
-use types/settings.{SettingsDatum, SettingsMintRedeemer, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, FactorySetPoolScriptInfo, settings_nft_name}
+use types/settings.{SettingsDatum, SettingsMintRedeemer, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
 
 validator(protocol_boot_utxo: OutputReference) {
   fn spend(d: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
@@ -77,16 +77,6 @@ validator(protocol_boot_utxo: OutputReference) {
         signed_by_admin
           && datum_updated_legally
           && value_not_changed
-          && no_mint
-      }
-
-      FactorySetPoolScriptInfo -> {
-        let datum_updated_legally =
-          d.pool_script_hash == #""
-            || output_datum == d
-        token_present_in_output
-          && value_not_changed
-          && datum_updated_legally
           && no_mint
       }
     }
