@@ -29,7 +29,8 @@ pub type SettingsDatum {
 }
 
 pub type SettingsRedeemer {
-  FactorySetPoolScriptInfo
+  SettingsAdminUpdate
+  TreasuryAdminUpdate
 }
 
 pub type SettingsMintRedeemer {
