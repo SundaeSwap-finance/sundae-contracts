@@ -3,26 +3,24 @@
 
 [[requirements]]
 name = "aiken-lang/stdlib"
-version = "main"
+version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
 source = "github"
 
 [[requirements]]
 name = "SundaeSwap-finance/aicone"
-version = "main"
+version = "ae0852d40cc6332437492102451cf331a3c10b0d"
 source = "github"
 
 [[packages]]
 name = "aiken-lang/stdlib"
-version = "main"
+version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
 requirements = []
 source = "github"
 
 [[packages]]
 name = "SundaeSwap-finance/aicone"
-version = "main"
+version = "ae0852d40cc6332437492102451cf331a3c10b0d"
 requirements = []
 source = "github"
 
 [etags]
-"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1701382346, nanos_since_epoch = 910592941 }, "9be98e1dccac7e0968bdde05764096b7d1000c828c0fc8683e798da884dab5fd"]
-"aiken-lang/stdlib@main" = [{ secs_since_epoch = 1701382346, nanos_since_epoch = 500924483 }, "cf946239d3dd481ed41f20e56bf24910b5229ea35aa171a708edc2a47fc20a7b"]
