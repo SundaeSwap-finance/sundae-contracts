@@ -10,10 +10,10 @@ platform = "github"
 
 [[dependencies]]
 name = "aiken-lang/stdlib"
-version = "main"
+version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
 source = "github"
 
 [[dependencies]]
 name = "SundaeSwap-finance/aicone"
-version = "main"
+version = "ae0852d40cc6332437492102451cf331a3c10b0d"
 source = "github"
