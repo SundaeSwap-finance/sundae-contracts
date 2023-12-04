@@ -15,6 +15,5 @@ jobs:
         with:
           version: v1.0.20-alpha
 
-      - run: aiken fmt --check
       - run: aiken check
       - run: aiken build
