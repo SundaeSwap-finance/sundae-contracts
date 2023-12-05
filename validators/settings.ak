@@ -1,6 +1,5 @@
 use aiken/list
 use aiken/transaction.{InlineDatum, Spend, Mint, ScriptContext, OutputReference}
-use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsMintRedeemer, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
@@ -11,18 +10,13 @@ validator(protocol_boot_utxo: OutputReference) {
     expect Some(own_input) = ctx.transaction.inputs
       |> transaction.find_input(own_utxo_ref)
     let own_address = own_input.output.address
-    expect ScriptCredential(own_script_hash) = own_address.payment_credential
     // Assume the first output is the settings output
+    // This is safe because we check that the value is unchanged, so if the outputs
+    // are in a different order, that check will fail
     expect Some(own_output) = list.head(ctx.transaction.outputs)
     expect own_output.address == own_address
     expect InlineDatum(output_datum) = own_output.datum
     expect output_datum: SettingsDatum = output_datum
-
-    let token_present_in_output =
-      value.quantity_of(
-        own_output.value,
-        own_script_hash,
-        settings_nft_name) == 1
 
     let value_not_changed =
       own_output.value == own_input.output.value
