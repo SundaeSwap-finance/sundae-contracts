@@ -319,6 +319,7 @@ validator(settings_policy_id: PolicyId) {
 
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
 
+        // TODO: can we use own_script_hash here?
         let new_pool_ref = (settings_datum.pool_script_hash, new_pool_ref_token)
         let new_pool_nft = (settings_datum.pool_script_hash, new_pool_nft_token)
         let new_pool_lq = (settings_datum.pool_script_hash, new_pool_lp_token)
@@ -330,6 +331,7 @@ validator(settings_policy_id: PolicyId) {
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
+        // TODO: can we use own_script_hash here?
         let funds_spent_to_pool =
           coin_a_amt_sans_rider >= 1 && coin_b_amt >= 1 && list.length(
             value.flatten(pool_output.value),
@@ -343,6 +345,7 @@ validator(settings_policy_id: PolicyId) {
         expect Some(metadata_output) =
           list.at(ctx.transaction.outputs, metadata_output_ix)
         expect metadata_output.address == settings_datum.metadata_admin
+        // TODO: can we use own_script_hash here?
         expect value.quantity_of(metadata_output.value, settings_datum.pool_script_hash, new_pool_ref_token) == 1
 
         expect InlineDatum(d) = pool_output.datum
