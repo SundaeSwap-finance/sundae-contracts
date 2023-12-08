@@ -850,9 +850,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log("current time: ");
   console.log(currentTime);
   tx
-    // Why does this line 'validFrom...' give me an "Invalid digit" parse error
-    // when the tx is serialized?
-    .validFrom(currentTime - 1000000)
+    .validFrom(currentTime - 10000)
     .validTo(currentTime + 1000000)
     .readFrom([settings, ...references])
      // Reference utxos should carry scriptRefs for these scripts
