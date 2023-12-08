@@ -795,8 +795,8 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     }
   };
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);
-  console.log("patching redeemer data for debug: ");
-  redeemerData = "d87a9fd8799f00001a000f4240a100d87a80ffff";
+  //console.log("patching redeemer data for debug: ");
+  //redeemerData = "d87a9fd8799f00001a000f4240a100d87a80ffff";
   console.log("pool redeemer: ");
   console.log(redeemerData);
   const orderScoopRedeemer: types.OrderRedeemer = "Scoop";
