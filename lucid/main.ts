@@ -559,6 +559,7 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   console.log("settings datum: ");
   console.log(settings.datum);
   console.log("-------");
+  console.log("emulator.ledger", emulator.ledger);
   console.log("seed: ", seed);
   const tx = lucid.newTx()
     .mintAssets({
@@ -1391,8 +1392,8 @@ const rberry = rberryPolicyId + "." + fromText("RBERRY");
 
 emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
   utxo: {
-    txHash: bootUtxoHash,
-    outputIndex: bootUtxoIx,
+    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    outputIndex: 0,
     assets: {
       lovelace: 100_000_000_000n,
       [toUnit(rberryPolicyId, fromText("RBERRY"))]: 100_000_000_000n,
@@ -1406,11 +1407,6 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 };
 
 const fakeChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"].utxo;
-
-console.log("POOLMINTREF: ", poolMintRef);
-
-console.log(emulator.ledger);
-//throw new Error("augh");
 
 await testMintPool(lucid, emulator, scripts, "lovelace", rberry, poolMintRef, fakeChange);
 console.log(emulator.ledger);
