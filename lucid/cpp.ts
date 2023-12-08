@@ -16,8 +16,8 @@ export type SwapFees = {
   denominator: bigint;
 }
 
-export function doSwap(coin: Coin, gives: bigint, feesPer10k: bigint, pool: ABL): [ABL, ABL] {
-  const diff = 10_000n - feesPer10k;
+export function doSwap(coin: Coin, gives: bigint, feesPer10k: [bigint, bigint], pool: ABL): [ABL, ABL] {
+  const diff = 10_000n - feesPer10k[0];
   if (coin == Coin.CoinA) {
     const takes = (pool.b * gives * diff) / (pool.a * 10_000n + gives * diff);
     if (pool.b > takes) {

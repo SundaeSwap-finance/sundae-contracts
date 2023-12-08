@@ -674,7 +674,7 @@ function getPoolABL(targetPool: UTxO, datum: types.PoolDatum): ABL {
 
   let poolAmountA = targetPool.assets[poolCoinA];
   if (poolCoinA == "lovelace") {
-    poolAmountA -= datum.rewards;
+    poolAmountA -= datum.protocolFees;
   }
 
   let poolAmountB = targetPool.assets[poolCoinB];
