@@ -795,10 +795,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     }
   };
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);
-  //console.log("patching redeemer data for debug: ");
-  //redeemerData = "d87a9fd8799f00001a000f4240a100d87a80ffff";
-  console.log("pool redeemer: ");
-  console.log(redeemerData);
+  redeemerData = "d87a9f" + redeemerData + "ff"; // Have to do redeemer wrapper trick here
   const orderScoopRedeemer: types.OrderRedeemer = "Scoop";
   console.log("order redeemer: ");
   console.log(Data.to(orderScoopRedeemer, types.OrderRedeemer));
@@ -886,18 +883,18 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log(Data.to(poolDatum, types.PoolDatum));
 
   // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
-  //for (let e of escrowTakes) {
-  //  let valueOut: Assets = { "lovelace": rider + e.abl.a };
-  //  if (e.abl.b > 0n) {
-  //    valueOut[poolCoinB] = e.abl.b;
-  //  }
-  //  if (e.abl.liq > 0n) {
-  //    valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
-  //  }
-  //  console.log("e.destination, valueOut: ");
-  //  console.log(e.destination, valueOut);
-  //  tx.payToAddress(e.destination, valueOut);
-  //}
+  for (let e of escrowTakes) {
+    let valueOut: Assets = { "lovelace": rider + e.abl.a };
+    if (e.abl.b > 0n) {
+      valueOut[poolCoinB] = e.abl.b;
+    }
+    if (e.abl.liq > 0n) {
+      valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
+    }
+    console.log("e.destination, valueOut: ");
+    console.log(e.destination, valueOut);
+    tx.payToAddress(e.destination, valueOut);
+  }
   const str = await tx.toString();
   console.log("building tx: " + str);
   const completed = await tx.complete({
