@@ -770,9 +770,12 @@ async function updateABL(poolABL: ABL, poolDatum: types.PoolDatum, orders: UTxO[
   return [currentPoolABL, takes];
 }
 
-async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, orderUtxos: UTxO[], targetPool: UTxO, references: UTxO[], currentTime: number, changeUtxo: UTxO): Promise<TxHash> {
+async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, orderUtxos: UTxO[], targetPool: UTxO, references: UTxO[], changeUtxo: UTxO): Promise<TxHash> {
   console.log("settings: ");
   console.log(settings);
+
+  console.log("targetPool: ");
+  console.log(targetPool);
 
   const settingsDatum = Data.from(settings.datum, types.SettingsDatum);
   const protocolBaseFee = settingsDatum.baseFee;
@@ -838,6 +841,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     }
   }
 
+  const currentTime = emulator.now();
   console.log("new pool datum: ");
   let newPoolDatum = Data.to(poolDatum, types.PoolDatum);
   console.log(newPoolDatum);
@@ -846,12 +850,14 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log("current time: ");
   console.log(currentTime);
   tx
+    // Why does this line 'validFrom...' give me an "Invalid digit" parse error
+    // when the tx is serialized?
     .validFrom(currentTime - 1000000)
     .validTo(currentTime + 1000000)
     .readFrom([settings, ...references])
-    // Reference utxos should carry scriptRefs for these scripts
-    // .attachSpendingValidator(scripts.orderValidator)
-    // .attachSpendingValidator(scripts.poolValidator)
+     // Reference utxos should carry scriptRefs for these scripts
+     // .attachSpendingValidator(scripts.orderValidator)
+     // .attachSpendingValidator(scripts.poolValidator)
     .attachSpendingValidator(scripts.steakValidator)
     .addSigner(userAddress)
     .withdraw(scripts.steakAddress, 0n, "00")
@@ -882,23 +888,23 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log(Data.to(poolDatum, types.PoolDatum));
 
   // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
-  for (let e of escrowTakes) {
-    let valueOut: Assets = { "lovelace": rider + e.abl.a };
-    if (e.abl.b > 0n) {
-      valueOut[poolCoinB] = e.abl.b;
-    }
-    if (e.abl.liq > 0n) {
-      valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
-    }
-    console.log("valueOut: ");
-    console.log(valueOut);
-    tx.payToAddress(e.destination, valueOut);
-  }
+  //for (let e of escrowTakes) {
+  //  let valueOut: Assets = { "lovelace": rider + e.abl.a };
+  //  if (e.abl.b > 0n) {
+  //    valueOut[poolCoinB] = e.abl.b;
+  //  }
+  //  if (e.abl.liq > 0n) {
+  //    valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
+  //  }
+  //  console.log("e.destination, valueOut: ");
+  //  console.log(e.destination, valueOut);
+  //  tx.payToAddress(e.destination, valueOut);
+  //}
   const str = await tx.toString();
   console.log("building tx: " + str);
   const completed = await tx.complete({
     coinSelection: false, // We don't want extra inputs screwing up the indexing set
-    nativeUplc: false, // "Lucid breaks with stake scripts"?
+    //nativeUplc: false, // "Lucid breaks with stake scripts"?
   });
   const signedTx = await completed.sign().complete();
   const signedStr = await signedTx.toString();
@@ -909,8 +915,6 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
 async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, poolIdentHex: string, change: UTxO, references: UTxO[], orders: UTxO[]) {
   const dummy = await Lucid.new(undefined, "Custom");
   const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
-
-  const currentTime = emulator.now();
 
   let settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
   if (settingsUtxos.length == 0) {
@@ -938,7 +942,7 @@ async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   if (targetPool == null) {
     throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + poolIdentHex);
   }
-  const scoopedHash = await scoopPool(scripts, lucid, userAddress, settings, orders, targetPool, references, currentTime, change);
+  const scoopedHash = await scoopPool(scripts, lucid, userAddress, settings, orders, targetPool, references, change);
   console.log("Scooped pool, hash: " + scoopedHash);
 }
 
@@ -1079,6 +1083,7 @@ await testSettingsBoot(lucid, emulator, scripts);
 const mintedUtxo = await testMintRberry(lucid, emulator, scripts);
 const poolMintRef = await testPostReferenceScript(lucid, emulator, scripts, "poolMint");
 const poolValidatorRef = await testPostReferenceScript(lucid, emulator, scripts, "poolValidator");
+const orderValidatorRef = await testPostReferenceScript(lucid, emulator, scripts, "orderValidator");
 const [rberryMintingPolicy, rberryPolicyId]: [Script, string] = await getRberryPolicyId();
 const rberry = rberryPolicyId + "." + fromText("RBERRY");
 //await testMakePoolFunds(lucid, emulator, scripts, "lovelace", 1_020_000_000n, rberry, 1_000_000_000n);
@@ -1129,6 +1134,9 @@ const { listedHash, utxos: orders } =
 
 const scoopPoolChange = await findChange(emulator, userAddress);
 
-await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [poolMintRef, poolValidatorRef], orders);
-
 console.log(emulator.ledger);
+
+//throw new Error("florp");
+
+await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders);
+
