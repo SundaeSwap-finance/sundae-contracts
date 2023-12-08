@@ -346,7 +346,7 @@ async function doCancelOrder(scripts: Scripts, privateKeyFile: string, order: st
   console.log("canceledHash: " + canceledHash);
 }
 
-async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts, coinA: string, coinB: string, change: UTxO, poolIdent: string) {
+async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts, coinA: string, coinB: string, change: UTxO, poolIdent: string, orderCount: bigint) {
   let assets: CoinPair = [
     assetFromString(coinA),
     assetFromString(coinB),
@@ -369,10 +369,12 @@ async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts,
     1_000_000n,
     1_100_000n,
     change,
-    flags.count || 1n,
+    orderCount,
     targetPoolId
   );
   console.log("listedHash: " + listedHash);
+  await emulator.awaitTx(listedHash);
+  return listedHash;
 }
 
 function computePoolId(utxo: UTxO) {
@@ -1191,6 +1193,6 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 
 const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
 
-await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId);
+await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 20n);
 
 console.log(emulator.ledger);
