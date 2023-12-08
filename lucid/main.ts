@@ -1054,7 +1054,11 @@ const accounts: any[] = [
     }
   }
 ];
-let emulator = new Emulator(accounts);
+let emulator = new Emulator(accounts, {
+  ...PROTOCOL_PARAMETERS_DEFAULT,
+  maxTxSize: 999999999999,
+  maxTxExMem: 999999999999999n,
+});
 let lucid = await Lucid.new(emulator);
 
 emulator.ledger[bootUtxoHash + bootUtxoIx] = {
