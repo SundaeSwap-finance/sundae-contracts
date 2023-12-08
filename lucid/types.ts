@@ -206,10 +206,6 @@ export const PoolSpendRedeemerSchema = Data.Enum([
 ]);
 
 export const PoolRedeemerSchema = Data.Enum([
-  // This first variant is never used, just a hack to make aiken's dual
-  // spend/mint script work since the script checks for a constr 122 wrapper to
-  // see if it should run the spend code
-  Data.Object({ DUMMY: Data.Literal("DUMMY") }),
   Data.Object({ Spend: PoolSpendRedeemerSchema }),
 ]);
 

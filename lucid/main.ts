@@ -543,7 +543,6 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   console.log("settings datum: ");
   console.log(settings.datum);
   console.log("-------");
-  console.log("emulator.ledger", emulator.ledger);
   console.log("seed: ", seed);
   const tx = lucid.newTx()
     .mintAssets({
@@ -787,15 +786,14 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log(indexingSet);
   const amortizedBaseFee = protocolBaseFee / ordersCount;
   const scoopPoolRedeemer: types.PoolRedeemer = {
-    Spend: {
-      signatoryIndex: 0n,
-      scooperIndex: 0n,
-      amortizedBaseFee: amortizedBaseFee,
-      inputOrder: indexingSet,
-    }
+    signatoryIndex: 0n,
+    scooperIndex: 0n,
+    amortizedBaseFee: amortizedBaseFee,
+    inputOrder: indexingSet,
   };
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);
   redeemerData = "d87a9f" + redeemerData + "ff"; // Have to do redeemer wrapper trick here
+  console.log("pool redeemer: ", redeemerData);
   const orderScoopRedeemer: types.OrderRedeemer = "Scoop";
   console.log("order redeemer: ");
   console.log(Data.to(orderScoopRedeemer, types.OrderRedeemer));
@@ -891,8 +889,6 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     if (e.abl.liq > 0n) {
       valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
     }
-    console.log("e.destination, valueOut: ");
-    console.log(e.destination, valueOut);
     tx.payToAddress(e.destination, valueOut);
   }
   const str = await tx.toString();
