@@ -152,8 +152,20 @@ async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets
   const signedTx = await completed.sign().complete();
   const signedStr = await signedTx.toString();
   console.log("signed tx for listOrder: " + signedStr);
-  //throw new Error("florp");
-  return signedTx.submit();
+  const listedHash = await signedTx.submit();
+  await emulator.awaitTx(listedHash);
+  let refs = [];
+  for (let i = 0; i < count; i++) {
+    refs.push({
+      txHash: listedHash,
+      outputIndex: i
+    });
+  }
+  const listedUtxos = await emulator.getUtxosByOutRef(refs);
+  return {
+    listedHash: listedHash,
+    utxos: listedUtxos
+  };
 }
 
 async function cancelOrder(lucid: Lucid, scripts: Scripts, userAddress: string, userPkh: string, orderUtxo: UTxO, changeUtxo: UTxO): Promise<TxHash> {
@@ -361,7 +373,7 @@ async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts,
     }
   }
 
-  const listedHash = await listOrder(
+  const listed = await listOrder(
     lucid,
     scripts,
     userPkh.to_hex(),
@@ -372,9 +384,9 @@ async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts,
     orderCount,
     targetPoolId
   );
-  console.log("listedHash: " + listedHash);
-  await emulator.awaitTx(listedHash);
-  return listedHash;
+  console.log("listedHash: " + listed.listedHash);
+  await emulator.awaitTx(listed.listedHash);
+  return listed;
 }
 
 function computePoolId(utxo: UTxO) {
@@ -561,7 +573,7 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   console.log("signed tx: " + signedStr);
   const hash = await signedTx.submit();
   return {
-    mintedHash: hash,
+    poolMintedHash: hash,
     poolId: toHex(poolId),
   };
 }
@@ -894,93 +906,13 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   return signedTx.submit();
 }
 
-async function doScoopPool(scripts: Scripts, privateKeyFile: string, poolIdentHex: string, change: string, orders: any, references: string, fake: boolean) {
-  const sk = await Deno.readTextFile(privateKeyFile);
-  const skCborHex = JSON.parse(sk).cborHex;
-  const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
-  const userPublicKey = toPublicKey(skBech32);
-  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
-  const userAddress = (new Utils(dummy)).credentialToAddress({
-    type: "Key",
-    hash: userPkh.to_hex(),
-  });
+async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, poolIdentHex: string, change: UTxO, references: UTxO[], orders: UTxO[]) {
+  const dummy = await Lucid.new(undefined, "Custom");
+  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
 
-  const refs = await Deno.readTextFile(references);
-  const lines = refs.split(/\r?\n/);
-  const refUtxosOutRefs: OutRef[] = [];
-  for (let line of lines) {
-    let [hash, ix] = line.split("#");
-    let ixNum = Number(ix);
-    if (hash == "" || isNaN(ixNum)) {
-      continue;
-    }
-    refUtxosOutRefs.push({
-      txHash: hash,
-      outputIndex: Number(ix),
-    });
-  }
+  const currentTime = emulator.now();
 
-  let provider: Provider = null;
-  let lucid: Lucid = null;
-  let currentTime: number = 0;
-  if (fake) {
-    const emulator: Emulator = new Emulator([], {
-      ...PROTOCOL_PARAMETERS_DEFAULT,
-      maxTxSize: 999999999999,
-      maxTxExMem: flags.findMax ? PROTOCOL_PARAMETERS_DEFAULT.maxTxExMem : 999999999999999n,
-    });
-    populateLedgerForPool(scripts, userAddress, poolIdentHex, refUtxosOutRefs, emulator);
-    console.log("ledger: ");
-    console.log(emulator.ledger);
-    provider = emulator as Provider;
-    lucid = await Lucid.new(provider, "Custom");
-    console.log("Using emulator provider");
-    currentTime = emulator.now();
-  } else {
-    const blockfrost: Blockfrost = new Blockfrost(
-      flags.blockfrostUrl as string,
-      flags.blockfrostProjectId
-    );
-    provider = blockfrost as Provider;
-    lucid = await Lucid.new(provider, "Preview");
-    currentTime = Date.now();
-  }
-
-  lucid.selectWalletFromPrivateKey(skBech32);
-
-  const [changeHash, changeIx] = change.split("#");
-  const [changeUtxo] = await provider.getUtxosByOutRef([{
-    txHash: changeHash,
-    outputIndex: Number(changeIx),
-  }]);
-
-  const refUtxos = await provider.getUtxosByOutRef(refUtxosOutRefs);
-
-  let orderUtxos: UTxO[] = [];
-  if (orders.mode == "auto") {
-    orderUtxos = await findOrders(provider, scripts.orderAddress);
-  } else if (orders.mode == "manual") {
-    let manualRefs = [];
-    for (let ref of orders.orders) {
-      let [hash, ix] = ref.split("#");
-      manualRefs.push({
-        txHash: hash,
-        outputIndex: Number(ix),
-      });
-    }
-    console.log("manualRefs: ");
-    console.log(manualRefs);
-    orderUtxos = await provider.getUtxosByOutRef(manualRefs);
-  } else {
-    throw new Error("Unknown order mode for pool scoop command: " + orders.mode);
-  }
-
-  orderUtxos = orderUtxos.slice(0, 25);
-
-  console.log("orderUtxos: ");
-  console.log(orderUtxos);
-
-  let settingsUtxos = await provider.getUtxos(scripts.settingsAddress);
+  let settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
   if (settingsUtxos.length == 0) {
     throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
   }
@@ -989,7 +921,7 @@ async function doScoopPool(scripts: Scripts, privateKeyFile: string, poolIdentHe
   }
   const settings = settingsUtxos[0];
 
-  let knownPools = await provider.getUtxos(scripts.poolAddress);
+  let knownPools = await emulator.getUtxos(scripts.poolAddress);
 
   let targetPool = null;
   for (let knownPool of knownPools) {
@@ -1006,9 +938,7 @@ async function doScoopPool(scripts: Scripts, privateKeyFile: string, poolIdentHe
   if (targetPool == null) {
     throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + poolIdentHex);
   }
-  console.log("refUtxos: ");
-  console.log(refUtxos);
-  const scoopedHash = await scoopPool(scripts, lucid, userAddress, settings, orderUtxos, targetPool, refUtxos, currentTime, changeUtxo);
+  const scoopedHash = await scoopPool(scripts, lucid, userAddress, settings, orders, targetPool, references, currentTime, change);
   console.log("Scooped pool, hash: " + scoopedHash);
 }
 
@@ -1148,6 +1078,7 @@ emulator.ledger[bootUtxoHash + bootUtxoIx] = {
 await testSettingsBoot(lucid, emulator, scripts);
 const mintedUtxo = await testMintRberry(lucid, emulator, scripts);
 const poolMintRef = await testPostReferenceScript(lucid, emulator, scripts, "poolMint");
+const poolValidatorRef = await testPostReferenceScript(lucid, emulator, scripts, "poolValidator");
 const [rberryMintingPolicy, rberryPolicyId]: [Script, string] = await getRberryPolicyId();
 const rberry = rberryPolicyId + "." + fromText("RBERRY");
 //await testMakePoolFunds(lucid, emulator, scripts, "lovelace", 1_020_000_000n, rberry, 1_000_000_000n);
@@ -1193,6 +1124,11 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 
 const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
 
-await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 20n);
+const { listedHash, utxos: orders } = 
+  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 20n);
+
+const scoopPoolChange = await findChange(emulator, userAddress);
+
+await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [poolMintRef, poolValidatorRef], orders);
 
 console.log(emulator.ledger);
