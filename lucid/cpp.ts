@@ -16,10 +16,10 @@ export type SwapFees = {
   denominator: bigint;
 }
 
-export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL): [ABL, ABL] {
-  const diff = swapFees.denominator - swapFees.numerator;
+export function doSwap(coin: Coin, gives: bigint, feesPer10k: bigint, pool: ABL): [ABL, ABL] {
+  const diff = 10_000n - feesPer10k;
   if (coin == Coin.CoinA) {
-    const takes = (pool.b * gives * diff) / (pool.a * swapFees.denominator + gives * diff);
+    const takes = (pool.b * gives * diff) / (pool.a * 10_000n + gives * diff);
     if (pool.b > takes) {
       const newPool = {
         a: pool.a + gives,
@@ -31,7 +31,7 @@ export function doSwap(coin: Coin, gives: bigint, swapFees: SwapFees, pool: ABL)
       throw "Can't do swap";
     }
   } else if (coin == Coin.CoinB) {
-    const takes = (pool.a * gives * diff) / (pool.b * swapFees.denominator + gives * diff);
+    const takes = (pool.a * gives * diff) / (pool.b * 10_000n + gives * diff);
     if (pool.a > takes) {
       const newPool = {
         a: pool.a - takes,
@@ -110,7 +110,7 @@ Deno.test("doSwap", () => {
     liq: 1_000_000_000n,
   };
   let takes: ABL | null = null;
-  const swapFees: SwapFees = { numerator: 1n, denominator: 2000n };
+  const swapFees: bigint = 5n;
   [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
   assertEquals(takes.b, 9_896_088n);
   [takes, pool] = doSwap(Coin.CoinA, 10_000_000n, swapFees, pool);
