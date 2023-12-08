@@ -39,18 +39,39 @@ const rand = new random.Random();
 let bootUtxoHash = "ebcee8dcdbd7312f5e04a0033472465003617abe9935a6e56f007961897cfabb";
 let bootUtxoIx = 1;
 
-function settingsDatum(poolHash: string, userPkh: string): string {
+function settingsDatum(poolHash: string, poolStakeHash: string, userPkh: string): string {
   let nobody = "00000000000000000000000000000000000000000000000000000000";
   const datum: types.SettingsDatum = {
     poolScriptHash: poolHash,
     settingsAdmin: {
       signature: userPkh,
     },
-    rewardsAdmin: {
+    metadataAdmin: {
+      paymentCredential: {
+        VKeyCredential: { bytes: userPkh },
+      },
+      stakeCredential: null,
+    },
+    treasuryAdmin: {
       signature: userPkh,
     },
-    authorizedScoopers: [],
-    authorizedStakingKeys: [],
+    treasuryAddress: {
+      paymentCredential: {
+        VKeyCredential: { bytes: userPkh },
+      },
+      stakeCredential: null,
+    },
+    treasuryAllowance: [1n, 10n],
+    authorizedScoopers: [
+      userPkh,
+    ],
+    authorizedStakingKeys: [
+      poolStakeHash,
+    ],
+    baseFee: 1000000n,
+    simpleFee: 100000n,
+    strategyFee: 200000n,
+    extensions: 0n,
   };
   return Data.to(datum, types.SettingsDatum);
 }
@@ -58,7 +79,7 @@ function settingsDatum(poolHash: string, userPkh: string): string {
 function settingsMintRedeemer() { return "d87980" };
 
 async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs?: UTxO[]): Promise<TxHash> {
-  const newSettingsDatum = settingsDatum(scripts.poolScriptHash, userPkh);
+  const newSettingsDatum = settingsDatum(scripts.poolScriptHash, scripts.poolStakeHash, userPkh);
   const tx = await lucid.newTx()
     .collectFrom(inputs)
     .mintAssets({
@@ -176,8 +197,8 @@ interface Scripts {
   steakAddress: Address;
   poolMint: Script;
   poolPolicyId: PolicyId;
-  settingsMint: Script;
-  settingsPolicyId: PolicyId;
+  poolStakeHash: ScriptHash;
+  poolStakeAddress: Address;
 };
 
 function bytesToScript(bytes: string) {
@@ -215,6 +236,11 @@ function getScriptsAiken(lucid: Lucid, json: any): Scripts {
     if (v.title == "settings.mint") {
       out.settingsMint = bytesToScript(v.compiledCode);
       out.settingsPolicyId = lucid.utils.mintingPolicyToId(out.settingsMint);
+    }
+    if (v.title == "pool_stake.stake") {
+      out.poolStakeValidator = bytesToScript(v.compiledCode);
+      out.poolStakeHash = lucid.utils.validatorToScriptHash(out.poolStakeValidator);
+      out.poolStakeAddress = lucid.utils.validatorToRewardAddress(out.poolStakeValidator);
     }
   }
   return out;
@@ -358,7 +384,7 @@ async function doListOrder(scripts: Scripts, privateKeyFile: string, coinA: stri
 
   let targetPoolId = null;
   if (poolIdent) {
-    if (poolIdent.length == 62) {
+    if (poolIdent.length == 56) {
       targetPoolId = poolIdent;
     } else {
       throw new Error("Malformed pool ident");
@@ -387,17 +413,22 @@ function computePoolId(utxo: UTxO) {
   poolInputRef = concat(poolInputRef, poolInputTxHash);
   poolInputRef = concat(poolInputRef, numberSign);
   poolInputRef = concat(poolInputRef, poolInputTxIx);
-  return C.hash_blake2b256(poolInputRef).slice(1); // Truncate first byte
+  return C.hash_blake2b256(poolInputRef).slice(4); // Truncate first four bytes
 }
 
 function computePoolNftName(poolId: Uint8Array) {
-  const p = new Uint8Array([0x70]); // 'p'
-  return toHex(concat(p, poolId));
+  const prefix = new Uint8Array([0x00, 0x0d, 0xe1, 0x40]);
+  return toHex(concat(prefix, poolId));
 }
 
 function computePoolLqName(poolId: Uint8Array) {
-  const l = new Uint8Array([0x6c]); // 'l'
-  return toHex(concat(l, poolId));
+  const prefix = new Uint8Array([0x00, 0x14, 0xdf, 0x10]);
+  return toHex(concat(prefix, poolId));
+}
+
+function computePoolRefName(poolId: Uint8Array) {
+  const prefix = new Uint8Array([0x00, 0x06, 0x43, 0xb0]);
+  return toHex(concat(prefix, poolId));
 }
 
 type Asset = [string, string];
@@ -436,20 +467,31 @@ async function getRberryPolicyId(): Promise<[Script, string]> {
   return [rberryMintingPolicy, dummy.utils.mintingPolicyToId(rberryMintingPolicy)];
 }
 
-async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: Address, scriptName: string, changeUtxo: UTxO): Promise<TxHash> {
+async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: Address, scriptName: string, changeUtxo: UTxO, settings: UTxO): Promise<TxHash> {
   if (scriptName in scripts) {
-    const tx = await lucid.newTx()
-      .collectFrom([changeUtxo])
-      .payToAddressWithData(userAddress, {
-        scriptRef: scripts[scriptName as keyof Scripts] as Script,
-      }, {
-        "lovelace": 2_000_000n,
-      })
-      .complete({
-        coinSelection: false,
-      });
-    console.log("post reference script: ", tx.toString());
-    const signedTx = await tx.sign().complete();
+    let signedTx;
+    let retry = true;
+    let nonce = 0n;
+    while (retry) {
+      const tx = await lucid.newTx()
+        .collectFrom([changeUtxo])
+        .payToAddressWithData(userAddress, {
+          scriptRef: scripts[scriptName as keyof Scripts] as Script,
+        }, {
+          "lovelace": 2_000_000n,
+        })
+        .payToAddress(userAddress, { "lovelace": 2_000_000n + nonce })
+        .complete({
+          coinSelection: false,
+        });
+      signedTx = await tx.sign().complete();
+      const hash = signedTx.toHash();
+      if (hash > settings.txHash) {
+        break;
+      }
+      nonce += 1n;
+    }
+    console.log("post reference script: ", signedTx.toString());
     return signedTx.submit();
   } else {
     throw new Error("script does not exist: " + scriptName);
@@ -473,7 +515,7 @@ async function mintRberry(scripts: Scripts, lucid: Lucid, userAddress: Address):
   return signedTx.submit();
 }
 
-async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint, marketOpen?: bigint): Promise<TxHash> {
+async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], marketOpen?: bigint): Promise<TxHash> {
   const poolId = computePoolId(seed);
   const liq = initialLiquidity(amountA, amountB);
   const newPoolDatum: types.PoolDatum = {
@@ -482,16 +524,19 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
     circulatingLp: liq,
     feesPer10Thousand: fees,
     marketOpen: marketOpen || 0n,
-    rewards: 2_000_000n,
+    feeFinalized: marketOpen || 0n,
+    protocolFees: 2_000_000n,
   };
   const poolMintRedeemer: types.PoolMintRedeemer = {
     CreatePool: {
       assets: assets,
       poolOutput: 0n,
+      metadataOutput: 2n,
     }
   };
   const poolNftNameHex = computePoolNftName(poolId);
   const poolLqNameHex = computePoolLqName(poolId);
+  const poolRefNameHex = computePoolRefName(poolId);
   let poolValue = {
     [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
     [toUnit(assets[1][0], assets[1][1])]: amountB,
@@ -501,30 +546,38 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   } else {
     poolValue[toUnit(assets[0][0], assets[0][1])] = amountA;
   }
+
+  const poolMintRedeemerBytes = Data.to(poolMintRedeemer, types.PoolMintRedeemer);
+  const poolDatumBytes = Data.to(newPoolDatum, types.PoolDatum);
+
   console.log("value: ");
   console.log(poolValue);
   console.log("newPoolDatum: ");
-  console.log(Data.to(newPoolDatum, types.PoolDatum));
-
-  console.log("--------------------");
-  console.log("scripts.poolAddress: ", scripts.poolAddress);
-  console.log("userAddress: ", userAddress);
-  console.log("references: ", references);
-  console.log("settings: ", settings);
+  console.log(poolDatumBytes);
+  console.log("mint redeemer: ");
+  console.log(poolMintRedeemerBytes);
+  console.log("settings datum: ");
+  console.log(settings.datum);
+  console.log("-------");
   console.log("seed: ", seed);
-
   const tx = lucid.newTx()
     .mintAssets({
       [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
+      [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
-    }, Data.to(poolMintRedeemer, types.PoolMintRedeemer))
+    }, poolMintRedeemerBytes)
     .readFrom([...references, settings])
     .collectFrom([seed])
-    .payToContract(scripts.poolAddress, { inline: Data.to(newPoolDatum, types.PoolDatum) }, poolValue)
+    .payToContract(scripts.poolAddress, { inline: poolDatumBytes }, poolValue)
     .payToAddress(userAddress, {
       "lovelace": 2_000_000n,
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
+    })
+    .payToAddress(userAddress, {
+      "lovelace": 2_000_000n,
+      [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
     });
+
   const str = await tx.toString();
   console.log("building tx: " + str);
   const completed = await tx.complete({
@@ -598,7 +651,7 @@ async function testMintPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, 
 
   const settings = settingsUtxos[0];
 
-  const mintedHash = await mintPool(scripts, lucid, userAddress, settings, [refUtxo], assets, seed, 1_000_000_000n, 1_000_000_000n, 5n);
+  const mintedHash = await mintPool(scripts, lucid, userAddress, settings, [refUtxo], assets, seed, 1_000_000_000n, 1_000_000_000n, [5n, 5n]);
   console.log("Minted a pool, hash: " + mintedHash);
 }
 
@@ -1217,7 +1270,20 @@ async function testPostReferenceScript(lucid: Lucid, emulator: Emulator, scripts
   const dummy = await Lucid.new(undefined, "Custom");
   const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
   const change = await findChange(emulator, userAddress);
-  const postedHash = await postReferenceScript(scripts, lucid, userAddress, scriptName, change);
+
+  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
+
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+
+  const settings = settingsUtxos[0];
+
+
+  const postedHash = await postReferenceScript(scripts, lucid, userAddress, scriptName, change, settings);
   await emulator.awaitTx(postedHash);
   console.log("Posted reference script, hash: " + postedHash);
   const postedUtxos = await emulator.getUtxosByOutRef([{
