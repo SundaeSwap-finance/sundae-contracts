@@ -138,7 +138,6 @@ validator(settings_policy_id: PolicyId) {
 
     when redeemer is {
       PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
-
         // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
@@ -147,7 +146,6 @@ validator(settings_policy_id: PolicyId) {
         let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
-        trace @"Start"
         let (outcome, simple_count, strategy_count, total_protocol_fee) =
           process_orders(
             actual_identifier,
@@ -167,7 +165,6 @@ validator(settings_policy_id: PolicyId) {
             0,
             0,
           )
-        trace @"Done"
         let PoolState {
           quantity_lp: expected_circulating_lp,
           protocol_fees: expected_protocol_fees,
