@@ -18,6 +18,8 @@ use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count, count_orders}
 use sundae/multisig
+use tests/examples/ex_settings.{mk_valid_settings_input}
+use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
@@ -383,73 +385,6 @@ validator(settings_policy_id: PolicyId) {
   }
 }
 
-fn mk_tx_hash(n: Int) -> TransactionId {
-  expect n < 256
-  let h =
-    bytearray.push(
-      #"00000000000000000000000000000000000000000000000000000000000000",
-      n,
-    )
-  TransactionId { hash: h }
-}
-
-fn mk_output_reference(n: Int) -> OutputReference {
-  OutputReference { transaction_id: mk_tx_hash(0), output_index: n }
-}
-
-fn script_address(hash: ByteArray) -> Address {
-  Address { payment_credential: ScriptCredential(hash), stake_credential: None }
-}
-
-fn wallet_address(hash: ByteArray) -> Address {
-  Address(VerificationKeyCredential(hash), None)
-}
-
-fn mk_settings_input(
-  scoopers: List<ByteArray>,
-  ix: Int,
-) -> Input {
-  let hash_of_settings_script =
-    #"00000000000000000000000000000000000000000000000000000000"
-  let settings_nft_name = "settings"
-  let settings_address = script_address(hash_of_settings_script)
-  let settings_datum =
-    SettingsDatum {
-      settings_admin: multisig.AnyOf([]),
-      metadata_admin: Address(
-        VerificationKeyCredential(
-          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-        ),
-        None,
-      ),
-      treasury_admin: multisig.AnyOf([]),
-      treasury_address: Address(
-        VerificationKeyCredential(
-          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-        ),
-        None,
-      ),
-      treasury_allowance: (1, 10),
-      authorized_scoopers: scoopers,
-      authorized_staking_keys: [],
-      base_fee: 0,
-      simple_fee: 2_500_000,
-      strategy_fee: 5_000_000,
-      extensions: Void,
-    }
-  let settings_input =
-    Input {
-      output_reference: mk_output_reference(ix),
-      output: Output {
-        address: settings_address,
-        value: value.from_lovelace(2_000_000)
-          |> value.add(hash_of_settings_script, settings_nft_name, 1),
-        datum: InlineDatum(settings_datum),
-        reference_script: None,
-      },
-    }
-  settings_input
-}
 
 type ScoopTestOptions {
   edit_escrow_1_value: Option<Value>,
@@ -698,7 +633,7 @@ fn scoop(options: ScoopTestOptions) {
     }
   let settings_input = {
     let Input { output_reference, output } =
-      mk_settings_input([scooper], 1)
+      mk_valid_settings_input([scooper], 1)
     let updated_output =
       Output {
         ..output,
@@ -866,7 +801,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
   }
   let settings_input = {
-    let Input {output_reference, output} = mk_settings_input([scooper], 1)
+    let Input {output_reference, output} = mk_valid_settings_input([scooper], 1)
     let updated_output = Output {
       ..output,
       datum: option.or_else(options.edit_settings_datum, output.datum)
@@ -935,7 +870,7 @@ test mint_test() {
   let rberry_token_name = #"524245525259"
   let user_address =
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let settings_input = mk_settings_input([], 1)
+  let settings_input = mk_valid_settings_input([], 1)
   let funds_input = Input {
     output_reference: OutputReference {
       transaction_id: mk_tx_hash(0),
