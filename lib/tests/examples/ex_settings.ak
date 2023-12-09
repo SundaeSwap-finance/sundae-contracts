@@ -1,11 +1,10 @@
-use aiken/bytearray
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/cbor
 use sundae/multisig
 use aiken/transaction/value
 use types/settings.{SettingsDatum}
 use aiken/transaction.{Input, Output, InlineDatum}
-use tests/examples/ex_shared.{script_address, mk_output_reference}
+use tests/examples/ex_shared.{print_example, script_address, mk_output_reference}
 
 pub fn mk_valid_settings_datum(
   scoopers: List<ByteArray>,
@@ -66,10 +65,45 @@ pub fn mk_valid_settings_input(
 }
 
 test example_settings_datum() {
-  trace bytearray.to_hex(
+  print_example(
     cbor.serialise(mk_valid_settings_datum([
       #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
     ])),
   )
-  True
+}
+
+test example_big_settings_datum() {
+  // 30 scoopers at least
+  print_example(mk_valid_settings_datum([
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02400",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02401",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02402",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02403",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02404",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02405",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02406",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02407",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02408",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02409",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02410",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02411",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02412",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02413",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02414",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02415",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02416",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02417",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02418",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02419",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02421",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02422",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02423",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02424",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02425",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02426",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02427",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02428",
+      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa02429",
+    ])
+  )
 }
