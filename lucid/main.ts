@@ -26,7 +26,7 @@ import {
   UTxO,
   PROTOCOL_PARAMETERS_DEFAULT,
   Provider,
-} from "../../lucid/mod.ts";
+} from "../../sundae-lucid/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 import { ABL, Coin, SwapFees, doSwap, doDeposit, doWithdrawal } from "./cpp.ts";

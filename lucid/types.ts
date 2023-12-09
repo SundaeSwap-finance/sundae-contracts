@@ -1,4 +1,4 @@
-import { Data } from "../../lucid/mod.ts";
+import { Data } from "../../sundae-lucid/mod.ts";
 
 export const examplePkh: string = "6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513";
 
