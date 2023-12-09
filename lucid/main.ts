@@ -898,9 +898,12 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     //nativeUplc: false, // "Lucid breaks with stake scripts"?
   });
   const signedTx = await completed.sign().complete();
+  const exUnits = completed.exUnits;
   const signedStr = await signedTx.toString();
   console.log("signed tx: " + signedStr);
-  return signedTx.submit();
+  const scoopedHash = signedTx.submit();
+  await emulator.awaitTx(scoopedHash);
+  return exUnits;
 }
 
 async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, poolIdentHex: string, change: UTxO, references: UTxO[], orders: UTxO[]) {
@@ -933,8 +936,8 @@ async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   if (targetPool == null) {
     throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + poolIdentHex);
   }
-  const scoopedHash = await scoopPool(scripts, lucid, userAddress, settings, orders, targetPool, references, change);
-  console.log("Scooped pool, hash: " + scoopedHash);
+  const exUnits = await scoopPool(scripts, lucid, userAddress, settings, orders, targetPool, references, change);
+  return exUnits;
 }
 
 async function testMintRberry(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
@@ -1129,9 +1132,18 @@ const { listedHash, utxos: orders } =
 
 const scoopPoolChange = await findChange(emulator, userAddress);
 
-console.log(emulator.ledger);
+const savedLedger = structuredClone(emulator.ledger);
+console.log("savedLedger");
+console.log(savedLedger);
+console.log("ok");
 
-//throw new Error("florp");
+const runs = new Map();
 
-await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders);
+for (let i = 1; i < 20; i++) {
+  emulator.ledger = structuredClone(savedLedger);
+  const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));
+  runs.set(i, exUnits);
+}
 
+console.log("results");
+console.log(runs);
