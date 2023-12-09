@@ -1059,8 +1059,8 @@ const accounts: any[] = [
 ];
 let emulator = new Emulator(accounts, {
   ...PROTOCOL_PARAMETERS_DEFAULT,
-  maxTxSize: 999999999999,
-  maxTxExMem: 999999999999999n,
+  //maxTxSize: 999999999999,
+  //maxTxExMem: 999999999999999n,
 });
 let lucid = await Lucid.new(emulator);
 
@@ -1128,7 +1128,7 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
 
 const { listedHash, utxos: orders } = 
-  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 20n);
+  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 40n);
 
 const scoopPoolChange = await findChange(emulator, userAddress);
 
@@ -1139,10 +1139,14 @@ console.log("ok");
 
 const runs = new Map();
 
-for (let i = 1; i < 20; i++) {
+for (let i = 1; i <= 40; i++) {
   emulator.ledger = structuredClone(savedLedger);
-  const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));
-  runs.set(i, exUnits);
+  try {
+    const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));
+    runs.set(i, exUnits);
+  } catch (e) {
+    console.log("Failed to scoop: ", e)
+  }
 }
 
 console.log("results");
