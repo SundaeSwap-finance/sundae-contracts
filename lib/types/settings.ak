@@ -25,6 +25,8 @@ pub type SettingsDatum {
   simple_fee: Int,
   strategy_fee: Int,
 
+  // TODO: split into settings_extensions and treasury_extensions
+  // so we can permission things separately
   extensions: Data,
 }
 

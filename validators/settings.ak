@@ -18,6 +18,7 @@ validator(protocol_boot_utxo: OutputReference) {
     expect InlineDatum(output_datum) = own_output.datum
     expect output_datum: SettingsDatum = output_datum
 
+    // TODO: allow the ADA to change, in case the minUTXO changes, we don't want to lock the UTXO
     let value_not_changed =
       own_output.value == own_input.output.value
 
@@ -26,6 +27,9 @@ validator(protocol_boot_utxo: OutputReference) {
 
     when redeemer is {
       SettingsAdminUpdate -> {
+        // TODO: require signature from the new admin too, to prevent dead-locking the protocol
+        // TODO: also check for signature from the new treasury admin, if changed, to prevent locking the datum
+        // i.e. that ensures we're within execution units limit
         let signed_by_admin =
           multisig.satisfied(
             d.settings_admin,
@@ -39,6 +43,8 @@ validator(protocol_boot_utxo: OutputReference) {
             && output_datum.authorized_staking_keys == d.authorized_staking_keys
             && output_datum.treasury_address == d.treasury_address
             && output_datum.treasury_allowance == d.treasury_allowance
+        // TODO: move base_fee, simple_fee, and strategy_fee to the treasury admin instead
+        // TODO: enforce maximum scooper keys to some large N, to prevent locking the datum
 
         signed_by_admin
           && datum_updated_legally
@@ -55,6 +61,9 @@ validator(protocol_boot_utxo: OutputReference) {
 
         // Treasury admin can change any datum fields except for these
         // i.e. can change the treasury address and treasury allowance
+        // TODO: with a big list of fields like this, it's hard to understand and check correctness
+        // instead, we could construct an "allowed datum" from the fields that *are* allowed to change, with a spread from the old datum
+        // and compare that
         let datum_updated_legally =
           output_datum.pool_script_hash == d.pool_script_hash
             && output_datum.authorized_staking_keys == d.authorized_staking_keys
@@ -66,6 +75,7 @@ validator(protocol_boot_utxo: OutputReference) {
             && output_datum.simple_fee == d.simple_fee
             && output_datum.strategy_fee == d.strategy_fee
             && output_datum.extensions == d.extensions
+        // TODO: enforce maximum staking keys to some large N, to prevent locking the Datum
 
         signed_by_admin
           && datum_updated_legally
