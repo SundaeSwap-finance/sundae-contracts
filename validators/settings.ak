@@ -85,6 +85,7 @@ validator(protocol_boot_utxo: OutputReference) {
     }
   }
 
+  // TODO: do we need a SettingsMintRedeemer? perhaps we make this Data
   fn mint(_r: SettingsMintRedeemer, ctx: ScriptContext) {
     expect Mint(own_policy_id) = ctx.purpose
     let mints_exactly_one_settings_nft =
