@@ -39,8 +39,7 @@ validator(protocol_boot_utxo: OutputReference) {
 
         // Settings admin can change any datum fields except for these
         let datum_updated_legally =
-          output_datum.pool_script_hash == d.pool_script_hash
-            && output_datum.authorized_staking_keys == d.authorized_staking_keys
+            output_datum.authorized_staking_keys == d.authorized_staking_keys
             && output_datum.treasury_address == d.treasury_address
             && output_datum.treasury_allowance == d.treasury_allowance
         // TODO: move base_fee, simple_fee, and strategy_fee to the treasury admin instead
@@ -65,8 +64,7 @@ validator(protocol_boot_utxo: OutputReference) {
         // instead, we could construct an "allowed datum" from the fields that *are* allowed to change, with a spread from the old datum
         // and compare that
         let datum_updated_legally =
-          output_datum.pool_script_hash == d.pool_script_hash
-            && output_datum.authorized_staking_keys == d.authorized_staking_keys
+            output_datum.authorized_staking_keys == d.authorized_staking_keys
             && output_datum.settings_admin == d.settings_admin
             && output_datum.metadata_admin == d.metadata_admin
             && output_datum.treasury_admin == d.treasury_admin

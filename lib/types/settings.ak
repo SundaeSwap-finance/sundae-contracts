@@ -1,7 +1,6 @@
 use aiken/bytearray
 use aiken/cbor
-use aiken/hash.{Blake2b_224, Hash}
-use aiken/transaction/credential.{Address, Script, VerificationKey, VerificationKeyCredential}
+use aiken/transaction/credential.{Address, VerificationKey, VerificationKeyCredential}
 use sundae/multisig.{MultisigScript}
 use shared.{Rational}
 use aiken/transaction.{
@@ -12,7 +11,6 @@ use aiken/transaction/value.{AssetName, PolicyId}
 use aiken/dict
 
 pub type SettingsDatum {
-  pool_script_hash: Hash<Blake2b_224, Script>,
   settings_admin: MultisigScript, // Who can update the updatable settings?
   metadata_admin: Address, // Who or what governs the evolution of CIP-68 token metadata
   treasury_admin: MultisigScript, // Who can withdraw to the treasury and control delegation

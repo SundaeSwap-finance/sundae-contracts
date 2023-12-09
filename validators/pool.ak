@@ -116,6 +116,8 @@ validator(settings_policy_id: PolicyId) {
     // Find the input being spent
     let pool_input = spent_output(ctx)
 
+    expect ScriptCredential(pool_script_hash) = pool_input.address.payment_credential
+
     // Find the pool output
     expect Some(pool_output) = list.head(outputs)
     expect pool_output.address == pool_input.address
@@ -136,7 +138,7 @@ validator(settings_policy_id: PolicyId) {
       PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
 
         // Deconstruct the settings datum with the fields we need for a scoop
-        let SettingsDatum { pool_script_hash, authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
+        let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
 
         // Construct the initial pool state from the datum and the locked values
@@ -272,6 +274,8 @@ validator(settings_policy_id: PolicyId) {
   fn mint(r: PoolMintRedeemer, ctx: ScriptContext) {
     when r is {
       CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+        expect Mint(own_policy_id) = ctx.purpose
+
         // The assets on the pool must be sorted
         let (asset_a, asset_b) = assets
         let coin_pair_ordering_is_canonical =
@@ -320,9 +324,9 @@ validator(settings_policy_id: PolicyId) {
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
 
         // TODO: can we use own_script_hash here?
-        let new_pool_ref = (settings_datum.pool_script_hash, new_pool_ref_token)
-        let new_pool_nft = (settings_datum.pool_script_hash, new_pool_nft_token)
-        let new_pool_lq = (settings_datum.pool_script_hash, new_pool_lp_token)
+        let new_pool_ref = (own_policy_id, new_pool_ref_token)
+        let new_pool_nft = (own_policy_id, new_pool_nft_token)
+        let new_pool_lq = (own_policy_id, new_pool_lp_token)
 
         let expected_mint =
               shared.to_value((new_pool_ref.1st, new_pool_ref.2nd, 1))
@@ -337,7 +341,7 @@ validator(settings_policy_id: PolicyId) {
             value.flatten(pool_output.value),
           ) <= 3 && value.quantity_of(
             pool_output.value,
-            settings_datum.pool_script_hash,
+            own_policy_id,
             new_pool_nft_token,
           ) == 1
         
@@ -346,7 +350,7 @@ validator(settings_policy_id: PolicyId) {
           list.at(ctx.transaction.outputs, metadata_output_ix)
         expect metadata_output.address == settings_datum.metadata_admin
         // TODO: can we use own_script_hash here?
-        expect value.quantity_of(metadata_output.value, settings_datum.pool_script_hash, new_pool_ref_token) == 1
+        expect value.quantity_of(metadata_output.value, own_policy_id, new_pool_ref_token) == 1
 
         expect InlineDatum(d) = pool_output.datum
         expect pool_output_datum: PoolDatum = d
@@ -402,7 +406,6 @@ fn wallet_address(hash: ByteArray) -> Address {
 }
 
 fn mk_settings_input(
-  psh: ByteArray,
   scoopers: List<ByteArray>,
   ix: Int,
 ) -> Input {
@@ -412,7 +415,6 @@ fn mk_settings_input(
   let settings_address = script_address(hash_of_settings_script)
   let settings_datum =
     SettingsDatum {
-      pool_script_hash: psh,
       settings_admin: multisig.AnyOf([]),
       metadata_admin: Address(
         VerificationKeyCredential(
@@ -575,15 +577,12 @@ test output_missing_nft() fail {
 
 test scooper_not_in_settings() fail {
   let somebody = #"11111111111111111111111111111111111111111111111111111111"
-  let hash_of_pool_script =
-    #"00000000000000000000000000000000000000000000000000000000"
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
       edit_settings_datum: Some(
         InlineDatum(
           SettingsDatum {
-            pool_script_hash: hash_of_pool_script,
             settings_admin: multisig.AnyOf([]),
             metadata_admin: Address(
               VerificationKeyCredential(
@@ -699,7 +698,7 @@ fn scoop(options: ScoopTestOptions) {
     }
   let settings_input = {
     let Input { output_reference, output } =
-      mk_settings_input(hash_of_pool_script, [scooper], 1)
+      mk_settings_input([scooper], 1)
     let updated_output =
       Output {
         ..output,
@@ -867,7 +866,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
   }
   let settings_input = {
-    let Input {output_reference, output} = mk_settings_input(hash_of_pool_script, [scooper], 1)
+    let Input {output_reference, output} = mk_settings_input([scooper], 1)
     let updated_output = Output {
       ..output,
       datum: option.or_else(options.edit_settings_datum, output.datum)
@@ -936,7 +935,7 @@ test mint_test() {
   let rberry_token_name = #"524245525259"
   let user_address =
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let settings_input = mk_settings_input(hash_of_pool_script, [], 1)
+  let settings_input = mk_settings_input([], 1)
   let funds_input = Input {
     output_reference: OutputReference {
       transaction_id: mk_tx_hash(0),
