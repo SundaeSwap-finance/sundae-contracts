@@ -882,7 +882,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
 
   // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
   for (let e of escrowTakes) {
-    let valueOut: Assets = { "lovelace": rider + e.abl.a };
+    let valueOut: Assets = { "lovelace": rider + (1_000_000n - amortizedBaseFee) + e.abl.a };
     if (e.abl.b > 0n) {
       valueOut[poolCoinB] = e.abl.b;
     }
