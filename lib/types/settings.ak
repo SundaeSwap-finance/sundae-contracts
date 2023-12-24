@@ -14,7 +14,7 @@ pub type SettingsDatum {
   treasury_admin: MultisigScript, // Who can withdraw to the treasury and control delegation
   treasury_address: Address, // Where to withdraw treasury funds
   treasury_allowance: Rational, // When withdrawing, what percentage can be released for administrative purposes?
-  authorized_scoopers: List<VerificationKey>,
+  authorized_scoopers: Option<List<VerificationKey>>,
   authorized_staking_keys: List<VerificationKey>,
 
   base_fee: Int,

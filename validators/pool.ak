@@ -193,12 +193,18 @@ validator(settings_policy_id: PolicyId) {
         // Calculate all the neccesary and sufficient conditions
         expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
 
-        // OPTIMIZATION: skip 10 entries at a time
-        // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
-        expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
-        expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
-        // must be an authorized scooper
-        expect scooper_sig == scooper
+        // Slightly awkward construction here because we need to check that the scooper is authorized
+        expect when authorized_scoopers is {
+          Some(authorized_scoopers) -> {
+            // OPTIMIZATION: skip 10 entries at a time
+            // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
+            expect Some(scooper_sig) = list.at(extra_signatories, signatory_index)
+            expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
+            // must be an authorized scooper
+            scooper_sig == scooper
+          }
+          _ -> True
+        }
         // the market must have opened
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
@@ -530,7 +536,7 @@ test scooper_not_in_settings() fail {
               None,
             ),
             treasury_allowance: (1, 10),
-            authorized_scoopers: [somebody],
+            authorized_scoopers: Some([somebody]),
             authorized_staking_keys: [],
             base_fee: 0,
             simple_fee: 2_500_000,

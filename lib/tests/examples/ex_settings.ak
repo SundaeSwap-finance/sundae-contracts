@@ -29,7 +29,7 @@ pub fn mk_valid_settings_datum(
       None,
     ),
     treasury_allowance: (1, 10),
-    authorized_scoopers: scoopers,
+    authorized_scoopers: Some(scoopers),
     authorized_staking_keys: [
       #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
     ],
