@@ -42,6 +42,8 @@ pub type Order {
   // ZapOut { assets: (Int, Int) }
   // Donate some value to the pool
   Donation { assets: (SingletonValue, SingletonValue) }
+  // Create an oracle UTXO, for other protocols to read the price at a given time
+  Oracle
 }
 
 // In order to redeem an order, you can either

@@ -149,3 +149,7 @@ pub fn pool_nft_name(pool_ident: Ident) {
 pub fn pool_lp_name(pool_ident: Ident) {
   bytearray.concat(#"0014df10", pool_ident)
 }
+
+pub fn oracle_sft_name() {
+  "oracle"
+}

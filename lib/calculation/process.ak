@@ -9,6 +9,7 @@ use aiken/transaction/value.{Value, PolicyId}
 use aiken/time.{PosixTime}
 use calculation/deposit
 use calculation/donation
+use calculation/oracle
 use calculation/shared.{
   PoolState, check_and_set_unique, unsafe_fast_index_skip_with_tail,
 } as calc_shared
@@ -177,6 +178,13 @@ pub fn process_order(
       } else {
         (next, outputs, fee)
       }
+    }
+    order.Oracle -> {
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
+      expect oracle.check_oracle(value, datum, fee, output)
+      (initial, rest_outputs, fee)
     }
   }
 }

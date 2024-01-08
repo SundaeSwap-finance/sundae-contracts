@@ -121,6 +121,7 @@ validator(settings_policy_id: PolicyId) {
     expect ScriptCredential(pool_script_hash) = pool_input.address.payment_credential
 
     // Find the pool output
+    // TODO: this doesn't let us change the stake address
     expect Some(pool_output) = list.head(outputs)
     expect pool_output.address == pool_input.address
     expect InlineDatum(output_datum) = pool_output.datum
