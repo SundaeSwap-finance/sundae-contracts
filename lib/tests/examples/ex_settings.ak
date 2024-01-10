@@ -31,7 +31,9 @@ pub fn mk_valid_settings_datum(
     treasury_allowance: (1, 10),
     authorized_scoopers: Some(scoopers),
     authorized_staking_keys: [
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+      VerificationKeyCredential(
+        #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+      ),
     ],
     base_fee: 0,
     simple_fee: 2_500_000,

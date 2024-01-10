@@ -11,7 +11,7 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
+  Address, ScriptCredential, VerificationKeyCredential, Inline
 }
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
@@ -122,7 +122,6 @@ validator(settings_policy_id: PolicyId) {
 
     // Find the pool output
     expect Some(pool_output) = list.head(outputs)
-    expect pool_output.address == pool_input.address
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
 
@@ -209,6 +208,7 @@ validator(settings_policy_id: PolicyId) {
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
         // expect funds_moved_correctly
+        expect pool_output.address == pool_input.address
         expect output_datum.circulating_lp == outcome.quantity_lp.3rd
         expect
           has_expected_pool_value(
@@ -227,8 +227,6 @@ validator(settings_policy_id: PolicyId) {
         expect datum.assets == output_datum.assets
         expect datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
         expect datum.market_open == output_datum.market_open
-        expect
-          pool_input.address.stake_credential == pool_output.address.stake_credential
         True
       }
       WithdrawFees { amount, treasury_output } -> {
@@ -270,6 +268,10 @@ validator(settings_policy_id: PolicyId) {
         // The remainder must be sent to the treasury address with the Void datum
         expect treasury_output.address == settings_datum.treasury_address
         expect treasury_output.datum == InlineDatum(Void)
+        expect pool_output.address.payment_credential == pool_input.address.payment_credential
+        expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+          pool_output.address.stake_credential == Some(Inline(a))
+        })
         expect value.lovelace_of(treasury_output.value) >= to_treasury
         True
       }

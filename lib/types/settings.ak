@@ -1,4 +1,4 @@
-use aiken/transaction/credential.{Address, VerificationKey}
+use aiken/transaction/credential.{Address, VerificationKey, Credential}
 use sundae/multisig.{MultisigScript}
 use shared.{Rational}
 use aiken/transaction.{
@@ -15,7 +15,7 @@ pub type SettingsDatum {
   treasury_address: Address, // Where to withdraw treasury funds
   treasury_allowance: Rational, // When withdrawing, what percentage can be released for administrative purposes?
   authorized_scoopers: Option<List<VerificationKey>>,
-  authorized_staking_keys: List<VerificationKey>,
+  authorized_staking_keys: List<Credential>,
 
   base_fee: Int,
   simple_fee: Int,
