@@ -1,6 +1,7 @@
 //// Shared types and functions across all pool calculations
 
 use aiken/builtin
+use aiken/math
 use shared.{SingletonValue}
 
 /// An interim pool state
@@ -65,19 +66,11 @@ fn unsafe_fast_index_with_tail(inputs: List<a>, idx: Int) -> List<a> {
 
 pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   expect index >= 0
-  let bit = do_2_exp(index)
+  let bit = math.pow2(index)
   let bit_shifted = 2 * bit
 
   let flag_set = uniqueness_flags + bit
 
   expect flag_set % bit_shifted > uniqueness_flags % bit_shifted
   flag_set
-}
-
-pub fn do_2_exp(n: Int) -> Int {
-  if n <= 0 {
-    1
-  } else {
-    2 * do_2_exp(n - 1)
-  }
 }
