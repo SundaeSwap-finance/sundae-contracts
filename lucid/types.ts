@@ -60,13 +60,12 @@ export const AddressSchema = Data.Object({
 });
 
 export const SettingsDatumSchema = Data.Object({
-  poolScriptHash: Data.Bytes(),
   settingsAdmin: MultiSigScriptSchema,
   metadataAdmin: AddressSchema,
   treasuryAdmin: MultiSigScriptSchema,
   treasuryAddress: AddressSchema,
   treasuryAllowance: Data.Array(Data.Integer()),
-  authorizedScoopers: Data.Array(Data.Bytes()),
+  authorizedScoopers: Data.Nullable(Data.Array(Data.Bytes())),
   authorizedStakingKeys: Data.Array(Data.Bytes()),
   baseFee: Data.Integer(),
   simpleFee: Data.Integer(),
@@ -77,7 +76,6 @@ export type SettingsDatum = Data.Static<typeof SettingsDatumSchema>;
 export const SettingsDatum = SettingsDatumSchema as unknown as SettingsDatum;
 
 export const exampleSettingsDatum: SettingsDatum = {
-  poolScriptHash: "00",
   settingsAdmin: {
     signature: examplePkh,
   },

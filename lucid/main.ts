@@ -39,10 +39,9 @@ const rand = new random.Random();
 let bootUtxoHash = "ebcee8dcdbd7312f5e04a0033472465003617abe9935a6e56f007961897cfabb";
 let bootUtxoIx = 1;
 
-function settingsDatum(poolHash: string, poolStakeHash: string, userPkh: string): string {
+function settingsDatum(poolStakeHash: string, userPkh: string): string {
   let nobody = "00000000000000000000000000000000000000000000000000000000";
   const datum: types.SettingsDatum = {
-    poolScriptHash: poolHash,
     settingsAdmin: {
       signature: userPkh,
     },
@@ -79,7 +78,7 @@ function settingsDatum(poolHash: string, poolStakeHash: string, userPkh: string)
 function settingsMintRedeemer() { return "d87980" };
 
 async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs?: UTxO[]): Promise<TxHash> {
-  const newSettingsDatum = settingsDatum(scripts.poolScriptHash, scripts.poolStakeHash, userPkh);
+  const newSettingsDatum = settingsDatum(scripts.poolStakeHash, userPkh);
   const tx = await lucid.newTx()
     .collectFrom(inputs)
     .mintAssets({
