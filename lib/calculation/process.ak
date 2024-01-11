@@ -101,9 +101,7 @@ pub fn process_order(
   amortized_base_fee: Int,
   simple_fee: Int,
   strategy_fee: Int,
-  output: Output,
   outputs: List<Output>,
-  rest_outputs: List<Output>
 ) -> (PoolState, List<Output>, Int) {
   when details is {
     order.Strategy(signer) -> {
@@ -129,12 +127,11 @@ pub fn process_order(
         // reuse the code to calculate the result, but charge the higher fee
         strategy_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
     }
     order.Swap(offer, min_received) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
@@ -151,6 +148,7 @@ pub fn process_order(
       (next, rest_outputs, fee)
     }
     order.Deposit(..) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
@@ -158,6 +156,7 @@ pub fn process_order(
       (next, rest_outputs, fee)
     }
     order.Withdrawal(..) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
@@ -167,6 +166,7 @@ pub fn process_order(
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
     order.Donation(..) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
@@ -213,7 +213,6 @@ pub fn process_orders(
       expect [input_to_process, ..rest_of_input_list] = next_input_list
 
       let Input{ output_reference, output: order } = input_to_process
-      expect [output, ..rest_outputs] = outputs
 
       // make sure we only process scripts; this is so that our "order count" and "indexing set" logic is correct
       expect is_script(order.address.payment_credential)
@@ -243,9 +242,7 @@ pub fn process_orders(
         amortized_base_fee,
         simple_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
 
       process_orders(
