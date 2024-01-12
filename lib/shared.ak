@@ -10,22 +10,29 @@ use aiken/transaction.{
 use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
 
-pub type Ident =
-  ByteArray
+/// An alias type for the pool identifier, to make it slightly easier to reason about
+pub type Ident = ByteArray
 
-pub type AssetClass =
-  (PolicyId, AssetName)
+/// An asset class is a combination of a policy ID and asset name; uniquely identifies one type of token, useful to make the code more readable
+pub type AssetClass = (PolicyId, AssetName)
 
-pub type Rational =
-  (Int, Int)
+/// A rational number, represented as the numerator and denominator
+pub type Rational = (Int, Int)
 
-pub type SingletonValue =
-  (PolicyId, AssetName, Int)
+/// A "value" for which we know there is only one value; convenient for performance reasons, and to make the code more readable
+pub type SingletonValue = (PolicyId, AssetName, Int)
 
+/// Convert a singleton value to an actual value; convenient for comparing or adding together values
 pub fn to_value(sv: SingletonValue) -> value.Value {
   value.from_asset(sv.1st, sv.2nd, sv.3rd)
 }
 
+/// Find the datum for a specific output
+/// That is, the datum may either be in the output itself, as a datum hash
+/// or in the transaction witnesses, which are passed in here
+/// We don't use this everywhere, but we use it for orders in particular because
+/// that lets us compose with other protocols (another protocol can produce an non-inline datum, and it can still be scooped)
+/// Provided the scooper knows about the datum itself
 pub fn datum_of(
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   output: Output,
@@ -37,15 +44,23 @@ pub fn datum_of(
   }
 }
 
+/// Find the **input** (which was the output of some other transaction) for which we're actually evaluating the script to determine if it is spendable
+/// Also called "own_input" in places
 pub fn spent_output(ctx: ScriptContext) -> Output {
   expect Spend(out_ref) = ctx.purpose
   expect Some(input) = find_input(ctx.transaction.inputs, out_ref)
   input.output
 }
 
+/// Find a specific input index, and validate that it has at least one of the specified token
+/// Useful for looking up the pool token, etc.
+/// NOTE: this is actually unused, because we chose to go with the optimization in the body
 pub fn get_input_with_token(
+  /// The list of transaction inputs
   inputs: List<Input>,
+  /// The index at which we should expect the input
   idx: Int,
+  /// The token we expect to find on the UTXO
   token: AssetClass,
 ) -> Output {
   // Optimization: assume first reference input by farming for high reference script hashes
@@ -54,6 +69,8 @@ pub fn get_input_with_token(
   input.output
 }
 
+/// A more permissive version of get_input_with_token, where we don't know the index to expect the input at
+/// NOTE: this is actually unused
 pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
   expect Some(input) =
     list.find(
@@ -82,6 +99,8 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
 // - the input list will include the pool script, which will fail to parse
 const exact_non_order_script_inputs = 1
 
+/// Check whether a specific credential is a script credential; this can be useful for identifying pool and order scripts,
+/// even if we don't know what the specific hash is going to be
 pub fn is_script(credential: Credential) -> Bool {
   when credential is {
     ScriptCredential(_) -> True
@@ -89,21 +108,39 @@ pub fn is_script(credential: Credential) -> Bool {
   }
 }
 
+/// Count the number of orders on the inputs,
+/// without knowing the exact script address they will use
+/// This is quite subtle, so see the note above
 pub fn count_orders(tx_inputs: List<Input>) -> Int {
+  // Can be done as a simple fold
   list.foldl(
     tx_inputs,
-    0,
+    // Note: by starting at -exact_non_order_script_inputs, it's the same as if we subtracted this at the end,
+    // but saves one mathematical operation.
+    -exact_non_order_script_inputs,
     fn(input, total) {
+      // The reason this is important is twofold:
+      // - We count them in the first place to ensure that we process every order by the end of the transaction
+      // - and we compare the script this way so that if we implement a new order script, with additional logic,
+      //   and the correct datum format, it can be processed the pool just fine
       total + if is_script(input.output.address.payment_credential) { 1 } else { 0 }
     },
-  ) - exact_non_order_script_inputs
+  )
 }
 
+/// Check whether a specific value has *exactly* the right amount of tokens
+/// This is important to, for example, efficiently check the pool output has the correct value
+/// Check where this is used, because it's a very subtle bit of logic for where this is safe to do
 pub fn has_exact_token_count(val: value.Value, count: Int) {
   count == list.foldl(
+    // Convert the value to a list, so we can fold over it
     dict.to_list(value.to_dict(val)),
     0,
     fn(tk_pair, total) {
+      // The first fold is over the list of policy IDs
+      // and the second fold is over the list of tokens
+      // so we can count the distinct Asset IDs
+      // TODO: can we just use list.length here?
       list.foldl(
         dict.to_list(builtin.snd_pair(tk_pair)),
         0,
@@ -129,23 +166,30 @@ test test_has_exact_token_count() {
   True
 }
 
+/// The CIP-68 (100) "reference" token for a given pool identifier; this token lets you set the metadata like the name, decimals, image, etc.
+/// See https://github.com/cardano-foundation/CIPs/tree/master/CIP-0068 for more details on the specific prefix
+pub fn pool_ref_name(pool_ident: Ident) {
+  bytearray.concat(#"000643b0", pool_ident)
+}
 
+/// The CIP-68 (222) "nft" token for a given pool identifier; this token is an NFT used to track the actual swappable funds in the pool 
+pub fn pool_nft_name(pool_ident: Ident) {
+  bytearray.concat(#"000de140", pool_ident)
+}
+
+/// The CIP-68 (333) "fungible" token for a given pool identifier; this token is used to track a percentage ownership of funds in a given pool
+pub fn pool_lp_name(pool_ident: Ident) {
+  bytearray.concat(#"0014df10", pool_ident)
+}
+
+/// Construct all three pool token names
+/// This is a minor convenience; theoretically it would be more efficient to construct each independently,
+/// but this is likely so small as to not be worth sacrificing the performance
+/// Note: it's important to pay attention to the order of the token names returned, because they're indistinguishable to the caller!
 pub fn pool_token_names(pool_ident: Ident) {
   (
     pool_ref_name(pool_ident),
     pool_nft_name(pool_ident),
     pool_lp_name(pool_ident),
   )
-}
-
-pub fn pool_ref_name(pool_ident: Ident) {
-  bytearray.concat(#"000643b0", pool_ident)
-}
-
-pub fn pool_nft_name(pool_ident: Ident) {
-  bytearray.concat(#"000de140", pool_ident)
-}
-
-pub fn pool_lp_name(pool_ident: Ident) {
-  bytearray.concat(#"0014df10", pool_ident)
 }
