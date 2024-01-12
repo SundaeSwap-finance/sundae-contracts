@@ -1,7 +1,6 @@
 use aiken/dict
 use aiken/list
 use aiken/transaction.{Transaction, ScriptContext, WithdrawFrom, Publish, InlineDatum}
-use aiken/transaction/certificate.{CredentialRegistration, CredentialDelegation, CredentialDeregistration}
 use aiken/transaction/value.{PolicyId}
 use types/settings.{find_settings_datum}
 use sundae/multisig
@@ -71,7 +70,7 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
         treasury_output.datum == InlineDatum(Void)
       }
       // Publishing a cert succeeds, because we've already checked that the multisig script was satisfied above
-      Publish(cert) -> True
+      Publish(_) -> True
       // Prevent minting or spending, just in case
       _ -> False
     }

@@ -77,11 +77,6 @@ pub type SettingsRedeemer {
   TreasuryAdminUpdate
 }
 
-/// The settings token, which authenticates the settings UTXO, can only be minted a single time, to boot the protocol
-pub type SettingsMintRedeemer {
-  BootProtocol
-}
-
 /// The name of the token that authenticates the settings UTXO
 pub const settings_nft_name: AssetName = "settings"
 
@@ -107,8 +102,7 @@ pub fn find_settings_datum(reference_inputs: List<Input>, settings_policy_id: Po
   /// but this is a safe assumption to make because we don't expect to compose the spending of the settings datum
   /// with other scripts
   expect InlineDatum(settings_datum) = settings_output.datum
-  /// Cast it to the right type
+  /// Cast it to the right type, to ensure it's not some other random datum!
   expect settings_datum: SettingsDatum = settings_datum
-  /// Return that settings datum
   settings_datum
 }
