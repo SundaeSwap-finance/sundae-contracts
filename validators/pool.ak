@@ -155,7 +155,7 @@ validator(settings_policy_id: PolicyId) {
         // Make sure it's not negative, for example if base_fee was negative
         expect amortized_base_fee >= 0
         // Construct the initial pool state from the datum and the locked values
-        let (initial_state, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        let (initial_state, fees_per_10_thousand, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
         let (outcome, simple_count, strategy_count) =
@@ -165,6 +165,7 @@ validator(settings_policy_id: PolicyId) {
             datums,
             initial_state,
             input_order,
+            fees_per_10_thousand,
             amortized_base_fee,
             simple_fee,
             strategy_fee,

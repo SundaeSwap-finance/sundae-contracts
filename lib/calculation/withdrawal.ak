@@ -60,7 +60,6 @@ pub fn do_withdrawal(
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd - withdrawn,
     ),
-    fees_per_10_thousand: pool_state.fees_per_10_thousand,
   }
 }
 
@@ -118,7 +117,6 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     quantity_a: (#"", #"", 1_010_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
-    fees_per_10_thousand: 5,
   }
   let input_value =
     value.from_lovelace(4_500_000)

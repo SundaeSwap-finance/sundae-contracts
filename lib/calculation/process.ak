@@ -25,7 +25,7 @@ pub fn pool_input_to_state(
   datum: PoolDatum,
   input: Output,
   valid_from: IntervalBound<PosixTime>,
-) -> (PoolState, Int) {
+) -> (PoolState, Int, Int) {
   let PoolDatum {
     assets,
     protocol_fees,
@@ -75,8 +75,7 @@ pub fn pool_input_to_state(
       value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     ),
     quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
-    fees_per_10_thousand: fees,
-  }, protocol_fees)
+  }, fees, protocol_fees)
 }
 
 fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool {
@@ -96,6 +95,7 @@ pub fn process_order(
   max_protocol_fee: Int,
   datum: OrderDatum,
   destination: Destination,
+  fees_per_10_thousand: Int,
   amortized_base_fee: Int,
   simple_fee: Int,
   strategy_fee: Int,
@@ -122,6 +122,7 @@ pub fn process_order(
         max_protocol_fee,
         datum,
         destination,
+        fees_per_10_thousand,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
         // reuse the code to calculate the result, but charge the higher fee
@@ -141,6 +142,7 @@ pub fn process_order(
           initial,
           value,
           destination,
+          fees_per_10_thousand,
           fee,
           offer,
           min_received,
@@ -185,6 +187,7 @@ pub fn process_orders(
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   initial: PoolState,
   input_order: List<(Int, Option<SignedStrategyExecution>)>,
+  fees_per_10_thousand: Int,
   amortized_base_fee: Int,
   simple_fee: Int,
   strategy_fee: Int,
@@ -237,6 +240,7 @@ pub fn process_orders(
         max_protocol_fee,
         datum, // TODO: can we get rid of this?
         destination,
+        fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
@@ -251,6 +255,7 @@ pub fn process_orders(
         datums,
         next_state,
         rest,
+        fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
@@ -281,7 +286,6 @@ test process_orders_test() {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
   }
   let order_datum = OrderDatum {
     pool_ident: None,
@@ -339,7 +343,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000

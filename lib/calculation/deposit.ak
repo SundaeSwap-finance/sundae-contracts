@@ -93,7 +93,6 @@ pub fn do_deposit(
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd + issued_lp_tokens,
     ),
-    fees_per_10_thousand: pool_state.fees_per_10_thousand,
   }
 }
 
@@ -112,7 +111,6 @@ test deposit_test() {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
   }
   let input_value =
     value.from_lovelace(14_500_000)

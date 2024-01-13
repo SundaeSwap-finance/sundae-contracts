@@ -47,7 +47,6 @@ pub fn do_donation(
         pool_state.quantity_b.3rd + assets.2nd.3rd,
       ),
       quantity_lp: pool_state.quantity_lp,
-      fees_per_10_thousand: pool_state.fees_per_10_thousand,
     },
     has_remainder,
   )
@@ -70,7 +69,6 @@ test donation() {
       quantity_a: (#"", #"", 1_000_000_000),
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-      fees_per_10_thousand: 5,
     }
   let input_value =
     value.from_lovelace(1_000_000)
