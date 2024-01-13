@@ -61,7 +61,6 @@ pub fn do_withdrawal(
       pool_state.quantity_lp.3rd - withdrawn,
     ),
     fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
   }
 }
 
@@ -120,7 +119,6 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
     fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(4_500_000)
@@ -153,6 +151,5 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
   let final_pool_state = do_withdrawal(pool_state, input_value, order, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

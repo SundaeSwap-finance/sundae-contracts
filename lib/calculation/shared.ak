@@ -13,8 +13,6 @@ pub type PoolState {
   quantity_lp: SingletonValue,
   /// The fee the pool charges
   fees_per_10_thousand: Int,
-  /// The protocol_fees accumulated in the pool
-  protocol_fees: Int,
 }
 
 pub fn unsafe_fast_index_skip_with_tail(inputs: List<a>, idx: Int) -> List<a> {

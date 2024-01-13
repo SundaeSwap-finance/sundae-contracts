@@ -167,7 +167,6 @@ validator(settings_policy_id: PolicyId) {
           )
         let PoolState {
           quantity_lp: expected_circulating_lp,
-          protocol_fees: expected_protocol_fees,
           ..
         } = outcome
 
@@ -220,8 +219,6 @@ validator(settings_policy_id: PolicyId) {
         // expect pool_output_correct
         // Must update the circulating LP if tokens are minted
         expect actual_circulating_lp == expected_circulating_lp.3rd
-        // Must update the protocol fees field as expected
-        expect actual_protocol_fees == expected_protocol_fees
         // Must not update the immutable fields
         expect datum.identifier == output_datum.identifier
         expect datum.assets == output_datum.assets

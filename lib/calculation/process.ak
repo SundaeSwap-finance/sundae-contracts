@@ -76,8 +76,6 @@ pub fn pool_input_to_state(
     ),
     quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
     fees_per_10_thousand: fees,
-    // Pay the transaction fee out of the protocol_fees
-    protocol_fees,
   }
 }
 
@@ -286,7 +284,6 @@ test process_orders_test() {
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let order_datum = OrderDatum {
     pool_ident: None,
@@ -348,7 +345,6 @@ test process_orders_test() {
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   expect simple == 1
   expect strategies == 0
   expect fee == 2_500_000

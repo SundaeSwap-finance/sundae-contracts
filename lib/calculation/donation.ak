@@ -48,7 +48,6 @@ pub fn do_donation(
       ),
       quantity_lp: pool_state.quantity_lp,
       fees_per_10_thousand: pool_state.fees_per_10_thousand,
-      protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
     },
     has_remainder,
   )
@@ -72,7 +71,6 @@ test donation() {
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
       fees_per_10_thousand: 5,
-      protocol_fees: 2_000_000,
     }
   let input_value =
     value.from_lovelace(1_000_000)
@@ -106,6 +104,5 @@ test donation() {
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }
