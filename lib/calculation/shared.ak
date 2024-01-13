@@ -11,6 +11,9 @@ pub type PoolState {
   quantity_b: SingletonValue,
   /// The circulating supply of LP tokens
   quantity_lp: SingletonValue,
+
+  // TODO: we can probably remove fees_per_10_thousand and protocol_fees, and pass them as parameters instead
+  // since the fee rate doesn't change, and the protocol_fees can be computed once at the end
   /// The fee, in basis points; that is, parts per 10,000.  So, 100 == 1%; 30 == 0.3%; etc.
   fees_per_10_thousand: Int,
   /// The protocol_fees collected and set aside in the pool
