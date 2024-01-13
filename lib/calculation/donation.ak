@@ -2,18 +2,18 @@ use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value}
 use calculation/shared.{PoolState} as calc_shared
-use shared
+use shared.{SingletonValue}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
 pub fn do_donation(
   pool_state: PoolState,
   input_value: Value,
-  order: OrderDatum,
+  assets: (SingletonValue, SingletonValue),
+  destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
 ) -> (PoolState, Bool) {
-  expect order.Donation { assets } = order.details
   expect assets.1st.1st == pool_state.quantity_a.1st
   expect assets.1st.2nd == pool_state.quantity_a.2nd
   expect assets.2nd.1st == pool_state.quantity_b.1st
@@ -27,8 +27,8 @@ pub fn do_donation(
   let has_remainder = remainder != value.zero()
   let Void =
     if has_remainder {
-      expect output.address == order.destination.address
-      expect output.datum == order.destination.datum
+      expect output.address == destination.address
+      expect output.datum == destination.datum
       expect output.value == remainder
       Void
     } else {
@@ -77,6 +77,10 @@ test donation() {
   let input_value =
     value.from_lovelace(1_000_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+  let assets = (
+          (ada.1st, ada.2nd, 1_000_000),
+          (rberry.1st, rberry.2nd, 1_000_000),
+        )
   let order =
     OrderDatum {
       pool_ident: None,
@@ -86,10 +90,7 @@ test donation() {
       max_protocol_fee: 2_500_000,
       destination: Destination { address: addr, datum: NoDatum },
       details: order.Donation {
-        assets: (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        ),
+        assets: assets,
       },
       extension: Void,
     }
@@ -102,7 +103,7 @@ test donation() {
       reference_script: None,
     }
   let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input_value, order, 2_500_000, output)
+    do_donation(pool_state, input_value, assets, order.destination, 2_500_000, output)
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
