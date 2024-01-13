@@ -213,13 +213,13 @@ validator(settings_policy_id: PolicyId) {
 
         // And make sure each of these fields is unchanged
         and {
-          datum.identifier == output_datum.identifier
-          datum.assets == output_datum.assets
-          datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
-          datum.market_open == output_datum.market_open
+          datum.identifier == output_datum.identifier,
+          datum.assets == output_datum.assets,
+          datum.fees_per_10_thousand == output_datum.fees_per_10_thousand,
+          datum.market_open == output_datum.market_open,
 
           // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
-          pool_input.address.stake_credential == pool_output.address.stake_credential
+          pool_input.address.stake_credential == pool_output.address.stake_credential,
         }
       }
       WithdrawFees { amount, treasury_output } -> {
@@ -227,10 +227,12 @@ validator(settings_policy_id: PolicyId) {
           protocol_fees: initial_protocol_fees,
           ..
         } = datum
-        // Can't withdraw more than we've collected
+        // Make sure we withdraw *only* up to what we've earned
+        // We allow less than, so that you can leave some behind for the minUTXO cost, or continuing to earn staking rewards, etc.
         expect amount <= initial_protocol_fees
 
-        // Must update the protocol fees and nothing else
+        // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
+        // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
         let expected_datum = PoolDatum {
           identifier: datum.identifier,
           assets: datum.assets,
@@ -242,25 +244,39 @@ validator(settings_policy_id: PolicyId) {
         }
         expect output_datum == expected_datum
 
-        // Must withdraw only what we claim to withdraw
+        // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
         let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
         expect pool_output.value == expected_output_value
 
-        // Must be signed by the treasury admin multisig
+        // Only the treasury administrator is allowed to withdraw the fees, to prevent DDOS, and because of the allowance below
         expect multisig.satisfied(
           settings_datum.treasury_admin,
           extra_signatories,
           validity_range,
         )
 
-        // Some portion of the treasury can be withdrawn for administrative purposes
-        // such as paying scooper fees, etc.
+        // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
+        // Instead, the DAO can set an "allowance", which is a percentage of each withdrawal that is entrusted to the
+        // treasury administrator to pay those basic fees, such as paying the scoopers, or running incentive programs, etc.
+        //
+        // In particular, it's a percentage, to ensure that splitting up the withdrawals into multiple transactions doesn't
+        // allow them to game that withdrawal.
         let allowance = amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
         let to_treasury = amount - allowance
+
+        // And, we must pay everything except the allowance amount to the treasury address
+        // We use the `treasury_output` index to skip to it quickly, rather than scanning for the output
+        // TODO: should we instead sum all the values at the treasury output, to allow
+        // paying out in multiple UTXOs for some reason?
         expect Some(treasury_output) = list.at(outputs, treasury_output)
-        // The remainder must be sent to the treasury address with the Void datum
         expect treasury_output.address == settings_datum.treasury_address
+        // We ensure that it's sent with the Void datum. This is because the treasury is likely to be a script address
+        // and scripts are unspendable without a datum; We also don't have any notion of what the "correct" datum would be
+        // so we just enforce it to void. If the output datum ever needed a specific datum, we would have to use a proxy address
+        // that worked with the void datum, and paid to the real treasury with the correct datum.
+        // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
+        // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
         expect value.lovelace_of(treasury_output.value) >= to_treasury
         True
       }
@@ -268,24 +284,49 @@ validator(settings_policy_id: PolicyId) {
   }
 
   fn mint(r: PoolMintRedeemer, ctx: ScriptContext) {
+    // When minting, we can be doing one of two things: minting the pool itself, or minting the LP token
     when r is {
+      // For creating a new pool, one of our design objectives was to avoid requiring interaction with any global 
+      // "factory", as in v1; this created a lot of contention, and didn't serve it's original goal of ensuring that
+      // the (pair, fee) was unique.
       CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
         expect Mint(own_policy_id) = ctx.purpose
 
         // The assets on the pool must be sorted
+        // This is partially to make off-chain indexing easier, and as an on-chain optimization,
+        // so we can always assume that, if ADA is one of the pairs, it's the first asset.
+        // This also prevents creating an X/X pool, since we require the assets to be stricly less than
+        // Note, it is a NON GOAL to enforce that any specific (pair, fee) combination is unique; while aggregating liquidity
+        // can be beneficial for capital efficiency, in practice that will happen anyway, and smaller pools can be useful as
+        // a pressure release valve. Additionally, we have bigger plans around interesting order splitting modes of operation that
+        // make that less important.
         let (asset_a, asset_b) = assets
         let coin_pair_ordering_is_canonical =
           compare_asset_class(asset_a, asset_b) == Less
 
+        // We use the first input ref spent in this transaction to uniquely identify the pool
+        // This is a trick widely used to produce NFTs, and ensures that we can generate a hash that is unique to this pool
         expect Some(first_input) = list.at(ctx.transaction.inputs, 0)
         let first_input_index =
           int_to_ident(first_input.output_reference.output_index)
 
         // Calculate the identifier by hashing the txRef of the first input
         // this makes the pool unique
-        // With CIP-68 identifiers, we have 28 bytes of space; ideally we'd use blake2b-224,
-        // but that won't be on-chain until plutus v3;
-        // So, we use blake2b-256 and drop 4 bytes; this is still 112 bits of security against collisions
+        // With CIP-68 identifiers (which take up 4 bytes), we have 28 bytes of space;
+        // ideally we'd use blake2b-224, which is exactly a 224 byte hash, but that won't be on-chain until plutus v3;
+        // So, we use blake2b-256 and drop a few bytes. Now, does this compromise the uniqueness guarantees?
+        // It is strongly believed by the cryptographer community that blake2b-256 provides indifferentiability from random oracles
+        // [https://eprint.iacr.org/2013/322.pdf]
+        // which allows us to treat the 256 bits as uniformly sampled. This means that there are 2^256 equally likely values, and the
+        // chance of collision is 1 in 2^256, unfathomably small.
+        // Even when used in bulk, the birthday paradox means that you would need to generate 2^128 different hashes before you had even a 50% chance of collision.
+        // This is known as "128 bit security", and is considered a gold standard of cryptography.
+        // So, how does dropping 4 bytes (32 bits) from this hash impact that analysis?
+        // There are still 2^224 possible values, meaning it offers 2^112 bit security, still considered "unbreakable".
+        // As a comparison, at the time of this writing the entire bitcoin network is performing 500 exa-hashes per second, or
+        // 500 * 10^18 hashes per second. If the entire bitcoin network was directed towards trying to generate a collision on pool ident, it would take
+        // Roughly 10^13 seconds, or 317,098 years to have a 50% chance of collision. Not to mention the cost of storing and comparing to detect if you'd performed
+        // a collision, or the cost of grinding UTXOs on cardano to give fresh inputs to the pool script.
         let new_pool_id =
           first_input.output_reference.transaction_id.hash
             |> bytearray.concat(#"23") // '#' character
@@ -293,16 +334,21 @@ validator(settings_policy_id: PolicyId) {
             |> hash.blake2b_256
             |> bytearray.drop(4) 
 
-        // Derive the CIP-68 token identifiers
+        // With that pool identifier, we can attach 3 different CIP-68 pool identifiers:
+        // - (100) indicates a tracking token, for the purposes of on-chain metadata read by off-chain infra, so we can provide a nice experience to the users wallet for example
+        // - (222) indicates the pool NFT, which uniquely identifies the UTXO that holds pool assets
+        // - (333) indicates the fungible LP token, which represents a percentage ownership of the pool
         let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(new_pool_id)
 
+        // Then, find the settings datum, so we can ensure the reference token is paid to the metadata admin
         let reference_inputs = ctx.transaction.reference_inputs
-
         let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
 
+        // And grab the pool output
         expect Some(pool_output) =
           list.at(ctx.transaction.outputs, pool_output_ix)
 
+        // Grab the initial reserves of each token by looking at what's paid to the UTXO
         let coin_a_amt =
           value.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd)
         let coin_b_amt =
@@ -310,6 +356,9 @@ validator(settings_policy_id: PolicyId) {
 
         // Only ada has a null policy id. If coin A is ada, subtract the 2 ada
         // rider from the output to get the true amount in the pool.
+        // TODO: we should instead subtract the protocol fees, rather than relying
+        // on this constant, so that we can adjust the "rider" off-chain if needed.
+        // TODO: should we check for a minimum protocol fees amount, as a "create pool" fee paid to the protocol?
         let coin_a_amt_sans_rider =
           if bytearray.is_empty(asset_a.1st) {
             coin_a_amt - 2_000_000
@@ -317,13 +366,18 @@ validator(settings_policy_id: PolicyId) {
             coin_a_amt
           }
 
+        // Calculate the initial number of LP tokens; In particular, we adopt Uniswaps convention of
+        // computing this value as the square root of the product of the two values.
+        // This helps minimize precision loss: it gives decent initial liquidity values for a range of
+        // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
 
-        // TODO: can we use own_script_hash here?
+        // Use the asset names we computed above to compute the whole Asset IDs of the tokens we expect
         let new_pool_ref = (own_policy_id, new_pool_ref_token)
         let new_pool_nft = (own_policy_id, new_pool_nft_token)
         let new_pool_lq = (own_policy_id, new_pool_lp_token)
 
+        // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
               shared.to_value((new_pool_ref.1st, new_pool_ref.2nd, 1))
             |> value.merge(shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1)))
@@ -331,7 +385,8 @@ validator(settings_policy_id: PolicyId) {
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
-        // TODO: can we use own_script_hash here?
+        // Confirm that the correct funds (at least one asset A, at least one asset B, exactly 3 tokens, including the pool NFT) is correct here
+        // Note: should we instead just compare the expected pool output?
         let funds_spent_to_pool =
           coin_a_amt_sans_rider >= 1 && coin_b_amt >= 1 && list.length(
             value.flatten(pool_output.value),
@@ -342,15 +397,25 @@ validator(settings_policy_id: PolicyId) {
           ) == 1
         
         // Make sure we send the pool metadata token to the metadata admin
+        // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
+        // This is safe to do for the usual reasons: if they point at a UTXO without the ref token, the transaction will fail.
         expect Some(metadata_output) =
           list.at(ctx.transaction.outputs, metadata_output_ix)
         expect metadata_output.address == settings_datum.metadata_admin
-        // TODO: can we use own_script_hash here?
         expect value.quantity_of(metadata_output.value, own_policy_id, new_pool_ref_token) == 1
 
+        // Check that the pool datum is inline, because a datum hash could brick this pool
         expect InlineDatum(d) = pool_output.datum
         expect pool_output_datum: PoolDatum = d
 
+        // And check that the datum is initialized correctly; This is part of why we have a minting policy handling this,
+        // as it allows us to authenticate the providence of the datum.
+        // A datum is valid so long as
+        // - the pool identifier is set correctly
+        // - the assets is set correctly
+        // - the initial circulating supply is set correctly
+        // - and the market open time is before the fee finalized time; TODO: should we relax this?
+        //   I'm not sure it's harmful if someone initializes this with a feeFinalized in the past
         let pool_output_datum_correct =
           pool_output_datum.identifier == new_pool_id && pool_output_datum.assets == (
             asset_a,
@@ -358,11 +423,24 @@ validator(settings_policy_id: PolicyId) {
           ) && pool_output_datum.circulating_lp == initial_lq
           && pool_output_datum.market_open <= pool_output_datum.fee_finalized
 
-        coin_pair_ordering_is_canonical && mint_is_correct && funds_spent_to_pool && pool_output_datum_correct
+        // And then check each of the conditions above as the condition for minting
+        and {
+          coin_pair_ordering_is_canonical,
+          mint_is_correct,
+          funds_spent_to_pool,
+          pool_output_datum_correct,
+        }
       }
-      // It is sufficient to check that either a pool nft is being spent or the
-      // settings nft is being spent, *provided that* the settings and pool
-      // contracts check that they are minting the correct token
+      // when minting an LP token, we just need to make sure the pool NFT is present in one of the inputs,
+      // meaning the pool script will enforce the correct name and quantity.
+      // 
+      // Of particular note, you might expect this to fail when minting the initial LP tokens
+      // but the minting policy only runs once, so it would be running with a different redeemer in that case
+      // And it's not possible to include a *separate* minting redeemer to run the script twice; (TODO: check this)
+      // even if it were, the pool token wouldn't be on the **inuputs** when we're minting the pool.
+      //
+      // It's also important that the pool script and the minting script checks that *no other* tokens of this policy are minted,
+      // for example for a different pool. It should be ok if a token from a *different* policy is minted, though.
       MintLP(pool_ident) -> {
         expect Mint(own_policy_id) = ctx.purpose
         let pool_nft_name = shared.pool_nft_name(pool_ident)
@@ -379,15 +457,22 @@ validator(settings_policy_id: PolicyId) {
   }
 }
 
+/// This is responsible for checking that the minting value on the transaction is valid
+/// based on the pool state, the policy ID, and the initial incoming datum.
 fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
   mint: MintedValue,
   datum: PoolDatum,
   outcome: PoolState,
 ) -> Bool {
+  // Unwrap the silly MintedValue special type
   let minted_tokens =
     value.tokens(value.from_minted_value(mint), pool_policy_id)
 
+  // If the initial datum has the same circulating LP as the outcome, then we expect no minted tokens
+  // Otherwise, the minted tokens should be exactly the pool LP tokens and nothing else
+  // TODO: confirm that the "minting 0 ada" problem doesn't apply here; we have real-world transactions, so I doubt it does, but I want to confirm.
+  // TODO: This should allow minting of other tokens, from other policy IDs, perhaps, for composibility?
   if datum.circulating_lp == outcome.quantity_lp.3rd {
     dict.is_empty(minted_tokens)
   } else {
@@ -400,45 +485,51 @@ fn minted_correct_pool_tokens(
   }
 }
 
+/// Check that the UTXO contents are correct given a specific pool outcome
+/// In particular, it must have the final A reserves, the final B reserves, the pool NFT, and the protocol fees
 fn has_expected_pool_value(
   pool_script_hash: PolicyId,
   identifier: Ident,
   output_value: Value,
   outcome: PoolState,
 ) -> Bool {
-  // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
   let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
+  // Asset A *could* be ADA; in which case there should be 3 tokens on the output
+  // (ADA, Asset B, and the NFT)
+  // We do this as an optimization, since constructing values is expensive
+  // OPTIMIZATION: is it possible to check this with a single traversal? Each quantity_of represents a small linear scan
   if quantity_a_policy_id == ada_policy_id {
-    expect has_exact_token_count(output_value, 3)
-    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
-    expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
-    expect
+    and {
+      has_exact_token_count(output_value, 3),
+      value.lovelace_of(output_value) == protocol_fees + quantity_a_amt,
+      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
+
       value.quantity_of(
         output_value,
         pool_script_hash,
         pool_nft_name(identifier),
-      ) == 1
-    True
+      ) == 1,
+    }
   } else {
-    expect has_exact_token_count(output_value, 4)
-    expect value.lovelace_of(output_value) == protocol_fees
-    expect
-      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
-    expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
-    expect
+    // Otherwise, we expect 4 tokens (ADA, Asset A, Asset B, and the NFT)
+    // and the corresponding values
+    and {
+      has_exact_token_count(output_value, 4),
+      value.lovelace_of(output_value) == protocol_fees,
+      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt,
+      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
       value.quantity_of(
         output_value,
         pool_script_hash,
         pool_nft_name(identifier),
-      ) == 1
-    True
+      ) == 1,
+    }
   }
 }
 
+// Compare two policy IDs to determine a sort order; used in particular to enforce an ordering on the assets in the pool
 fn compare_asset_class(a: AssetClass, b: AssetClass) {
   let (aPolicy, aToken) = a
   let (bPolicy, bToken) = b
@@ -449,6 +540,7 @@ fn compare_asset_class(a: AssetClass, b: AssetClass) {
   }
 }
 
+// Convert a specific integer (like a UTXO index) into a byte array, so we can construct a hashable string when minting the pool
 fn int_to_ident(n: Int) -> Ident {
   expect n < 256
   bytearray.push(#"", n)
