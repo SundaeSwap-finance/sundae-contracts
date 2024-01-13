@@ -25,7 +25,7 @@ pub fn pool_input_to_state(
   datum: PoolDatum,
   input: Output,
   valid_from: IntervalBound<PosixTime>,
-) -> PoolState {
+) -> (PoolState, Int) {
   let PoolDatum {
     assets,
     protocol_fees,
@@ -63,7 +63,7 @@ pub fn pool_input_to_state(
         fees_per_10_thousand.1st + (elapsed * range / duration)
       }
     }
-  PoolState {
+  (PoolState {
     quantity_a: (
       asset_a_policy_id,
       asset_a_name,
@@ -76,7 +76,7 @@ pub fn pool_input_to_state(
     ),
     quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
     fees_per_10_thousand: fees,
-  }
+  }, protocol_fees)
 }
 
 fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool {
@@ -102,7 +102,7 @@ pub fn process_order(
   output: Output,
   outputs: List<Output>,
   rest_outputs: List<Output>
-) -> (PoolState, List<Output>, Int) {
+) -> (PoolState, List<Output>) {
   when details is {
     order.Strategy(signer) -> {
       expect Some(execution) = signed_execution
@@ -146,14 +146,14 @@ pub fn process_order(
           min_received,
           output,
         )
-      (next, rest_outputs, fee)
+      (next, rest_outputs)
     }
     order.Deposit(..) -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       let next = deposit.do_deposit(initial, value, datum, fee, output)
-      (next, rest_outputs, fee)
+      (next, rest_outputs)
     }
     order.Withdrawal(..) -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
@@ -161,7 +161,7 @@ pub fn process_order(
       expect max_protocol_fee >= fee
       let next =
         withdrawal.do_withdrawal(initial, value, datum, fee, output)
-      (next, rest_outputs, fee)
+      (next, rest_outputs)
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
     order.Donation(..) -> {
@@ -171,9 +171,9 @@ pub fn process_order(
       let (next, used_output) =
         donation.do_donation(initial, value, datum, fee, output)
       if used_output {
-        (next, rest_outputs, fee)
+        (next, rest_outputs)
       } else {
-        (next, outputs, fee)
+        (next, outputs)
       }
     }
   }
@@ -195,10 +195,9 @@ pub fn process_orders(
   uniqueness_flag: Int,
   simple_count: Int,
   strategy_count: Int,
-  total_fee: Int,
-) -> (PoolState, Int, Int, Int) {
+) -> (PoolState, Int, Int) {
   when input_order is {
-    [] -> (initial, simple_count, strategy_count, total_fee)
+    [] -> (initial, simple_count, strategy_count)
     [(idx, sse), ..rest] -> {
       // Check that this idx is unique
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -228,7 +227,7 @@ pub fn process_orders(
         _ -> (simple_count + 1, strategy_count)
       }
 
-      let (next_state, next_orders, fee) = process_order(
+      let (next_state, next_orders) = process_order(
         initial,
         sse,
         output_reference,
@@ -262,7 +261,6 @@ pub fn process_orders(
         next_uniqueness_flag,
         next_simple_count,
         next_strategy_count,
-        total_fee + fee
       )
     }
   }
@@ -341,12 +339,11 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies, fee) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
   expect simple == 1
   expect strategies == 0
-  expect fee == 2_500_000
   True
 }

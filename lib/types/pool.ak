@@ -16,6 +16,7 @@ pub type PoolRedeemer {
   PoolScoop {
     signatory_index: Int,
     scooper_index: Int,
+    // TODO: remove this, and update all our off-chain tx building code
     amortized_base_fee: Int,
     input_order: List<(Int, Option<SignedStrategyExecution>)>,
   }
