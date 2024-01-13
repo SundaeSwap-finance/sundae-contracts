@@ -26,83 +26,38 @@ use types/pool.{
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 
-fn minted_correct_pool_tokens(
-  pool_policy_id: PolicyId,
-  mint: MintedValue,
-  datum: PoolDatum,
-  outcome: PoolState,
-) -> Bool {
-  let minted_tokens =
-    value.tokens(value.from_minted_value(mint), pool_policy_id)
-
-  if datum.circulating_lp == outcome.quantity_lp.3rd {
-    dict.is_empty(minted_tokens)
-  } else {
-    dict.to_list(minted_tokens) == [
-      (
-        pool_lp_name(datum.identifier),
-        outcome.quantity_lp.3rd - datum.circulating_lp,
-      ),
-    ]
-  }
-}
-
-fn has_expected_pool_value(
-  pool_script_hash: PolicyId,
-  identifier: Ident,
-  output_value: Value,
-  outcome: PoolState,
-) -> Bool {
-  // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
-  let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
-  let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
-  if quantity_a_policy_id == ada_policy_id {
-    expect has_exact_token_count(output_value, 3)
-    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
-    expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
-    expect
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1
-    True
-  } else {
-    expect has_exact_token_count(output_value, 4)
-    expect value.lovelace_of(output_value) == protocol_fees
-    expect
-      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
-    expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
-    expect
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1
-    True
-  }
-}
-
-fn compare_asset_class(a: AssetClass, b: AssetClass) {
-  let (aPolicy, aToken) = a
-  let (bPolicy, bToken) = b
-  when bytearray.compare(aPolicy, bPolicy) is {
-    Less -> Less
-    Equal -> bytearray.compare(aToken, bToken)
-    Greater -> Greater
-  }
-}
-
-fn int_to_ident(n: Int) -> Ident {
-  expect n < 256
-  bytearray.push(#"", n)
-}
-
+/// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
+///
+/// Parameterized by the Settings policy ID, which makes the script unique, as well as lets us validate / read global settings.
+///
+/// This script is responsible for:
+///  - Guarding access to the pools assets on behalf of the depositors
+///  - Enabling and executing a batch of orders against those assets, implementing a standard 'AMM' swap protocol
+///  - Serving as a minting policy, minting the Pool NFT and LP tokens
+///  - Accumulating protocol fees on behalf of the protocol
+///  - Allowing protocol rewards to be withdrawn to a DAO treasury
+///
+/// It does so by allowing a permissioned set of entities to "scoop" a batch of orders, and ensuring that each one
+/// pays out to the appropriate destination.
+///
+/// This set of people is permissioned to prevent classes of "sandwich" attacks, wherein a malicious actor could
+/// execute and match orders in their *own* favor, rather than the users favor.
+///
+/// Also of particular sensitivity is the optimizations applied; To achieve high-throughput, low-cost DeFi, executing
+/// each order independently suffers from some amount of overhead.  If, for example, the execution costs are split into:
+/// A - The costs that need to be run in each transaction, regardless of what is executed
+/// B - The costs that need to be executed for each order
+/// C - The costs exclusive to batching, such as sorting the orders
+///
+/// It is likely, then, that protocols converge on the per-order cost of batching being lower than un-batched variants, i.e.
+///
+/// A + B*n + C < (A + B) * n
 validator(settings_policy_id: PolicyId) {
   fn spend(datum: PoolDatum, redeemer: PoolRedeemer, ctx: ScriptContext) {
+    // First, we destructure the transaction right upfront, because field access is O(n),
+    // and we want access to these fields with just a single pass over the transaction
+    // This will be a common pattern throughout the scripts
+    // (in fact, I really want a compiler optimization that detects and lifts repeated field accesses into a destructure)
     let transaction = ctx.transaction
     let Transaction {
       inputs,
@@ -115,17 +70,24 @@ validator(settings_policy_id: PolicyId) {
       ..
     } = transaction
 
-    // Find the input being spent
+    // Then, (confusing terminology aside) find the specific pool UTXO being spent by this transaction
     let pool_input = spent_output(ctx)
 
+    // And pattern match to get the pool script hash; in particular, this can be used to find the pool output,
+    // *and* to know the policy ID of pool tokens, because this is a dual spending/minting validator.
     expect ScriptCredential(pool_script_hash) = pool_input.address.payment_credential
 
-    // Find the pool output
+    // Find the pool output; we can assume the pool output is the first output, because:
+    // - The ledger doesn't reorder outputs, just inputs
+    // - We check that the address is correct, so if the first output was to a different contract, we would fail
+    // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
+    // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
     expect Some(pool_output) = list.head(outputs)
     expect pool_output.address == pool_input.address
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
 
+    // Similarly, destructure the pool datum we found on the output, to access the fields we need to process the scoop
     let PoolDatum {
       identifier: actual_identifier,
       circulating_lp: actual_circulating_lp,
@@ -133,19 +95,28 @@ validator(settings_policy_id: PolicyId) {
       ..
     } = output_datum
 
-    // Find the settings datum
+    // The protocol configures many global settings via a "settings" UTXO, updatable by certain administrators
+    // This is included as a reference input, so we have a utility to check the reference inputs for the settings NFT
+    // Note: it's important to check for the NFT, because checking just for the address would let someone pay random funds to the settings address.
     let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
+    // Then, there are two different actions that can be taken against a pool:
+    // - Scooping a batch of orders
+    // - Withdrawing protocol fees to the treasury
     when redeemer is {
+      // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
       PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
-        // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
 
         // Construct the initial pool state from the datum and the locked values
+        // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
+        // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
+        // (excluding protocol fees, which shouldn't factor into the price)
         let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+
         // Process the orders in order, and decide the final pool state we should see
-        // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
+        // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
         let (outcome, simple_count, strategy_count, total_protocol_fee) =
           process_orders(
             actual_identifier,
@@ -165,6 +136,7 @@ validator(settings_policy_id: PolicyId) {
             0,
             0,
           )
+
         let PoolState {
           quantity_lp: expected_circulating_lp,
           protocol_fees: expected_protocol_fees,
@@ -190,10 +162,13 @@ validator(settings_policy_id: PolicyId) {
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
-        // Calculate all the neccesary and sufficient conditions
+        // TODO: do we need to account for this? it seems to have gotten lost in some changes.
         expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
 
-        // Slightly awkward construction here because we need to check that the scooper is authorized
+        // Check that the scooper is authorized; the protocol can allow *any* scoopers, or limit it to a set of actors
+        // It's safe to use values provided in the redeemer to efficiently skip to the expected scooper / expected signature
+        // because at the end of the day, we just care that the scooper has signed the transaction. If the scooper provides
+        // anything but the correct indexes, it'll just fail the transaction.
         expect when authorized_scoopers is {
           Some(authorized_scoopers) -> {
             // OPTIMIZATION: skip 10 entries at a time
@@ -205,11 +180,21 @@ validator(settings_policy_id: PolicyId) {
           }
           _ -> True
         }
-        // the market must have opened
+
+        // the market must have opened; this allows projects to pre-create their pool, potentially across multiple protocols, and allows
+        // people to open orders ahead of time, and avoids things like sniping bots, etc.
+        // TODO: should we *only* prevent swaps / withdrawals? would it be ok to allow deposits?
+        // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
-        // expect funds_moved_correctly
         expect output_datum.circulating_lp == outcome.quantity_lp.3rd
+
+        // We also check that the pool output has the right value (as mentioned above)
+        // In particular, the pool must have:
+        // - the pool NFT
+        // - the correctly adjusted assets from swapping, deposits, withdrawals, etc.
+        // - an additional amount of ADA corresponding to the protocol fees
+        // - NOTHING ELSE; This is important because someone could add tons of junk tokens and increase the execution units, potentially even freezing the UTXO
         expect
           has_expected_pool_value(
             pool_script_hash,
@@ -217,19 +202,25 @@ validator(settings_policy_id: PolicyId) {
             pool_output.value,
             outcome,
           )
-        // expect pool_output_correct
-        // Must update the circulating LP if tokens are minted
+        
+        // Now, we check various things about the output datum to ensure they're each correct.
+        // Check that the datum correctly records the final circulating LP, accounting for any deposits and withdrawals
+        // In particular, this is important because that circulating supply is exaclty what determines the users ownership of assets in the pool
         expect actual_circulating_lp == expected_circulating_lp.3rd
-        // Must update the protocol fees field as expected
+
+        // Make sure the protocol fees have been correctly updated
         expect actual_protocol_fees == expected_protocol_fees
-        // Must not update the immutable fields
-        expect datum.identifier == output_datum.identifier
-        expect datum.assets == output_datum.assets
-        expect datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
-        expect datum.market_open == output_datum.market_open
-        expect
+
+        // And make sure each of these fields is unchanged
+        and {
+          datum.identifier == output_datum.identifier
+          datum.assets == output_datum.assets
+          datum.fees_per_10_thousand == output_datum.fees_per_10_thousand
+          datum.market_open == output_datum.market_open
+
+          // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
           pool_input.address.stake_credential == pool_output.address.stake_credential
-        True
+        }
       }
       WithdrawFees { amount, treasury_output } -> {
         let PoolDatum {
@@ -388,6 +379,82 @@ validator(settings_policy_id: PolicyId) {
   }
 }
 
+fn minted_correct_pool_tokens(
+  pool_policy_id: PolicyId,
+  mint: MintedValue,
+  datum: PoolDatum,
+  outcome: PoolState,
+) -> Bool {
+  let minted_tokens =
+    value.tokens(value.from_minted_value(mint), pool_policy_id)
+
+  if datum.circulating_lp == outcome.quantity_lp.3rd {
+    dict.is_empty(minted_tokens)
+  } else {
+    dict.to_list(minted_tokens) == [
+      (
+        pool_lp_name(datum.identifier),
+        outcome.quantity_lp.3rd - datum.circulating_lp,
+      ),
+    ]
+  }
+}
+
+fn has_expected_pool_value(
+  pool_script_hash: PolicyId,
+  identifier: Ident,
+  output_value: Value,
+  outcome: PoolState,
+) -> Bool {
+  // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
+  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
+  let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
+  let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
+  if quantity_a_policy_id == ada_policy_id {
+    expect has_exact_token_count(output_value, 3)
+    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
+    expect
+      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
+    expect
+      value.quantity_of(
+        output_value,
+        pool_script_hash,
+        pool_nft_name(identifier),
+      ) == 1
+    True
+  } else {
+    expect has_exact_token_count(output_value, 4)
+    expect value.lovelace_of(output_value) == protocol_fees
+    expect
+      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
+    expect
+      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
+    expect
+      value.quantity_of(
+        output_value,
+        pool_script_hash,
+        pool_nft_name(identifier),
+      ) == 1
+    True
+  }
+}
+
+fn compare_asset_class(a: AssetClass, b: AssetClass) {
+  let (aPolicy, aToken) = a
+  let (bPolicy, bToken) = b
+  when bytearray.compare(aPolicy, bPolicy) is {
+    Less -> Less
+    Equal -> bytearray.compare(aToken, bToken)
+    Greater -> Greater
+  }
+}
+
+fn int_to_ident(n: Int) -> Ident {
+  expect n < 256
+  bytearray.push(#"", n)
+}
+
+// Tests
 
 type ScoopTestOptions {
   edit_escrow_1_value: Option<Value>,
