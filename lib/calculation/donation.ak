@@ -1,6 +1,6 @@
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value}
+use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use shared
 use sundae/multisig
@@ -21,6 +21,7 @@ pub fn do_donation(
   let remainder =
     shared.to_value(assets.1st)
       |> value.merge(shared.to_value(assets.2nd))
+      |> value.add(ada_policy_id, ada_asset_name, actual_protocol_fee)
       |> value.negate
       |> value.merge(input_value)
 
@@ -75,7 +76,7 @@ test donation() {
       protocol_fees: 2_000_000,
     }
   let input_value =
-    value.from_lovelace(1_000_000)
+    value.from_lovelace(3_500_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
   let order =
     OrderDatum {

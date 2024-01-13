@@ -316,7 +316,7 @@ test process_orders_test() {
       ScriptCredential(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
       None,
     ),
-    value: value.from_lovelace(1_000_000)
+    value: value.from_lovelace(3_500_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000),
     datum: InlineDatum(order_datum),
     reference_script: None,
