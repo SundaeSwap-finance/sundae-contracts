@@ -1,5 +1,6 @@
 use aiken/bytearray
 use aiken/cbor
+use aiken/math
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{IntervalBound, NegativeInfinity, Finite}
@@ -55,7 +56,7 @@ pub fn pool_input_to_state(
   // TODO: we could solve this by enforcing a validity range, and checking the length is within 4 hours.
   let valid_from = when valid_from.bound_type is {
     NegativeInfinity -> market_open
-    Finite(t) -> math.Max(t, market_open)
+    Finite(t) -> math.max(t, market_open)
     _ -> error
   }
   // Calculate the fees per 10k rate to use for this whole scoop
