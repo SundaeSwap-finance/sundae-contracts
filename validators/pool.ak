@@ -117,24 +117,25 @@ validator(settings_policy_id: PolicyId) {
 
         // Process the orders in order, and decide the final pool state we should see
         // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
+        // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
         let (outcome, simple_count, strategy_count, total_protocol_fee) =
           process_orders(
-            actual_identifier,
-            validity_range,
-            datums,
-            initial_state,
-            input_order,
-            amortized_base_fee,
-            simple_fee,
-            strategy_fee,
-            0,
-            inputs,
-            inputs,
-            list.drop(outputs, 1),
-            0,
-            0,
-            0,
-            0,
+            actual_identifier,        // The pool identifier, so we can check that each order is for this pool
+            validity_range,           // The validity range of the transaction, so we can check strategies haven't expired
+            datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
+            initial_state,            // The initial pool state, such as the reserves and circulating LP
+            input_order,              // The input ordering specified by the scooper
+            amortized_base_fee,       // The base fee split by the number of orders, paid for each user
+            simple_fee,               // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
+            strategy_fee,             // The fee to charge for each "strategy" order
+            0,                        // The previous index we processed, intitially 0; this lets us detect if we need to "restart" the input list
+            inputs,                   // *All* inputs, so we can start over at the beginning of the list if we want
+            inputs,                   // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
+            list.drop(outputs, 1),    // The list of outputs we should be comparing orders against
+            0,                        // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
+            0,                        // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
+            0,                        // The accumulated count of "strategy" orders, see line above.
+            0,                        // The total pool fee (TODO: going away in another branch)
           )
 
         let PoolState {
@@ -416,12 +417,12 @@ validator(settings_policy_id: PolicyId) {
         // - the initial circulating supply is set correctly
         // - and the market open time is before the fee finalized time; TODO: should we relax this?
         //   I'm not sure it's harmful if someone initializes this with a feeFinalized in the past
-        let pool_output_datum_correct =
-          pool_output_datum.identifier == new_pool_id && pool_output_datum.assets == (
-            asset_a,
-            asset_b,
-          ) && pool_output_datum.circulating_lp == initial_lq
-          && pool_output_datum.market_open <= pool_output_datum.fee_finalized
+        let pool_output_datum_correct = and {
+          pool_output_datum.identifier == new_pool_id,
+          pool_output_datum.assets == (asset_a, asset_b),
+          pool_output_datum.circulating_lp == initial_lq,
+          pool_output_datum.market_open <= pool_output_datum.fee_finalized,
+        }
 
         // And then check each of the conditions above as the condition for minting
         and {
