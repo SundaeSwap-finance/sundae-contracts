@@ -1,6 +1,7 @@
 //// Shared types and functions across all pool calculations
 
 use aiken/builtin
+use aiken/math
 
 /// An interim pool state
 // NOTE: we don't actually use this type
@@ -72,10 +73,19 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   flag_set
 }
 
-pub fn do_2_exp(n: Int) -> Int {
-  if n <= 0 {
-    1
+pub fn do_2_exp(e: Int) -> Int {
+  let a = #[1, 2, 4, 8, 16, 32, 64, 128]
+  if e < 8 {
+    builtin.index_bytearray(a, e)
+  } else if e < 16 {
+    256 * builtin.index_bytearray(a, e - 8)
+  } else if e < 24 {
+    65536 * builtin.index_bytearray(a, e - 16)
+  } else if e < 32 {
+    16777216 * builtin.index_bytearray(a, e - 24)
+  } else if e < 40 {
+    4294967296 * builtin.index_bytearray(a, e - 32)
   } else {
-    2 * do_2_exp(n - 1)
+    math.pow2(e)
   }
 }
