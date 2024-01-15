@@ -2,41 +2,53 @@ use aiken/option
 use aiken/math
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
-use calculation/shared.{PoolState} as calc_shared
+use aiken/transaction/value.{Value, PolicyId, AssetName, ada_policy_id, ada_asset_name}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
 pub fn do_withdrawal(
-  pool_state: PoolState,
+  // pool_state: PoolState,
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  pool_lp_policy: PolicyId,
+  pool_lp_name: AssetName,
+  asset_a_reserve: Int,
+  asset_b_reserve: Int,
+  circulating_lp: Int,
+
   input_value: Value,
   order: OrderDatum,
   actual_protocol_fee: Int,
   output: Output,
-) -> PoolState {
+) -> (
+  // PoolState
+  Int, // new_asset_a_reserve
+  Int, // new_asset_b_reserve
+  Int, // new_circulating_lp
+) {
   expect order.Withdrawal { amount } = order.details
   let (lp_policy, lp_asset_name, amount) = amount
 
-  expect lp_policy == pool_state.quantity_lp.1st
-  expect lp_asset_name == pool_state.quantity_lp.2nd
+  expect lp_policy == pool_lp_policy
+  expect lp_asset_name == pool_lp_name
   let withdrawn =
     math.min(amount, value.quantity_of(input_value, lp_policy, lp_asset_name))
-  let withdrawn_a =
-    withdrawn * pool_state.quantity_a.3rd / pool_state.quantity_lp.3rd
-  let withdrawn_b =
-    withdrawn * pool_state.quantity_b.3rd / pool_state.quantity_lp.3rd
+  let withdrawn_a = withdrawn * asset_a_reserve / circulating_lp
+  let withdrawn_b = withdrawn * asset_b_reserve / circulating_lp
   let remainder =
     input_value
       |> value.add(lp_policy, lp_asset_name, -withdrawn)
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
       |> value.add(
-          pool_state.quantity_a.1st,
-          pool_state.quantity_a.2nd,
+          asset_a_policy,
+          asset_a_name,
           withdrawn_a,
         )
       |> value.add(
-          pool_state.quantity_b.1st,
-          pool_state.quantity_b.2nd,
+          asset_b_policy,
+          asset_b_name,
           withdrawn_b,
         )
 
@@ -44,23 +56,11 @@ pub fn do_withdrawal(
   expect output.address == order.destination.address
   expect output.datum == order.destination.datum
   expect output.value == remainder
-  PoolState {
-    quantity_a: (
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd - withdrawn_a,
-    ),
-    quantity_b: (
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd - withdrawn_b,
-    ),
-    quantity_lp: (
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd,
-      pool_state.quantity_lp.3rd - withdrawn,
-    ),
-  }
+  (
+    asset_a_reserve - withdrawn_a,
+    asset_b_reserve - withdrawn_b,
+    circulating_lp - withdrawn,
+  )
 }
 
 type WithdrawalTestOptions {
@@ -113,11 +113,6 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     )
   let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_010_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
-  }
   let input_value =
     value.from_lovelace(4_500_000)
       |> value.add(lp.1st, lp.2nd, 10_000_000)
@@ -146,8 +141,23 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_withdrawal(pool_state, input_value, order, 2_500_000, output)
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000
-  expect final_pool_state.quantity_b.3rd == 1_000_000_000
+  let (new_reserve_a, new_reserve_b, new_lp) = do_withdrawal(
+    #"",
+    #"",
+    rberry.1st,
+    rberry.2nd,
+    lp.1st,
+    lp.2nd,
+    1_010_000_000,
+    1_010_000_000,
+    1_010_000_000,
+    input_value,
+    order,
+    2_500_000,
+    output
+  )
+  expect new_reserve_a == 1_000_000_000
+  expect new_reserve_b == 1_000_000_000
+  expect new_lp == 1_000_000_000
   True
 }

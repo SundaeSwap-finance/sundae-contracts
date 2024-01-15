@@ -1,17 +1,19 @@
 //// Shared types and functions across all pool calculations
 
 use aiken/builtin
-use shared.{SingletonValue}
 
 /// An interim pool state
-pub type PoolState {
-  /// The quantity of token A in the pool
-  quantity_a: SingletonValue,
-  /// The quantity of token B in the pool
-  quantity_b: SingletonValue,
-  /// The quantity of LP tokens in the pool
-  quantity_lp: SingletonValue,
-}
+// NOTE: we don't actually use this type
+// because passing individual parameters is way more efficient
+// but an earlier version used this, and it's useful for documentation
+// pub type PoolState {
+  // The quantity of token A in the pool
+  // quantity_a: SingletonValue,
+  // The quantity of token B in the pool
+  // quantity_b: SingletonValue,
+  // The quantity of LP tokens in the pool
+  // quantity_lp: SingletonValue,
+//}
 
 pub fn unsafe_fast_index_skip_with_tail(inputs: List<a>, idx: Int) -> List<a> {
   if idx >= 15 {

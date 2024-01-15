@@ -1,16 +1,16 @@
 use aiken/bytearray
 use aiken/cbor
+use aiken/list
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{IntervalBound, NegativeInfinity, Finite}
 use aiken/transaction.{InlineDatum, NoDatum, Input, Output, OutputReference, TransactionId, ValidityRange}
 use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
-use aiken/transaction/value.{Value, PolicyId}
-use aiken/time.{PosixTime}
+use aiken/transaction/value.{Value, PolicyId, AssetName}
 use calculation/deposit
 use calculation/donation
 use calculation/shared.{
-  PoolState, check_and_set_unique, unsafe_fast_index_skip_with_tail,
+  check_and_set_unique, unsafe_fast_index_skip_with_tail,
 } as calc_shared
 use calculation/swap
 use calculation/withdrawal
@@ -20,12 +20,25 @@ use sundae/multisig
 use types/order.{Order, Destination, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
 
-pub fn pool_input_to_state(
+pub fn process_all_orders(
   pool_token_policy: PolicyId,
-  datum: PoolDatum,
-  input: Output,
-  valid_from: IntervalBound<PosixTime>,
-) -> (PoolState, Int, Int) {
+  pool_datum: PoolDatum,
+  pool_input: Output,
+  tx_valid_range: ValidityRange,
+  datums: Dict<Hash<Blake2b_256, Data>, Data>,
+  input_order: List<(Int, Option<SignedStrategyExecution>)>,
+  amortized_base_fee: Int,
+  simple_fee: Int,
+  strategy_fee: Int,
+  all_inputs: List<Input>,
+  outputs: List<Output>,
+) -> (
+  Int, // final reserve_a
+  Int, // final reserve_b
+  Int, // final circulating_lp
+  Int, // number of simple orders we processed
+  Int, // number of strategy orders we processed
+) {
   let PoolDatum {
     assets,
     protocol_fees,
@@ -34,17 +47,17 @@ pub fn pool_input_to_state(
     fees_per_10_thousand,
     market_open,
     fee_finalized,
-  } = datum
+  } = pool_datum
   let (asset_a, asset_b) = assets
-  let (asset_a_policy_id, asset_a_name) = asset_a
-  let (asset_b_policy_id, asset_b_name) = asset_b
+  let (asset_a_policy, asset_a_name) = asset_a
+  let (asset_b_policy, asset_b_name) = asset_b
   let min_utxo =
-    if asset_a_policy_id == value.ada_policy_id {
+    if asset_a_policy == value.ada_policy_id {
       protocol_fees
     } else {
       0
     }
-  let valid_from = when valid_from.bound_type is {
+  let valid_from = when tx_valid_range.lower_bound.bound_type is {
     NegativeInfinity -> market_open
     Finite(t) -> t
     _ -> error
@@ -63,19 +76,35 @@ pub fn pool_input_to_state(
         fees_per_10_thousand.1st + (elapsed * range / duration)
       }
     }
-  (PoolState {
-    quantity_a: (
-      asset_a_policy_id,
-      asset_a_name,
-      value.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo,
-    ),
-    quantity_b: (
-      asset_b_policy_id,
-      asset_b_name,
-      value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
-    ),
-    quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
-  }, fees, protocol_fees)
+  process_orders(
+    identifier,
+    tx_valid_range,
+    datums,
+
+    // PoolState
+    asset_a_policy,
+    asset_a_name,
+    asset_b_policy,
+    asset_b_name,
+    pool_token_policy,
+    pool_lp_name(identifier),
+    value.quantity_of(pool_input.value, asset_a_policy, asset_a_name) - min_utxo,
+    value.quantity_of(pool_input.value, asset_b_policy, asset_b_name),
+    circulating_lp,
+
+    input_order,
+    fees,
+    amortized_base_fee,
+    simple_fee,
+    strategy_fee,
+    0,
+    all_inputs,
+    all_inputs,
+    list.drop(outputs, 1),
+    0,
+    0,
+    0,
+  )
 }
 
 fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool {
@@ -86,7 +115,18 @@ fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool 
 }
 
 pub fn process_order(
-  initial: PoolState,
+  // We unpack the pool state here, rather than pass around a struct, for performance reasons
+  // pool_state: PoolState
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  lp_token_policy: PolicyId,
+  lp_token_name: AssetName,
+  reserve_a: Int,
+  reserve_b: Int,
+  circulating_lp: Int,
+
   signed_execution: Option<SignedStrategyExecution>,
   output_reference: OutputReference,
   tx_valid_range: ValidityRange,
@@ -102,7 +142,13 @@ pub fn process_order(
   output: Output,
   outputs: List<Output>,
   rest_outputs: List<Output>
-) -> (PoolState, List<Output>) {
+) -> (
+  // PoolState, unpacked for performance
+  Int, // New reserve_a
+  Int, // New reserve_b
+  Int, // New circulating_lp
+  Bool, // whether we consumed an output or not
+) {
   when details is {
     order.Strategy(signer) -> {
       expect Some(execution) = signed_execution
@@ -113,7 +159,17 @@ pub fn process_order(
         execution,
       )
       process_order(
-        initial,
+        // pool_state, unpacked for performance
+        asset_a_policy,
+        asset_a_name,
+        asset_b_policy,
+        asset_b_name,
+        lp_token_policy,
+        lp_token_name,
+        reserve_a,
+        reserve_b,
+        circulating_lp,
+
         None,
         output_reference,
         tx_valid_range,
@@ -137,9 +193,17 @@ pub fn process_order(
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let next =
+      let (new_reserve_a, new_reserve_b) =
         swap.do_swap(
-          initial,
+          // The pool state, unpacked for performance
+          // pool_state,
+          asset_a_policy,
+          asset_a_name,
+          asset_b_policy,
+          asset_b_name,
+          reserve_a,
+          reserve_b,
+
           value,
           destination,
           fees_per_10_thousand,
@@ -148,35 +212,80 @@ pub fn process_order(
           min_received,
           output,
         )
-      (next, rest_outputs)
+      (
+        new_reserve_a,
+        new_reserve_b,
+        circulating_lp,
+        True,
+      )
     }
     order.Deposit(..) -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let next = deposit.do_deposit(initial, value, datum, fee, output)
-      (next, rest_outputs)
+      let (new_a_reserve, new_b_reserve, new_circulating_lp) = deposit.do_deposit(
+        asset_a_policy,
+        asset_a_name,
+        asset_b_policy,
+        asset_b_name,
+        lp_token_policy,
+        lp_token_name,
+        reserve_a,
+        reserve_b,
+        circulating_lp,
+        value,
+        datum,
+        fee,
+        output,
+      )
+      (
+        new_a_reserve,
+        new_b_reserve,
+        new_circulating_lp,
+        True,
+      )
     }
     order.Withdrawal(..) -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let next =
-        withdrawal.do_withdrawal(initial, value, datum, fee, output)
-      (next, rest_outputs)
+      let (new_a_reserve, new_b_reserve, new_circulating_lp) =
+        withdrawal.do_withdrawal(
+          asset_a_policy,
+          asset_a_name,
+          asset_b_policy,
+          asset_b_name,
+          lp_token_policy,
+          lp_token_name,
+          reserve_a,
+          reserve_b,
+          circulating_lp,
+          value,
+          datum,
+          fee,
+          output,
+      )
+      (new_a_reserve, new_b_reserve, new_circulating_lp, True)
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
     order.Donation(..) -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let (next, used_output) =
-        donation.do_donation(initial, value, datum, fee, output)
-      if used_output {
-        (next, rest_outputs)
-      } else {
-        (next, outputs)
-      }
+      let (next_reserve_a, next_reserve_b, consume_output) =
+        donation.do_donation(
+          asset_a_policy,
+          asset_a_name,
+          asset_b_policy,
+          asset_b_name,
+          reserve_a,
+          reserve_b,
+          value,
+          datum,
+          fee,
+          output
+        )
+      (next_reserve_a, next_reserve_b, circulating_lp, consume_output)
     }
   }
 }
@@ -185,7 +294,20 @@ pub fn process_orders(
   this_pool_ident: Ident,
   tx_valid_range: ValidityRange,
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
-  initial: PoolState,
+
+  // Pool State; we unpack this for performance reasons
+  // The asset IDs will be the same for the whole recursion, so will get lifted by the optimization we wrote
+  // The reserves will change, but now we don't have to unpack them every time
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  lp_token_policy: PolicyId,
+  lp_token_name: AssetName,
+  reserve_a: Int,
+  reserve_b: Int,
+  circulating_lp: Int,
+
   input_order: List<(Int, Option<SignedStrategyExecution>)>,
   fees_per_10_thousand: Int,
   amortized_base_fee: Int,
@@ -198,9 +320,15 @@ pub fn process_orders(
   uniqueness_flag: Int,
   simple_count: Int,
   strategy_count: Int,
-) -> (PoolState, Int, Int) {
+) -> (
+  Int, // final reserve_a
+  Int, // final reserve_b
+  Int, // final circulating_lp
+  Int, // number of simple orders we processed
+  Int, // number of strategy orders we processed
+) {
   when input_order is {
-    [] -> (initial, simple_count, strategy_count)
+    [] -> (reserve_a, reserve_b, circulating_lp, simple_count, strategy_count)
     [(idx, sse), ..rest] -> {
       // Check that this idx is unique
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -230,8 +358,16 @@ pub fn process_orders(
         _ -> (simple_count + 1, strategy_count)
       }
 
-      let (next_state, next_orders) = process_order(
-        initial,
+      let (new_reserve_a, new_reserve_b, new_circulating_lp, consume_output) = process_order(
+        asset_a_policy,
+        asset_a_name,
+        asset_b_policy,
+        asset_b_name,
+        lp_token_policy,
+        lp_token_name,
+        reserve_a,
+        reserve_b,
+        circulating_lp,
         sse,
         output_reference,
         tx_valid_range,
@@ -249,11 +385,21 @@ pub fn process_orders(
         rest_outputs,
       )
 
+      let next_orders = if consume_output { rest_outputs } else { outputs }
+
       process_orders(
         this_pool_ident,
         tx_valid_range,
         datums,
-        next_state,
+        asset_a_policy,
+        asset_a_name,
+        asset_b_policy,
+        asset_b_name,
+        lp_token_policy,
+        lp_token_name,
+        new_reserve_a,
+        new_reserve_b,
+        new_circulating_lp,
         rest,
         fees_per_10_thousand,
         amortized_base_fee,
@@ -282,11 +428,6 @@ test process_orders_test() {
   let ada = (#"", #"")
   let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_000_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-  }
   let order_datum = OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -343,10 +484,36 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_reserve_a, final_reserve_b, final_circulating_lp, simple, strategies) = process_orders(
+    #"",
+    valid_range,
+    datums,
+    #"",
+    #"",
+    rberry.1st,
+    rberry.2nd,
+    lp.1st,
+    lp.2nd,
+    1_000_000_000,
+    1_000_000_000,
+    1_000_000_000,
+    input_order,
+    5,
+    2_500_000,
+    0,
+    0,
+    0,
+    inputs,
+    inputs,
+    outputs,
+    0,
+    0,
+    0
+  )
 
-  expect final_pool_state.quantity_a.3rd == 1_001_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect final_reserve_a == 1_001_000_000
+  expect final_reserve_b == 1_001_000_000
+  expect final_circulating_lp == 1_000_000_000
   expect simple == 1
   expect strategies == 0
   True

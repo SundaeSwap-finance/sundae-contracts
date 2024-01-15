@@ -1,23 +1,33 @@
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value}
-use calculation/shared.{PoolState} as calc_shared
+use aiken/transaction/value.{Value, PolicyId, AssetName}
 use shared
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
 pub fn do_donation(
-  pool_state: PoolState,
+  // pool_state: PoolState
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  asset_a_reserve: Int,
+  asset_b_reserve: Int,
+
   input_value: Value,
   order: OrderDatum,
   actual_protocol_fee: Int,
   output: Output,
-) -> (PoolState, Bool) {
+) -> (
+  Int, // new_a_reserve
+  Int, // new_b_reserve
+  Bool, // consume_output
+) {
   expect order.Donation { assets } = order.details
-  expect assets.1st.1st == pool_state.quantity_a.1st
-  expect assets.1st.2nd == pool_state.quantity_a.2nd
-  expect assets.2nd.1st == pool_state.quantity_b.1st
-  expect assets.2nd.2nd == pool_state.quantity_b.2nd
+  expect assets.1st.1st == asset_a_policy
+  expect assets.1st.2nd == asset_a_name
+  expect assets.2nd.1st == asset_b_policy
+  expect assets.2nd.2nd == asset_b_name
   let remainder =
     shared.to_value(assets.1st)
       |> value.merge(shared.to_value(assets.2nd))
@@ -35,19 +45,8 @@ pub fn do_donation(
       Void
     }
   (
-    PoolState {
-      quantity_a: (
-        pool_state.quantity_a.1st,
-        pool_state.quantity_a.2nd,
-        pool_state.quantity_a.3rd + assets.1st.3rd,
-      ),
-      quantity_b: (
-        pool_state.quantity_b.1st,
-        pool_state.quantity_b.2nd,
-        pool_state.quantity_b.3rd + assets.2nd.3rd,
-      ),
-      quantity_lp: pool_state.quantity_lp,
-    },
+    asset_a_reserve + assets.1st.3rd,
+    asset_b_reserve + assets.2nd.3rd,
     has_remainder,
   )
 }
@@ -63,16 +62,9 @@ test donation() {
   let ada = (#"", #"")
   let rberry =
     (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
   let input_value =
     value.from_lovelace(1_000_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+      |> value.add(rberry.1st, rberry.2nd, 2_000_000)
   let order =
     OrderDatum {
       pool_ident: None,
@@ -84,7 +76,7 @@ test donation() {
       details: order.Donation {
         assets: (
           (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
+          (rberry.1st, rberry.2nd, 2_000_000),
         ),
       },
       extension: Void,
@@ -97,10 +89,21 @@ test donation() {
       datum: NoDatum,
       reference_script: None,
     }
-  let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input_value, order, 2_500_000, output)
+  let (new_asset_a_reserve, new_asset_b_reserve, has_remainder) =
+    do_donation(
+      #"",
+      #"",
+      rberry.1st,
+      rberry.2nd,
+      1_000_000_000,
+      2_000_000_000,
+      input_value,
+      order,
+      2_500_000,
+      output,
+    )
   expect !has_remainder
-  expect final_pool_state.quantity_a.3rd == 1_001_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect new_asset_a_reserve == 1_001_000_000
+  expect new_asset_b_reserve == 2_002_000_000
   True
 }

@@ -13,9 +13,8 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, ScriptCredential, VerificationKeyCredential,
 }
-use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
-use calculation/process.{pool_input_to_state, process_orders}
-use calculation/shared.{PoolState} as calc_shared
+use aiken/transaction/value.{MintedValue, PolicyId, AssetName, Value, ada_policy_id}
+use calculation/process.{process_all_orders}
 use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count, count_orders}
 use sundae/multisig
 use tests/examples/ex_settings.{mk_valid_settings_input}
@@ -30,18 +29,18 @@ fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
   mint: MintedValue,
   datum: PoolDatum,
-  outcome: PoolState,
+  final_circulating_lp: Int,
 ) -> Bool {
   let minted_tokens =
     value.tokens(value.from_minted_value(mint), pool_policy_id)
 
-  if datum.circulating_lp == outcome.quantity_lp.3rd {
+  if datum.circulating_lp == final_circulating_lp {
     dict.is_empty(minted_tokens)
   } else {
     dict.to_list(minted_tokens) == [
       (
         pool_lp_name(datum.identifier),
-        outcome.quantity_lp.3rd - datum.circulating_lp,
+        final_circulating_lp - datum.circulating_lp,
       ),
     ]
   }
@@ -51,18 +50,20 @@ fn has_expected_pool_value(
   pool_script_hash: PolicyId,
   identifier: Ident,
   output_value: Value,
-  outcome: PoolState,
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  final_reserve_a: Int,
+  final_reserve_b: Int,
   final_protocol_fees: Int,
 ) -> Bool {
   // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  let PoolState { quantity_a, quantity_b, .. } = outcome
-  let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
-  let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
-  if quantity_a_policy_id == ada_policy_id {
+  if asset_a_policy == ada_policy_id {
     expect has_exact_token_count(output_value, 3)
-    expect value.lovelace_of(output_value) == final_protocol_fees + quantity_a_amt
+    expect value.lovelace_of(output_value) == final_protocol_fees + final_reserve_a
     expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
+      value.quantity_of(output_value, asset_b_policy, asset_b_name) == final_reserve_b
     expect
       value.quantity_of(
         output_value,
@@ -74,9 +75,9 @@ fn has_expected_pool_value(
     expect has_exact_token_count(output_value, 4)
     expect value.lovelace_of(output_value) == final_protocol_fees
     expect
-      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
+      value.quantity_of(output_value, asset_a_policy, asset_a_name) == final_reserve_a
     expect
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
+      value.quantity_of(output_value, asset_b_policy, asset_b_name) == final_reserve_b
     expect
       value.quantity_of(
         output_value,
@@ -155,32 +156,22 @@ validator(settings_policy_id: PolicyId) {
         // Make sure it's not negative, for example if base_fee was negative
         expect amortized_base_fee >= 0
         // Construct the initial pool state from the datum and the locked values
-        let (initial_state, fees_per_10_thousand, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
-        let (outcome, simple_count, strategy_count) =
-          process_orders(
-            actual_identifier,
+        let (final_reserve_a, final_reserve_b, final_circulating_lp, simple_count, strategy_count) =
+          process_all_orders(
+            pool_script_hash,
+            datum,
+            pool_input,
             validity_range,
             datums,
-            initial_state,
             input_order,
-            fees_per_10_thousand,
             amortized_base_fee,
             simple_fee,
             strategy_fee,
-            0,
             inputs,
-            inputs,
-            list.drop(outputs, 1),
-            0,
-            0,
-            0,
+            outputs,
           )
-        let PoolState {
-          quantity_lp: expected_circulating_lp,
-          ..
-        } = outcome
 
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
@@ -195,12 +186,12 @@ validator(settings_policy_id: PolicyId) {
           strategy_count * strategy_fee
 
         // Make sure we actually increased the protocol fee by exactly this amount
-        expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected
+        expect actual_protocol_fees == datum.protocol_fees + expected_fees_collected
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
         // Calculate all the neccesary and sufficient conditions
-        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
+        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, final_circulating_lp)
 
         // Slightly awkward construction here because we need to check that the scooper is authorized
         expect when authorized_scoopers is {
@@ -218,18 +209,23 @@ validator(settings_policy_id: PolicyId) {
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
         // expect funds_moved_correctly
-        expect output_datum.circulating_lp == outcome.quantity_lp.3rd
+        expect output_datum.circulating_lp == final_circulating_lp
         expect
           has_expected_pool_value(
             pool_script_hash,
-            output_datum.identifier,
+            actual_identifier,
             pool_output.value,
-            outcome,
+            output_datum.assets.1st.1st,
+            output_datum.assets.1st.2nd,
+            output_datum.assets.2nd.1st,
+            output_datum.assets.2nd.2nd,
+            final_reserve_a,
+            final_reserve_b,
             actual_protocol_fees,
           )
         // expect pool_output_correct
         // Must update the circulating LP if tokens are minted
-        expect actual_circulating_lp == expected_circulating_lp.3rd
+        expect actual_circulating_lp == final_circulating_lp
         // Must not update the immutable fields
         expect datum.identifier == output_datum.identifier
         expect datum.assets == output_datum.assets

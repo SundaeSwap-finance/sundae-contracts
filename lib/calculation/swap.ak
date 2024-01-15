@@ -3,7 +3,6 @@ use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
 }
-use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
@@ -50,7 +49,14 @@ pub fn swap_takes(
 /// The value coming in from the UTXO
 /// Take a pool state, and compute the next pool state
 pub fn do_swap(
-  pool_state: PoolState,
+  // pool_state: PoolState, unpacked for performance
+  asset_a_policy: PolicyId,
+  asset_a_name: AssetName,
+  asset_b_policy: PolicyId,
+  asset_b_name: AssetName,
+  asset_a_reserve: Int,
+  asset_b_reserve: Int,
+
   input_value: Value,
   destination: Destination,
   fees_per_10_thousand: Int,
@@ -58,27 +64,24 @@ pub fn do_swap(
   offer: SingletonValue,
   min_received: SingletonValue,
   output: Output,
-) -> PoolState {
+) -> (
+  // PooLState, unpacked for performance
+  Int, // new_asset_a_reserves
+  Int, // new_asset_b_reserves
+) {
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
-  let PoolState {
-    quantity_a,
-    quantity_b,
-    quantity_lp,
-  } = pool_state
-  let (a_policy_id, a_asset_name, a_amt) = quantity_a
-  let (b_policy_id, b_asset_name, b_amt) = quantity_b
 
-  if offer_policy_id == a_policy_id && offer_asset_name == a_asset_name {
-    expect min_received.1st == b_policy_id
-    expect min_received.2nd == b_asset_name
+  if offer_policy_id == asset_a_policy && offer_asset_name == asset_a_name {
+    expect min_received.1st == asset_b_policy
+    expect min_received.2nd == asset_b_name
     let (takes, out_value) =
       swap_takes(
         offer_policy_id,
         offer_asset_name,
-        b_policy_id,
-        b_asset_name,
-        a_amt,
-        b_amt,
+        asset_b_policy,
+        asset_b_name,
+        asset_a_reserve,
+        asset_b_reserve,
         fees_per_10_thousand,
         actual_protocol_fee,
         offer_amt,
@@ -91,22 +94,23 @@ pub fn do_swap(
     expect output.value == out_value
     // Check that mintakes is satisfied
     expect takes >= min_received.3rd
-    PoolState {
-      quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
-      quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
-      quantity_lp,
-    }
-  } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
-    expect min_received.1st == a_policy_id
-    expect min_received.2nd == a_asset_name
+    (
+      asset_a_reserve + offer_amt,
+      asset_b_reserve - takes,
+    )
+  } else if offer_policy_id == asset_b_policy && offer_asset_name == asset_b_name {
+    expect min_received.1st == asset_a_policy
+    expect min_received.2nd == asset_a_name
     let (takes, out_value) =
       swap_takes(
         offer_policy_id,
         offer_asset_name,
-        a_policy_id,
-        a_asset_name,
-        b_amt,
-        a_amt,
+        // We're receiving asset A
+        asset_a_policy,
+        asset_a_name,
+        // NOTE: the reserves are swapped! We're giving asset B, and taking asset A
+        asset_b_reserve,
+        asset_a_reserve,
         fees_per_10_thousand,
         actual_protocol_fee,
         offer_amt,
@@ -118,11 +122,10 @@ pub fn do_swap(
     expect output.value == out_value
     // Check that mintakes is satisfied
     expect takes >= min_received.3rd
-    PoolState {
-      quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
-      quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
-      quantity_lp,
-    }
+    (
+      asset_a_reserve - takes,
+      asset_b_reserve + offer_amt,
+    )
   } else {
     fail
   }
@@ -141,12 +144,6 @@ test swap_mintakes_too_high() fail {
     )
   let ada = (#"", #"")
   let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_000_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-  }
   let input_value =
     value.from_lovelace(14_500_000)
   let swap_offer = (ada.1st, ada.2nd, 10_000_000)
@@ -171,8 +168,22 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
-  expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
+  let (new_reserve_a, new_reserve_b) = do_swap(
+    #"",
+    #"",
+    rberry.1st,
+    rberry.2nd,
+    1_000_000_000,
+    1_000_000_000,
+    input_value,
+    order.destination,
+    5,
+    2_500_000,
+    swap_offer,
+    swap_min_received,
+    output,
+  )
+  expect new_reserve_a == 1_000_000_000 + 10_000_000
+  expect new_reserve_b == 1_000_000_000 - 9_896_088
   True
 }
