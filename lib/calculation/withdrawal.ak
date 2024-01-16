@@ -5,26 +5,47 @@ use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
+use shared.{SingletonValue}
 use types/order.{Destination, OrderDatum}
 
+/// Execute a withdrawal order
+///
+/// This burns LP tokens, and pays out a portion of the pool in proportion to the percentage
+/// of the circulating supply of LP tokens that was burned.
 pub fn do_withdrawal(
-  pool_state: PoolState,
-  input_value: Value,
-  order: OrderDatum,
-  actual_protocol_fee: Int,
-  output: Output,
+  pool_state: PoolState,     // The interim pool state against which we should calculate the withdrawal
+  input_value: Value,        // The incoming value; may have additional assets on it, for example if executing as part of a larger chain
+  amount: SingletonValue,    // The amount to actually withdraw
+  destination: Destination,  // The destination that the LP tokens (and change) should be sent to
+  actual_protocol_fee: Int,  // The protocol fee to deduct
+  output: Output,            // The output to compare the order execution against, to ensure the right quantity was paid out
 ) -> PoolState {
-  expect order.Withdrawal { amount } = order.details
   let (lp_policy, lp_asset_name, amount) = amount
 
+  // Make sure we're withdrawing from the right pool;
+  // if we were to provide LP tokens for a different pool, you could withdraw funds that weren't yours
   expect lp_policy == pool_state.quantity_lp.1st
   expect lp_asset_name == pool_state.quantity_lp.2nd
+  // Calculate the amount of LP tokens to burn; because the outcome of a previous order in the chain
+  // may be uncertain, we allow some flexibility here, and the amount in the order just specifies a
+  // maximum to take. Also note, we specify an amount at all so that you can have things like
+  // time-release withdrawals, where you withdraw a small amount across multiple steps in a chain.
   let withdrawn =
     math.min(amount, value.quantity_of(input_value, lp_policy, lp_asset_name))
+
+  // We calculate the asset_a and asset_b to withdraw, namely the percentage of each asset
+  // that corresponds to the percentage of LP token burned.  Note we multiply first to minimize precision loss.
+  // OPTIMIZATION: we can probably destructure the SingletonValues once and reuse, but optimizing
+  // deposits/withdrawals isn't as critical as optimizing swaps.
   let withdrawn_a =
     withdrawn * pool_state.quantity_a.3rd / pool_state.quantity_lp.3rd
   let withdrawn_b =
     withdrawn * pool_state.quantity_b.3rd / pool_state.quantity_lp.3rd
+
+  // Calculate the remainder that should be directed to the destination:
+  // We start with whatever we got in on the input, deduct the LP tokens we're burning
+  // the protocol fee, and then add in the amounts that we withdrew
+  // OPTIMIZATION: I wonder if there's a more efficient implementation that can do this in just one pass
   let remainder =
     input_value
       |> value.add(lp_policy, lp_asset_name, -withdrawn)
@@ -40,10 +61,14 @@ pub fn do_withdrawal(
           withdrawn_b,
         )
 
-  // Check that the payout is satisfied by the next output
-  expect output.address == order.destination.address
-  expect output.datum == order.destination.datum
+  // Check that the result is paid to the destination with the full value
+  // Like on other order types, the datum here lets us compose with other protocols
+  // or do chained orders within Sundae
+  expect output.address == destination.address
+  expect output.datum == destination.datum
   expect output.value == remainder
+
+  // Return the final pool state
   PoolState {
     quantity_a: (
       pool_state.quantity_a.1st,
@@ -60,8 +85,6 @@ pub fn do_withdrawal(
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd - withdrawn,
     ),
-    fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
   }
 }
 
@@ -119,12 +142,11 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     quantity_a: (#"", #"", 1_010_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
-    fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(4_500_000)
       |> value.add(lp.1st, lp.2nd, 10_000_000)
+  let amount = (lp.1st, lp.2nd, 10_000_000)
   let order = OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -136,7 +158,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       datum: NoDatum,
     },
     details: order.Withdrawal {
-      amount: (lp.1st, lp.2nd, 10_000_000),
+      amount
     },
     extension: Void,
   }
@@ -150,9 +172,8 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_withdrawal(pool_state, input_value, order, 2_500_000, output)
+  let final_pool_state = do_withdrawal(pool_state, input_value, amount, order.destination, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

@@ -9,16 +9,29 @@ use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
+///
+/// As in other places, we have lots of parameters to avoid destructuring
+/// TODO: it'd be nice to support partial fills, so long as the ratio between `order_give` and `min_takes` is preserved 
 pub fn swap_takes(
+  // The policy ID of the token being given up by the user
   give_policy_id: PolicyId,
+  // The asset name of the token being given up by the user
   give_asset_name: AssetName,
+  // The policy ID of the token that should be *received* as a result of the swap
   take_policy_id: PolicyId,
+  // The asset name of the token that should be *received* as a result of the swap
   take_asset_name: AssetName,
+  // The quantity of the given token that the pool currently has
   pool_give: Int,
+  // The quantity of the token that should be given to the user that the pool already has
   pool_take: Int,
+  // The percentage fee collected on behalf of the liquidity providers, represented as the numerator of a fraction over 10,000 (commonly referred to as basis points)
   fees_per_10_thousand: Int,
+  // The ADA fee to deduct as part of the protocol fee
   actual_protocol_fee: Int,
+  // The amount of the given token that the user has offered to swap
   order_give: Int,
+  // The input value on the order UTXO, to calculate change
   input_value: Value,
 ) -> (Int, Value) {
   // We compute the AMM formula, but 
@@ -43,35 +56,42 @@ pub fn swap_takes(
   (takes, out_value)
 }
 
-/// The amount of the given asset already in the pool
-/// The amount of the taken asset in the pool to draw from
-/// The fee to charge
-/// The amount of token being given up as part of the swap
-/// The value coming in from the UTXO
-/// Take a pool state, and compute the next pool state
+/// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
 pub fn do_swap(
   pool_state: PoolState,
+  /// The value coming in from the UTXO with the order
   input_value: Value,
+  /// Where the results of the swap need to be paid
   destination: Destination,
+  /// The liquidity provider fee to charge
+  fees_per_10_thousand: Int,
   actual_protocol_fee: Int,
+  /// The amount of value from the UTXO that is "on offer" for the trade
   offer: SingletonValue,
+  /// The minimum token that *must* be received for the order to execute; aka a limit price
   min_received: SingletonValue,
+  /// The output to compare against
   output: Output,
 ) -> PoolState {
+  // Destructure the pool state
+  // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
   let PoolState {
     quantity_a,
     quantity_b,
     quantity_lp,
-    fees_per_10_thousand,
-    protocol_fees,
   } = pool_state
   let (a_policy_id, a_asset_name, a_amt) = quantity_a
   let (b_policy_id, b_asset_name, b_amt) = quantity_b
 
+  // There are two symmetric cases, depending on whether you're giving order A or order B
+  // If there's a clever way to write this as one branch it might be clearer to read
   if offer_policy_id == a_policy_id && offer_asset_name == a_asset_name {
+    // Make sure we're actually swapping against a pool with the correct assets
+    // We do this, instead of checking the pool ident, to allow orders to be agnostic and execute against an arbitrary pool
     expect min_received.1st == b_policy_id
     expect min_received.2nd == b_asset_name
+    // Compute the actual takes / change
     let (takes, out_value) =
       swap_takes(
         offer_policy_id,
@@ -86,20 +106,21 @@ pub fn do_swap(
         input_value,
       )
 
-    // Check that the output satisfies this swap
+    // Check that the output has the correct destination and value
     expect output.address == destination.address
     expect output.datum == destination.datum
     expect output.value == out_value
-    // Check that mintakes is satisfied
+    // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
+    // is satisfied
     expect takes >= min_received.3rd
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp,
-      fees_per_10_thousand,
-      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
+    // This code is a mirror of the above, so should be scrutinized extra carefully during audit;
+    // it's easy to make a mistake when copy-pasting. If there's an easier way to express this symmetry that would be good too
     expect min_received.1st == a_policy_id
     expect min_received.2nd == a_asset_name
     let (takes, out_value) =
@@ -125,16 +146,12 @@ pub fn do_swap(
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp,
-      fees_per_10_thousand,
-      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else {
+    // If neither of the assets match what's being offered, fail the transaction, the scooper has incorrectly chosen an order that can't be satisfied
     fail
   }
 }
-/// The pool state before processing this swap
-/// The value being processed
-/// The datum describing the order 
 
 test swap_mintakes_too_high() fail {
   let addr =
@@ -151,8 +168,6 @@ test swap_mintakes_too_high() fail {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(14_500_000)
@@ -178,9 +193,8 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, 2_500_000, swap_offer, swap_min_received, output)
+  let final_pool_state = do_swap(pool_state, input_value, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }
