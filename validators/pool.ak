@@ -52,14 +52,15 @@ fn has_expected_pool_value(
   identifier: Ident,
   output_value: Value,
   outcome: PoolState,
+  final_protocol_fees: Int,
 ) -> Bool {
   // OPTIMIZATION: check that lovelace and assets match, rather than constructing a value
-  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
+  let PoolState { quantity_a, quantity_b, .. } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   if quantity_a_policy_id == ada_policy_id {
     expect has_exact_token_count(output_value, 3)
-    expect value.lovelace_of(output_value) == protocol_fees + quantity_a_amt
+    expect value.lovelace_of(output_value) == final_protocol_fees + quantity_a_amt
     expect
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt
     expect
@@ -71,7 +72,7 @@ fn has_expected_pool_value(
     True
   } else {
     expect has_exact_token_count(output_value, 4)
-    expect value.lovelace_of(output_value) == protocol_fees
+    expect value.lovelace_of(output_value) == final_protocol_fees
     expect
       value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt
     expect
@@ -137,22 +138,34 @@ validator(settings_policy_id: PolicyId) {
     let settings_datum = find_settings_datum(reference_inputs, settings_policy_id) 
 
     when redeemer is {
-      PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
+      PoolScoop{ signatory_index, scooper_index, input_order, .. } -> {
         // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
 
+        // Do a simple scan over the orders to count up the number of orders we'll be processing
+        // This is unavoidable, because it's part of making sure that the provided redeemer set isn't
+        // excluding orders
+        let real_order_count = count_orders(inputs)
+        // Calculate the portion of the fee that each order will be
+        // entitled to pay;
+        // Because the division is rounded down, we add real_order_count and subtact 1
+        // to ensure that we take the ceiling instead, and round in the protocols favor.
+        let amortized_base_fee = (base_fee + real_order_count - 1) / real_order_count
+        // Make sure it's not negative, for example if base_fee was negative
+        expect amortized_base_fee >= 0
         // Construct the initial pool state from the datum and the locked values
-        let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        let (initial_state, fees_per_10_thousand, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
         // Process the orders in order, and decide the final pool state we should see
         // OPTIMIZATION: pass in the list of outputs, to pop off and compare in parallel
-        let (outcome, simple_count, strategy_count, total_protocol_fee) =
+        let (outcome, simple_count, strategy_count) =
           process_orders(
             actual_identifier,
             validity_range,
             datums,
             initial_state,
             input_order,
+            fees_per_10_thousand,
             amortized_base_fee,
             simple_fee,
             strategy_fee,
@@ -163,30 +176,26 @@ validator(settings_policy_id: PolicyId) {
             0,
             0,
             0,
-            0,
           )
         let PoolState {
           quantity_lp: expected_circulating_lp,
-          protocol_fees: expected_protocol_fees,
           ..
         } = outcome
 
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
-        let real_order_count = count_orders(inputs)
         expect simple_count + strategy_count == real_order_count
 
-        // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
-        // but we can't enforce that it takes *exactly* this amount, because of rounding
-        // imagine with 30 orders, the max_protocol_fee is 1 ada + 30 * 0.1 ada = 4 ada
-        // the per-order fee would then be 0.133333 repeating; if we round up,
-        // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
-        // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
-        // and at most max_protocol_fee 
-        let max_protocol_fee = base_fee + simple_count * simple_fee + strategy_count * strategy_fee
+        // We calculate the expected total collected protocol fee
+        // We multiply amortized_base_fee, which everyone paid, by the number of orders
+        // and then the respective fees for each simple order and strategy order
+        let expected_fees_collected =
+          amortized_base_fee * real_order_count +
+          simple_count * simple_fee +
+          strategy_count * strategy_fee
 
-        expect amortized_base_fee >= 0
-        expect total_protocol_fee <= max_protocol_fee
+        // Make sure we actually increased the protocol fee by exactly this amount
+        expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
@@ -216,12 +225,11 @@ validator(settings_policy_id: PolicyId) {
             output_datum.identifier,
             pool_output.value,
             outcome,
+            actual_protocol_fees,
           )
         // expect pool_output_correct
         // Must update the circulating LP if tokens are minted
         expect actual_circulating_lp == expected_circulating_lp.3rd
-        // Must update the protocol fees field as expected
-        expect actual_protocol_fees == expected_protocol_fees
         // Must not update the immutable fields
         expect datum.identifier == output_datum.identifier
         expect datum.assets == output_datum.assets

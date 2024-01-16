@@ -53,6 +53,7 @@ pub fn do_swap(
   pool_state: PoolState,
   input_value: Value,
   destination: Destination,
+  fees_per_10_thousand: Int,
   actual_protocol_fee: Int,
   offer: SingletonValue,
   min_received: SingletonValue,
@@ -63,8 +64,6 @@ pub fn do_swap(
     quantity_a,
     quantity_b,
     quantity_lp,
-    fees_per_10_thousand,
-    protocol_fees,
   } = pool_state
   let (a_policy_id, a_asset_name, a_amt) = quantity_a
   let (b_policy_id, b_asset_name, b_amt) = quantity_b
@@ -96,8 +95,6 @@ pub fn do_swap(
       quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp,
-      fees_per_10_thousand,
-      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     expect min_received.1st == a_policy_id
@@ -125,8 +122,6 @@ pub fn do_swap(
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
       quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
       quantity_lp,
-      fees_per_10_thousand,
-      protocol_fees: protocol_fees + actual_protocol_fee,
     }
   } else {
     fail
@@ -151,8 +146,6 @@ test swap_mintakes_too_high() fail {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(14_500_000)
@@ -178,9 +171,8 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, 2_500_000, swap_offer, swap_min_received, output)
+  let final_pool_state = do_swap(pool_state, input_value, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }
