@@ -48,11 +48,6 @@ pub type PoolRedeemer {
     /// This is so that we can quickly skip to the correct scooper in the list of authorized scoopers
     /// And this is safe to do, because at the end of the day, the pointed at scooper must have signed the transaction
     scooper_index: Int,
-    /// The "amortized base fee"; i.e. the base_fee divided by the number of orders in the scoop
-    /// TODO: I believe this was done to avoid counting the number of orders ahead of time (and just count them while we're looping over the list)
-    /// But since we need to count them *anyway* to ensure 1-to-1 processing, this may no longer be neccesary. We haven't removed it yet because
-    /// of the impact in our off-chain code.
-    amortized_base_fee: Int,
     /// The order to process the transaction inputs in, and optionally the signed strategy execution to execute for strategy orders
     /// This is because the cardano ledger re-orders transaction inputs when building the script context; so this could end up processing
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.

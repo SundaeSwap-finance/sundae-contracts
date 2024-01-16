@@ -104,7 +104,7 @@ validator(settings_policy_id: PolicyId) {
     // - Withdrawing protocol fees to the treasury
     when redeemer is {
       // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
-      PoolScoop{ signatory_index, scooper_index, input_order, .. } -> {
+      PoolScoop{ signatory_index, scooper_index, input_order } -> {
         // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
@@ -882,7 +882,7 @@ fn scoop(options: ScoopTestOptions) {
       },
       purpose: Spend(pool_input.output_reference),
     }
-  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None), (2, None)])
+  let pool_redeemer = PoolScoop(0, 0, [(1, None), (2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
@@ -1042,7 +1042,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     },
     purpose: Spend(pool_input.output_reference),
   }
-  let pool_redeemer = PoolScoop(0, 0, 0, [(1, None),(2, None)])
+  let pool_redeemer = PoolScoop(0, 0, [(1, None),(2, None)])
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }

@@ -24,7 +24,7 @@ pub fn do_donation(
   destination: Destination,
   /// The actual protocol fee that needs to be charged to each user (i.e. baseFee / numOrders + simpleFee)
   /// TODO: this is actually unused, and fixed in a branch
-  _actual_protocol_fee: Int,
+  actual_protocol_fee: Int,
   /// The next output in the list; If there is any change left over from the donation, we would expect this to be that change
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
