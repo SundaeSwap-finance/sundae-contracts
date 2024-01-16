@@ -93,15 +93,12 @@ pub fn process_order(
   value: Value,
   details: Order,
   max_protocol_fee: Int,
-  datum: OrderDatum,
   destination: Destination,
   fees_per_10_thousand: Int,
   amortized_base_fee: Int,
   simple_fee: Int,
   strategy_fee: Int,
-  output: Output,
   outputs: List<Output>,
-  rest_outputs: List<Output>
 ) -> (PoolState, List<Output>) {
   when details is {
     order.Strategy(signer) -> {
@@ -120,7 +117,6 @@ pub fn process_order(
         value,
         details,
         max_protocol_fee,
-        datum,
         destination,
         fees_per_10_thousand,
         amortized_base_fee,
@@ -128,12 +124,11 @@ pub fn process_order(
         // reuse the code to calculate the result, but charge the higher fee
         strategy_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
     }
     order.Swap(offer, min_received) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
@@ -150,28 +145,31 @@ pub fn process_order(
         )
       (next, rest_outputs)
     }
-    order.Deposit(..) -> {
+    order.Deposit(assets) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let next = deposit.do_deposit(initial, value, datum, fee, output)
+      let next = deposit.do_deposit(initial, value, assets, destination, fee, output)
       (next, rest_outputs)
     }
-    order.Withdrawal(..) -> {
+    order.Withdrawal(amount) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       let next =
-        withdrawal.do_withdrawal(initial, value, datum, fee, output)
+        withdrawal.do_withdrawal(initial, value, amount, destination, fee, output)
       (next, rest_outputs)
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(..) -> {
+    order.Donation(assets) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       let (next, used_output) =
-        donation.do_donation(initial, value, datum, fee, output)
+        donation.do_donation(initial, value, assets, destination, fee, output)
       if used_output {
         (next, rest_outputs)
       } else {
@@ -213,7 +211,6 @@ pub fn process_orders(
       expect [input_to_process, ..rest_of_input_list] = next_input_list
 
       let Input{ output_reference, output: order } = input_to_process
-      expect [output, ..rest_outputs] = outputs
 
       // make sure we only process scripts; this is so that our "order count" and "indexing set" logic is correct
       expect is_script(order.address.payment_credential)
@@ -238,15 +235,12 @@ pub fn process_orders(
         order.value,
         details,
         max_protocol_fee,
-        datum, // TODO: can we get rid of this?
         destination,
         fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
 
       process_orders(

@@ -5,16 +5,17 @@ use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
+use shared.{SingletonValue}
 use types/order.{Destination, OrderDatum}
 
 pub fn do_withdrawal(
   pool_state: PoolState,
   input_value: Value,
-  order: OrderDatum,
+  amount: SingletonValue,
+  destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
-  expect order.Withdrawal { amount } = order.details
   let (lp_policy, lp_asset_name, amount) = amount
 
   expect lp_policy == pool_state.quantity_lp.1st
@@ -41,8 +42,8 @@ pub fn do_withdrawal(
         )
 
   // Check that the payout is satisfied by the next output
-  expect output.address == order.destination.address
-  expect output.datum == order.destination.datum
+  expect output.address == destination.address
+  expect output.datum == destination.datum
   expect output.value == remainder
   PoolState {
     quantity_a: (
@@ -121,6 +122,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
   let input_value =
     value.from_lovelace(4_500_000)
       |> value.add(lp.1st, lp.2nd, 10_000_000)
+  let amount = (lp.1st, lp.2nd, 10_000_000)
   let order = OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -132,7 +134,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       datum: NoDatum,
     },
     details: order.Withdrawal {
-      amount: (lp.1st, lp.2nd, 10_000_000),
+      amount
     },
     extension: Void,
   }
@@ -146,7 +148,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_withdrawal(pool_state, input_value, order, 2_500_000, output)
+  let final_pool_state = do_withdrawal(pool_state, input_value, amount, order.destination, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
   True
