@@ -96,7 +96,6 @@ pub fn process_order(
   value: Value,
   details: Order,
   max_protocol_fee: Int,
-  datum: OrderDatum,
   destination: Destination,
   amortized_base_fee: Int,
   simple_fee: Int,
@@ -120,7 +119,6 @@ pub fn process_order(
         value,
         details,
         max_protocol_fee,
-        datum,
         destination,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
@@ -147,31 +145,31 @@ pub fn process_order(
         )
       (next, rest_outputs, fee)
     }
-    order.Deposit(..) -> {
+    order.Deposit(assets) -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
-      let next = deposit.do_deposit(initial, value, datum, fee, output)
+      let next = deposit.do_deposit(initial, value, assets, destination, fee, output)
       (next, rest_outputs, fee)
     }
-    order.Withdrawal(..) -> {
+    order.Withdrawal(amount) -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       let next =
-        withdrawal.do_withdrawal(initial, value, datum, fee, output)
+        withdrawal.do_withdrawal(initial, value, amount, destination, fee, output)
       (next, rest_outputs, fee)
     }
     // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(..) -> {
+    order.Donation(assets) -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       let (next, used_output) =
-        donation.do_donation(initial, value, datum, fee, output)
+        donation.do_donation(initial, value, assets, destination, fee, output)
       if used_output {
         (next, rest_outputs, fee)
       } else {
@@ -237,7 +235,6 @@ pub fn process_orders(
         order.value,
         details,
         max_protocol_fee,
-        datum, // TODO: can we get rid of this?
         destination,
         amortized_base_fee,
         simple_fee,
