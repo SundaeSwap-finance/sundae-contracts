@@ -221,7 +221,7 @@ validator(settings_policy_id: PolicyId) {
         expect actual_circulating_lp == expected_circulating_lp.3rd
 
         // Make sure the protocol fees have been correctly updated
-        expect actual_protocol_fees == expected_protocol_fees
+        expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected
 
         // And make sure each of these fields is unchanged
         and {
@@ -506,7 +506,7 @@ fn has_expected_pool_value(
   outcome: PoolState,
   final_protocol_fees: Int,
 ) -> Bool {
-  let PoolState { quantity_a, quantity_b } = outcome
+  let PoolState { quantity_a, quantity_b, .. } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output

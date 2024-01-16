@@ -135,7 +135,7 @@ pub fn process_order(
   // A list of outputs, so we can destructure the next output
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
-) -> (PoolState, List<Output>, Int) { // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
+) -> (PoolState, List<Output>) { // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
     order.Strategy(signer) -> {
       // For a strategy, we can basically "unpack" (and validate) the signed execution, and then recurse to process the deferred order
