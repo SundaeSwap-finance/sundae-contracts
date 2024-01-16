@@ -6,18 +6,36 @@ use shared.{SingletonValue}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
+/// A donation describes an amount of assets to deposit into the pool, receiving nothing in return (except for the extra change on the UTXO).
+/// Because every LP token holder has an entitlement to a percentage of the assets in the pool, the donation is distributed to all LP token holders
+/// pro-rata.
+/// An end-user might have little use for something like this, but it becomes a powerful primitive for other protocols to create automated
+/// incentive programs on chain.  For example, revenue from activity on chain can be donated to the project tokens pool as a liquidity incentive.
+// 
+// Calculates the new pool state, and whether to consume this output or not
 pub fn do_donation(
+  /// The pool state as a result of processing all orders before this one
   pool_state: PoolState,
+  /// The total quantity of tokens on this particular input
   input_value: Value,
+  /// The amounts of each asset being donated
   assets: (SingletonValue, SingletonValue),
+  /// The destination (address + datum) that any *change* should be sent
   destination: Destination,
-  actual_protocol_fee: Int,
+  /// The actual protocol fee that needs to be charged to each user (i.e. baseFee / numOrders + simpleFee)
+  /// TODO: this is actually unused, and fixed in a branch
+  _actual_protocol_fee: Int,
+  /// The next output in the list; If there is any change left over from the donation, we would expect this to be that change
+  /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
+  // Make sure we're actually donating the pool assets; this is to prevent setting
+  // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
   expect assets.1st.1st == pool_state.quantity_a.1st
   expect assets.1st.2nd == pool_state.quantity_a.2nd
   expect assets.2nd.1st == pool_state.quantity_b.1st
   expect assets.2nd.2nd == pool_state.quantity_b.2nd
+  // Compute however much of the UTXO value is *left over* after deducting the donation amount from it; If nonzero, this will need to be returned to the user
   let remainder =
     shared.to_value(assets.1st)
       |> value.merge(shared.to_value(assets.2nd))
@@ -25,6 +43,9 @@ pub fn do_donation(
       |> value.merge(input_value)
 
   let has_remainder = remainder != value.zero()
+  // If we have a remainder, then we need to check the details of the output; this awkward structure
+  // is so that we can do a few expects without having to return a value right away
+  // TODO: is there a cleaner way to do that?
   let Void =
     if has_remainder {
       expect output.address == destination.address
@@ -34,6 +55,11 @@ pub fn do_donation(
     } else {
       Void
     }
+  
+  // Compute the new pool state, which is exactly the old pool state, plus the 
+  // quantities of assets donated, plus the protocol fee!
+  // We also returned whether we had a remainder or not, so the calling function knows
+  // whether to consume the output they gave us or not.
   (
     PoolState {
       quantity_a: (
