@@ -304,6 +304,10 @@ validator(settings_policy_id: PolicyId) {
       CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
         expect Mint(own_policy_id) = ctx.purpose
 
+        // And grab the pool output
+        expect Some(pool_output) =
+          list.at(ctx.transaction.outputs, pool_output_ix)
+
         // Check that the pool datum is inline, because a datum hash could brick this pool
         expect InlineDatum(d) = pool_output.datum
         expect pool_output_datum: PoolDatum = d
@@ -360,9 +364,6 @@ validator(settings_policy_id: PolicyId) {
         let reference_inputs = ctx.transaction.reference_inputs
         let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
 
-        // And grab the pool output
-        expect Some(pool_output) =
-          list.at(ctx.transaction.outputs, pool_output_ix)
 
         // Grab the initial reserves of each token by looking at what's paid to the UTXO
         let coin_a_amt =
@@ -716,6 +717,7 @@ test scooper_not_in_settings() fail {
             base_fee: 0,
             simple_fee: 2_500_000,
             strategy_fee: 5_000_000,
+            pool_creation_fee: 0,
             extensions: Void,
           },
         ),
