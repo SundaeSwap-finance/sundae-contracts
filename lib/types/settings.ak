@@ -59,6 +59,9 @@ pub type SettingsDatum {
   /// This is configurable separately because the DAO may decide to collect more from automated strategies
   /// or give automated strategies a discount, to incentivize more volume since it's automated.
   strategy_fee: Int,
+  /// This fee is charged to those who open pools, and represents the minimum initial value for `protocol_fees`.
+  /// It represents another source of revenue for the protocol, should it choose to exercise it.
+  pool_creation_fee: Int,
 
   /// Any arbitrary "extension" data that can be added to the datum; This isn't used by any existing scripts, but may be used to:
   /// - publish data for convenient and canonical access by off-chain actors
