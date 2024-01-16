@@ -1,6 +1,7 @@
 //// Shared types and functions across all pool calculations
 
 use aiken/builtin
+use aiken/math
 use shared.{SingletonValue}
 
 /// An interim pool state
@@ -61,7 +62,7 @@ fn unsafe_fast_index_with_tail(inputs: List<a>, idx: Int) -> List<a> {
 
 pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   expect index >= 0
-  let bit = do_2_exp(index)
+  let bit = small_pow2(index)
   let bit_shifted = 2 * bit
 
   let flag_set = uniqueness_flags + bit
@@ -70,10 +71,31 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   flag_set
 }
 
-pub fn do_2_exp(n: Int) -> Int {
-  if n <= 0 {
-    1
+/// This is a version of pow2 that's optimized for small batch sizes
+/// It performs a few more granular loop-unrolls, converging on the small lookup index faster
+/// This was presented by TxPipe, and squeezes out one extra escrow over math.pow2 for our typical order sizes
+pub fn small_pow2(exponent: Int)  -> Int {
+  let single_byte_powers = #[1, 2, 4, 8, 16, 32, 64, 128]
+  if exponent < 8 {
+    builtin.index_bytearray(single_byte_powers, exponent)
+  } else if exponent < 16 {
+    // 2^8 * table lookup
+    256 * builtin.index_bytearray(single_byte_powers, exponent - 8)
+  } else if exponent < 24 {
+    // 2^16 * table lookup
+    65536 * builtin.index_bytearray(single_byte_powers, exponent - 16)
+  } else if exponent < 32 {
+    // 2^24 * recurse
+    16777216 * builtin.index_bytearray(single_byte_powers, exponent - 24)
+  } else if exponent < 40 {
+    // 2^32 * recurse
+    4294967296 * builtin.index_bytearray(single_byte_powers, exponent - 32)
   } else {
-    2 * do_2_exp(n - 1)
+    // Otherwise we can fall back to the built in;
+    // currently we can't fit more than 40 orders in a batch, but if
+    // the protocol parameters get bumped, we don't want things to start failing!
+    // When benchmarking, falling back to the builtin proved to be faster than recursing
+    // unsure why that is!
+    math.pow2(exponent)
   }
 }
