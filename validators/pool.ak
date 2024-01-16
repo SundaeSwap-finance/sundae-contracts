@@ -304,6 +304,10 @@ validator(settings_policy_id: PolicyId) {
       CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
         expect Mint(own_policy_id) = ctx.purpose
 
+        // Check that the pool datum is inline, because a datum hash could brick this pool
+        expect InlineDatum(d) = pool_output.datum
+        expect pool_output_datum: PoolDatum = d
+
         // The assets on the pool must be sorted
         // This is partially to make off-chain indexing easier, and as an on-chain optimization,
         // so we can always assume that, if ADA is one of the pairs, it's the first asset.
@@ -366,14 +370,14 @@ validator(settings_policy_id: PolicyId) {
         let coin_b_amt =
           value.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd)
 
-        // Only ada has a null policy id. If coin A is ada, subtract the 2 ada
+        // Ensure that the pool pays the pool creation fee, if any, by ensuring that the initial protocol_fees value is greater than or equal to the fee
+        expect pool_output_datum.protocol_fees >= settings_datum.pool_creation_fee
+
+        // Only ada has a null policy id. If coin A is ada, subtract the initial protocol_fees setting from the coin A amount
         // rider from the output to get the true amount in the pool.
-        // TODO: we should instead subtract the protocol fees, rather than relying
-        // on this constant, so that we can adjust the "rider" off-chain if needed.
-        // TODO: should we check for a minimum protocol fees amount, as a "create pool" fee paid to the protocol?
-        let coin_a_amt_sans_rider =
+        let coin_a_amt_sans_protocol_fees =
           if bytearray.is_empty(asset_a.1st) {
-            coin_a_amt - 2_000_000
+            coin_a_amt - pool_output_datum.protocol_fees
           } else {
             coin_a_amt
           }
@@ -382,7 +386,7 @@ validator(settings_policy_id: PolicyId) {
         // computing this value as the square root of the product of the two values.
         // This helps minimize precision loss: it gives decent initial liquidity values for a range of
         // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
-        expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_rider * coin_b_amt)
+        expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt)
 
         // Use the asset names we computed above to compute the whole Asset IDs of the tokens we expect
         let new_pool_ref = (own_policy_id, new_pool_ref_token)
@@ -399,14 +403,16 @@ validator(settings_policy_id: PolicyId) {
 
         // Confirm that the correct funds (at least one asset A, at least one asset B, exactly 3 tokens, including the pool NFT) is correct here
         // Note: should we instead just compare the expected pool output?
-        let funds_spent_to_pool =
-          coin_a_amt_sans_rider >= 1 && coin_b_amt >= 1 && list.length(
-            value.flatten(pool_output.value),
-          ) <= 3 && value.quantity_of(
+        let funds_spent_to_pool = and {
+          coin_a_amt_sans_protocol_fees >= 1,
+          coin_b_amt >= 1,
+          list.length(value.flatten(pool_output.value)) <= 3,
+          value.quantity_of(
             pool_output.value,
             own_policy_id,
             new_pool_nft_token,
           ) == 1
+        }
         
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
@@ -416,9 +422,6 @@ validator(settings_policy_id: PolicyId) {
         expect metadata_output.address == settings_datum.metadata_admin
         expect value.quantity_of(metadata_output.value, own_policy_id, new_pool_ref_token) == 1
 
-        // Check that the pool datum is inline, because a datum hash could brick this pool
-        expect InlineDatum(d) = pool_output.datum
-        expect pool_output_datum: PoolDatum = d
 
         // And check that the datum is initialized correctly; This is part of why we have a minting policy handling this,
         // as it allows us to authenticate the providence of the datum.
