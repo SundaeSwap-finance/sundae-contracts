@@ -1,4 +1,4 @@
-use aiken/transaction/credential.{Address, VerificationKey}
+use aiken/transaction/credential.{Address, VerificationKey, Credential}
 use sundae/multisig.{MultisigScript}
 use shared.{Rational}
 use aiken/transaction.{
@@ -49,7 +49,7 @@ pub type SettingsDatum {
   /// The list of authorized staking keys that can be attached to a pool; It's a list, so that if the protocol TVL exceeds the saturation point for a single pool,
   /// or the DAO directs the treasury administrator to split the pool delegation across multiple pools, the treasury administrator can do so.
   /// Also note, that if any one pool ever exceeds the delegation percentage, it can't be split further. This is a problem we intend to solve with a future version of the protocol
-  authorized_staking_keys: List<VerificationKey>,
+  authorized_staking_keys: List<Credential>,
 
   /// The base fee, in lovelace, to be collected each time a batch happens; can be shared among all participants in the batch.
   base_fee: Int,

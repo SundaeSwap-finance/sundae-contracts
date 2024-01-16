@@ -11,7 +11,7 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
+  Address, ScriptCredential, VerificationKeyCredential, Inline
 }
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
@@ -83,7 +83,6 @@ validator(settings_policy_id: PolicyId) {
     // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
     // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
     expect Some(pool_output) = list.head(outputs)
-    expect pool_output.address == pool_input.address
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
 
@@ -198,6 +197,8 @@ validator(settings_policy_id: PolicyId) {
         // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
+        // Make sure we correctly track the circulating LP tokens; If this gets out of sync with what we've actually minted,
+        // then users will be able to either redeem assets they aren't entitled to, or be unable to access funds they are entitled to.
         expect output_datum.circulating_lp == outcome.quantity_lp.3rd
 
         // We also check that the pool output has the right value (as mentioned above)
@@ -288,6 +289,10 @@ validator(settings_policy_id: PolicyId) {
         // that worked with the void datum, and paid to the real treasury with the correct datum.
         // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
+        expect pool_output.address.payment_credential == pool_input.address.payment_credential
+        expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+          pool_output.address.stake_credential == Some(Inline(a))
+        })
         // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
         expect value.lovelace_of(treasury_output.value) >= to_treasury
         True
