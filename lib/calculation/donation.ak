@@ -46,16 +46,14 @@ pub fn do_donation(
   let has_remainder = remainder != value.zero()
   // If we have a remainder, then we need to check the details of the output; this awkward structure
   // is so that we can do a few expects without having to return a value right away
-  // TODO: is there a cleaner way to do that?
-  let Void =
-    if has_remainder {
-      expect output.address == destination.address
-      expect output.datum == destination.datum
-      expect output.value == remainder
-      Void
-    } else {
-      Void
-    }
+  expect or {
+    !has_remainder,
+    and {
+      output.address == destination.address,
+      output.datum == destination.datum,
+      output.value == remainder,
+    },
+  }
   
   // Compute the new pool state, which is exactly the old pool state, plus the 
   // quantities of assets donated, plus the protocol fee!
