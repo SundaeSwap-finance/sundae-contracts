@@ -2,7 +2,7 @@ use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value}
 use calculation/shared.{PoolState} as calc_shared
-use shared
+use shared.{SingletonValue}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
 
@@ -18,16 +18,18 @@ pub fn do_donation(
   pool_state: PoolState,
   /// The total quantity of tokens on this particular input
   input_value: Value,
-  /// The order datum, describing the details of the order
-  order: OrderDatum,
+  /// The amounts of each asset being donated
+  assets: (SingletonValue, SingletonValue),
+  /// The destination (address + datum) that any *change* should be sent
+  destination: Destination,
   /// The actual protocol fee that needs to be charged to each user (i.e. baseFee / numOrders + simpleFee)
   actual_protocol_fee: Int,
   /// The next output in the list; If there is any change left over from the donation, we would expect this to be that change
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
-  // First, we destructure the assets we're going to donate, and compare them to the ones in the pool to be sure
-  expect order.Donation { assets } = order.details
+  // Make sure we're actually donating the pool assets; this is to prevent setting
+  // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
   expect assets.1st.1st == pool_state.quantity_a.1st
   expect assets.1st.2nd == pool_state.quantity_a.2nd
   expect assets.2nd.1st == pool_state.quantity_b.1st
@@ -45,8 +47,8 @@ pub fn do_donation(
   // TODO: is there a cleaner way to do that?
   let Void =
     if has_remainder {
-      expect output.address == order.destination.address
-      expect output.datum == order.destination.datum
+      expect output.address == destination.address
+      expect output.datum == destination.datum
       expect output.value == remainder
       Void
     } else {
@@ -70,8 +72,6 @@ pub fn do_donation(
         pool_state.quantity_b.3rd + assets.2nd.3rd,
       ),
       quantity_lp: pool_state.quantity_lp,
-      fees_per_10_thousand: pool_state.fees_per_10_thousand,
-      protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
     },
     has_remainder,
   )
@@ -94,12 +94,14 @@ test donation() {
       quantity_a: (#"", #"", 1_000_000_000),
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-      fees_per_10_thousand: 5,
-      protocol_fees: 2_000_000,
     }
   let input_value =
     value.from_lovelace(1_000_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+  let assets = (
+          (ada.1st, ada.2nd, 1_000_000),
+          (rberry.1st, rberry.2nd, 1_000_000),
+        )
   let order =
     OrderDatum {
       pool_ident: None,
@@ -109,10 +111,7 @@ test donation() {
       max_protocol_fee: 2_500_000,
       destination: Destination { address: addr, datum: NoDatum },
       details: order.Donation {
-        assets: (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        ),
+        assets: assets,
       },
       extension: Void,
     }
@@ -125,10 +124,9 @@ test donation() {
       reference_script: None,
     }
   let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input_value, order, 2_500_000, output)
+    do_donation(pool_state, input_value, assets, order.destination, 2_500_000, output)
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

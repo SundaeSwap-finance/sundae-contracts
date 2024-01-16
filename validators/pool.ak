@@ -105,26 +105,40 @@ validator(settings_policy_id: PolicyId) {
     // - Withdrawing protocol fees to the treasury
     when redeemer is {
       // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
-      PoolScoop{ signatory_index, scooper_index, amortized_base_fee, input_order } -> {
+      PoolScoop{ signatory_index, scooper_index, input_order, .. } -> {
+        // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
+
+        // Do a simple scan over the orders to count up the number of orders we'll be processing
+        // This is unavoidable, because it's part of making sure that the provided redeemer set isn't
+        // excluding orders
+        let real_order_count = count_orders(inputs)
+        // Calculate the portion of the fee that each order will be
+        // entitled to pay;
+        // Because the division is rounded down, we add real_order_count and subtact 1
+        // to ensure that we take the ceiling instead, and round in the protocols favor.
+        let amortized_base_fee = (base_fee + real_order_count - 1) / real_order_count
+        // Make sure it's not negative, for example if base_fee was negative
+        expect amortized_base_fee >= 0
 
         // Construct the initial pool state from the datum and the locked values
         // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
         // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
         // (excluding protocol fees, which shouldn't factor into the price)
-        let initial_state = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        let (initial_state, fees_per_10_thousand, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
 
         // Process the orders in order, and decide the final pool state we should see
         // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
         // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
-        let (outcome, simple_count, strategy_count, total_protocol_fee) =
+        let (outcome, simple_count, strategy_count) =
           process_orders(
             actual_identifier,        // The pool identifier, so we can check that each order is for this pool
             validity_range,           // The validity range of the transaction, so we can check strategies haven't expired
             datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
             initial_state,            // The initial pool state, such as the reserves and circulating LP
             input_order,              // The input ordering specified by the scooper
+            fees_per_10_thousand,     // The liquidity provider fee to charge, in parts per 10,000 (basis points)
             amortized_base_fee,       // The base fee split by the number of orders, paid for each user
             simple_fee,               // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
             strategy_fee,             // The fee to charge for each "strategy" order
@@ -135,31 +149,27 @@ validator(settings_policy_id: PolicyId) {
             0,                        // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
             0,                        // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,                        // The accumulated count of "strategy" orders, see line above.
-            0,                        // The total pool fee (TODO: going away in another branch)
           )
 
         let PoolState {
           quantity_lp: expected_circulating_lp,
-          protocol_fees: expected_protocol_fees,
           ..
         } = outcome
 
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
-        let real_order_count = count_orders(inputs)
         expect simple_count + strategy_count == real_order_count
 
-        // the protocol enforces that the scooper doesn't take *more* than the max_protocol_fee
-        // but we can't enforce that it takes *exactly* this amount, because of rounding
-        // imagine with 30 orders, the max_protocol_fee is 1 ada + 30 * 0.1 ada = 4 ada
-        // the per-order fee would then be 0.133333 repeating; if we round up,
-        // we exceed the fee by 20 lovelace. If we round down, we undershoot by 10 lovelace
-        // so we just make sure that we have *at least 0* (to prevent a negative in the redeemer)
-        // and at most max_protocol_fee 
-        let max_protocol_fee = base_fee + simple_count * simple_fee + strategy_count * strategy_fee
+        // We calculate the expected total collected protocol fee
+        // We multiply amortized_base_fee, which everyone paid, by the number of orders
+        // and then the respective fees for each simple order and strategy order
+        let expected_fees_collected =
+          amortized_base_fee * real_order_count +
+          simple_count * simple_fee +
+          strategy_count * strategy_fee
 
-        expect amortized_base_fee >= 0
-        expect total_protocol_fee <= max_protocol_fee
+        // Make sure we actually increased the protocol fee by exactly this amount
+        expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
@@ -202,6 +212,7 @@ validator(settings_policy_id: PolicyId) {
             output_datum.identifier,
             pool_output.value,
             outcome,
+            actual_protocol_fees,
           )
         
         // Now, we check various things about the output datum to ensure they're each correct.
@@ -493,8 +504,9 @@ fn has_expected_pool_value(
   identifier: Ident,
   output_value: Value,
   outcome: PoolState,
+  final_protocol_fees: Int,
 ) -> Bool {
-  let PoolState { quantity_a, quantity_b, protocol_fees, .. } = outcome
+  let PoolState { quantity_a, quantity_b } = outcome
   let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
@@ -504,7 +516,7 @@ fn has_expected_pool_value(
   if quantity_a_policy_id == ada_policy_id {
     and {
       has_exact_token_count(output_value, 3),
-      value.lovelace_of(output_value) == protocol_fees + quantity_a_amt,
+      value.lovelace_of(output_value) == final_protocol_fees + quantity_a_amt,
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
 
       value.quantity_of(
@@ -518,7 +530,7 @@ fn has_expected_pool_value(
     // and the corresponding values
     and {
       has_exact_token_count(output_value, 4),
-      value.lovelace_of(output_value) == protocol_fees,
+      value.lovelace_of(output_value) == final_protocol_fees,
       value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt,
       value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
       value.quantity_of(

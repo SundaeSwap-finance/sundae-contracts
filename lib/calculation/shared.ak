@@ -1,6 +1,7 @@
 //// Shared types and functions across all pool calculations
 
 use aiken/builtin
+use aiken/math
 use shared.{SingletonValue}
 
 /// This is a slimmed down interim pool state, useful for iterating over each order and advancing each order
@@ -11,13 +12,6 @@ pub type PoolState {
   quantity_b: SingletonValue,
   /// The circulating supply of LP tokens
   quantity_lp: SingletonValue,
-
-  // TODO: we can probably remove fees_per_10_thousand and protocol_fees, and pass them as parameters instead
-  // since the fee rate doesn't change, and the protocol_fees can be computed once at the end
-  /// The fee, in basis points; that is, parts per 10,000.  So, 100 == 1%; 30 == 0.3%; etc.
-  fees_per_10_thousand: Int,
-  /// The protocol_fees collected and set aside in the pool
-  protocol_fees: Int,
 }
 
 /// Efficiently skip past the first `idx` elements of `inputs`, returning the remaining tail
@@ -87,7 +81,7 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
 
   // Construct a number with the `index`th bit set
   // e.g. if index == 3, then construct b0000_1000
-  let bit = do_2_exp(index)
+  let bit = small_pow2(index)
   // And shift it left as well, for example
   // b0001_0000
   let bit_shifted = 2 * bit
@@ -130,11 +124,32 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   flag_set
 }
 
-/// Calculate 2^n with a simple recursion; TODO: aiken std-lib has a new efficient implementation, see SSW-303
-pub fn do_2_exp(n: Int) -> Int {
-  if n <= 0 {
-    1
+/// This is a version of pow2 that's optimized for small batch sizes
+/// It performs a few more granular loop-unrolls, converging on the small lookup index faster
+/// This was presented by TxPipe, and squeezes out one extra escrow over math.pow2 for our typical order sizes
+pub fn small_pow2(exponent: Int)  -> Int {
+  // A small bytestring, containing all the powers of two that can fit in a single byte, saves us a an expensive multiplication
+  let single_byte_powers = #[1, 2, 4, 8, 16, 32, 64, 128]
+  if exponent < 8 {
+    builtin.index_bytearray(single_byte_powers, exponent)
+  } else if exponent < 16 {
+    // 2^8 * table lookup
+    256 * builtin.index_bytearray(single_byte_powers, exponent - 8)
+  } else if exponent < 24 {
+    // 2^16 * table lookup
+    65536 * builtin.index_bytearray(single_byte_powers, exponent - 16)
+  } else if exponent < 32 {
+    // 2^24 * table lookup
+    16777216 * builtin.index_bytearray(single_byte_powers, exponent - 24)
+  } else if exponent < 40 {
+    // 2^32 * table lookup
+    4294967296 * builtin.index_bytearray(single_byte_powers, exponent - 32)
   } else {
-    2 * do_2_exp(n - 1)
+    // Otherwise we can fall back to the built in;
+    // currently we can't fit more than 40 orders in a batch, but if
+    // the protocol parameters get bumped, we don't want things to start failing!
+    // When benchmarking, falling back to the builtin proved to be faster than recursing
+    // unsure why that is!
+    math.pow2(exponent)
   }
 }

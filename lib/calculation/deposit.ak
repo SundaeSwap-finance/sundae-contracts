@@ -4,7 +4,8 @@ use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
-use types/order.{Destination, Deposit, OrderDatum}
+use shared.{SingletonValue}
+use types/order.{Destination, OrderDatum}
 
 /// Calculate the result of depositing some amount of tokens into the pool
 ///
@@ -14,11 +15,11 @@ use types/order.{Destination, Deposit, OrderDatum}
 pub fn do_deposit(
   pool_state: PoolState,
   input_value: Value,
-  order: OrderDatum,
+  assets: (SingletonValue, SingletonValue),
+  destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
-  expect order.Deposit { assets } = order.details
   let (asset_a, asset_b) = assets
 
   // Policy ID and token name of the assets must match the pool, otherwise someone
@@ -107,8 +108,8 @@ pub fn do_deposit(
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount
-  expect output.address == order.destination.address
-  expect output.datum == order.destination.datum
+  expect output.address == destination.address
+  expect output.datum == destination.datum
   expect output.value == out_value
 
   // And construct the final pool state
@@ -128,8 +129,6 @@ pub fn do_deposit(
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd + issued_lp_tokens,
     ),
-    fees_per_10_thousand: pool_state.fees_per_10_thousand,
-    protocol_fees: pool_state.protocol_fees + actual_protocol_fee,
   }
 }
 
@@ -148,12 +147,11 @@ test deposit_test() {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let input_value =
     value.from_lovelace(14_500_000)
       |> value.add(rberry.1st, rberry.2nd, 10_000_000)
+  let assets = ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000))
   let order = OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -165,7 +163,7 @@ test deposit_test() {
       datum: NoDatum,
     },
     details: order.Deposit {
-      assets: ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000)),
+      assets: assets,
     },
     extension: Void,
   }
@@ -176,9 +174,8 @@ test deposit_test() {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_deposit(pool_state, input_value, order, 2_500_000, output)
+  let final_pool_state = do_deposit(pool_state, input_value, assets, order.destination, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_010_000_000
   expect final_pool_state.quantity_b.3rd == 1_010_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   True
 }

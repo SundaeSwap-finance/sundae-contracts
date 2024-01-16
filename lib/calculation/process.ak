@@ -27,7 +27,7 @@ pub fn pool_input_to_state(
   datum: PoolDatum,
   input: Output,
   valid_from: IntervalBound<PosixTime>,
-) -> PoolState {
+) -> (PoolState, Int, Int) {
   let PoolDatum {
     assets,
     protocol_fees,
@@ -81,7 +81,8 @@ pub fn pool_input_to_state(
       }
     }
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order
-  PoolState {
+  // TODO: we could potentially save quite a bit by not passing around this object, and passing around a lot of parameters instead...
+  (PoolState {
     quantity_a: (
       asset_a_policy_id,
       asset_a_name,
@@ -93,10 +94,7 @@ pub fn pool_input_to_state(
       value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     ),
     quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
-    fees_per_10_thousand: fees,
-    // Pay the transaction fee out of the protocol_fees
-    protocol_fees,
-  }
+  }, fees, protocol_fees)
 }
 
 /// If the order is restricted to a specific pool, then make sure pool_ident matches that; otherwise just return true
@@ -125,21 +123,18 @@ pub fn process_order(
   details: Order,
   // The max protocol fee that *can* be charged from the order; depending on how big the batch size is, some may be returned as a rebate, but this lets the user limit the maximum that gets charged in case the protocol fees in the settings change
   max_protocol_fee: Int,
-  // The full order datum; TODO: likely redundant as described in SSW-304
-  datum: OrderDatum,
   // The destination where the result of the order must be sent; useful for chaining transactions, as it lets you specify a datum for the output
   destination: Destination,
+  // The liquidity provider fee to charge, expressed as parts per 10,000. also called basis points
+  fees_per_10_thousand: Int,
   // The base fee, divided among all the participants in the scoop
   amortized_base_fee: Int,
   // The amount to charge for simple vs strategy orders, taken from the settings
   simple_fee: Int,
   strategy_fee: Int,
-  // The output that *should* hold the results of the users order, plus any change, at the correct Destination
-  output: Output,
-  // A list of outputs, and the list of the remaining outputss; this allows donations with no change to signal that we *shouldn't* skip a specific output
-  // TODO: we can probably avoid this, and just return a boolean instead
+  // A list of outputs, so we can destructure the next output
+  // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
-  rest_outputs: List<Output>
 ) -> (PoolState, List<Output>, Int) { // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
     order.Strategy(signer) -> {
@@ -159,20 +154,19 @@ pub fn process_order(
         value,
         details,
         max_protocol_fee,
-        datum,
         destination,
+        fees_per_10_thousand,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
         // because even though we're using the same logic, we're charging a different fee for strategies
         strategy_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
     }
     order.Swap(offer, min_received) -> {
-      // Make sure the scooper collects only the agreed upon fee
+      expect [output, ..rest_outputs] = outputs
+      // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate the result of the swap itself, according to the AMM formula, and validate it against the output
@@ -181,50 +175,54 @@ pub fn process_order(
           initial,
           value,
           destination,
+          fees_per_10_thousand,
           fee,
           offer,
           min_received,
           output,
         )
-      (next, rest_outputs, fee)
+      (next, rest_outputs)
     }
-    order.Deposit(..) -> {
+    order.Deposit(assets) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // i.e. the amortized base fee (which is the base fee shared by all orders), and the incremental fee (i.e. the fee paid by each order individually) should be no more than the max fee in the datum
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a deposit
-      let next = deposit.do_deposit(initial, value, datum, fee, output)
-      (next, rest_outputs, fee)
+      let next = deposit.do_deposit(initial, value, assets, destination, fee, output)
+      (next, rest_outputs)
     }
-    order.Withdrawal(..) -> {
+    order.Withdrawal(amount) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // (See above)
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a withdrawal
       let next =
-        withdrawal.do_withdrawal(initial, value, datum, fee, output)
-      (next, rest_outputs, fee)
+        withdrawal.do_withdrawal(initial, value, amount, destination, fee, output)
+      (next, rest_outputs)
     }
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
     // The cheaper fees the DAO voted on should make this acceptable
     // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(..) -> {
+    order.Donation(assets) -> {
+      expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // (See above)
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a donation
       let (next, used_output) =
-        donation.do_donation(initial, value, datum, fee, output)
+        donation.do_donation(initial, value, assets, destination, fee, output)
       // If a donation has no change (ex it has exactly the donation + the fee) then we don't have an output dedicated to the order
       // so we can skip over it
       // TODO: can we just return used_output here instead of passing around the lists of outputs?
       if used_output {
-        (next, rest_outputs, fee)
+        (next, rest_outputs)
       } else {
-        (next, outputs, fee)
+        (next, outputs)
       }
     }
   }
@@ -243,6 +241,8 @@ pub fn process_orders(
   initial: PoolState,
   // The list of remaining indices into the inputs, specifying which orders to process
   input_order: List<(Int, Option<SignedStrategyExecution>)>,
+  // The liquidity provider fee, expressed as parts per 10,000 (also known as 'basis points'); this allows us to save some math over storing the full ratio like in V1
+  fees_per_10_thousand: Int,
   // The protocol base fee, split across each order
   amortized_base_fee: Int,
   // The simple and strategy fees from the settings datum
@@ -261,15 +261,12 @@ pub fn process_orders(
   // A recursive aggregator for the number of "simple" and "strategy" orders we see; used for computing the fee without traversing the list independently, since we're already walking this list
   simple_count: Int,
   strategy_count: Int,
-  // The total fee computed; based on SSW-305, this is no longer needed and getting removed
-  total_fee: Int,
-) -> (PoolState, Int, Int, Int) { // Returns the final pool state, the count of each order type, and the total fee (until SSW-305 is merged) 
-
+) -> (PoolState, Int, Int) { // Returns the final pool state, and the count of each order type
   // The main "pump" of the recursive loop is the input_order, which is a set of indices into the inputs list
   // specified by the scooper for the order to process each order in.
   // Once we've reached the end of the list, we can return, but otherwise
   when input_order is {
-    [] -> (initial, simple_count, strategy_count, total_fee)
+    [] -> (initial, simple_count, strategy_count)
     [(idx, sse), ..rest] -> {
       // First, it's important to check that each order is processed only once;
       // This is quite subtle, so check InputSorting.md for a full explanation
@@ -289,9 +286,6 @@ pub fn process_orders(
       
       expect [input_to_process, ..rest_of_input_list] = next_input_list
       let Input{ output_reference, output: order } = input_to_process
-
-      // And, we expect the *outputs* to match up in the correct order; this is safe, because while the inputs are reordered by the ledger, the outputs are not.
-      expect [output, ..rest_outputs] = outputs
 
       // It's important that we fail if we ever try to process a UTXO from a wallet address
       // This is a bit unfortunate, because it means we can't support processing orders directly out of a users wallet
@@ -320,7 +314,7 @@ pub fn process_orders(
 
       // And finally, process this one individual order and compute the next state
       // Note that we get back next_orders here, which is needed if we process a donation that has no change UTXO
-      let (next_state, next_orders, fee) = process_order(
+      let (next_state, next_orders) = process_order(
         initial,
         sse,
         output_reference,
@@ -328,14 +322,12 @@ pub fn process_orders(
         order.value,
         details,
         max_protocol_fee,
-        datum, // TODO: can we get rid of this?
         destination,
+        fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
-        output,
         outputs,
-        rest_outputs,
       )
 
       // And recursively process the rest of the orders
@@ -345,6 +337,7 @@ pub fn process_orders(
         datums,
         next_state,
         rest,                  // This advances to the next element from input_order
+        fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
@@ -355,7 +348,6 @@ pub fn process_orders(
         next_uniqueness_flag,
         next_simple_count,
         next_strategy_count,
-        total_fee + fee
       )
     }
   }
@@ -376,8 +368,6 @@ test process_orders_test() {
     quantity_a: (#"", #"", 1_000_000_000),
     quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
     quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    fees_per_10_thousand: 5,
-    protocol_fees: 2_000_000,
   }
   let order_datum = OrderDatum {
     pool_ident: None,
@@ -435,13 +425,11 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies, fee) = process_orders(#"", valid_range, datums, pool_state, input_order, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  expect final_pool_state.protocol_fees == 4_500_000
   expect simple == 1
   expect strategies == 0
-  expect fee == 2_500_000
   True
 }
