@@ -19,7 +19,7 @@ use calculation/strategy
 use shared.{Ident, datum_of, pool_lp_name, is_script}
 use sundae/multisig
 use types/order.{Order, Destination, OrderDatum, SignedStrategyExecution}
-use types/pool.{PoolDatum}
+use types/pool.{PoolDatum, InputOrderItem}
 
 /// Construct the initial pool state for processing a set of orders
 pub fn pool_input_to_state(
@@ -240,7 +240,7 @@ pub fn process_orders(
   // The initial / current pool state, passed recursively as we process each order
   initial: PoolState,
   // The list of remaining indices into the inputs, specifying which orders to process
-  input_order: List<(Int, Option<SignedStrategyExecution>)>,
+  input_order: List<InputOrderItem>,
   // The liquidity provider fee, expressed as parts per 10,000 (also known as 'basis points'); this allows us to save some math over storing the full ratio like in V1
   fees_per_10_thousand: Int,
   // The protocol base fee, split across each order
@@ -267,7 +267,7 @@ pub fn process_orders(
   // Once we've reached the end of the list, we can return, but otherwise
   when input_order is {
     [] -> (initial, simple_count, strategy_count)
-    [(idx, sse), ..rest] -> {
+    [InputOrderItem{index: idx, signed_strategy_execution: sse}, ..rest] -> {
       // First, it's important to check that each order is processed only once;
       // This is quite subtle, so check InputSorting.md for a full explanation
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -421,7 +421,7 @@ test process_orders_test() {
   }
   let valid_range = interval.between(1,2)
 
-  let input_order = [(0, None)]
+  let input_order = [InputOrderItem{index: 0, signed_strategy_execution: None}]
   let inputs = [input]
   let outputs = [output]
 

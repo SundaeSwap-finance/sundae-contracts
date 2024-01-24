@@ -1,4 +1,4 @@
-use types/pool.{PoolDatum, PoolRedeemer, PoolMintRedeemer, PoolScoop, WithdrawFees, CreatePool}
+use types/pool.{PoolDatum, PoolRedeemer, PoolMintRedeemer, PoolScoop, WithdrawFees, CreatePool, InputOrderItem}
 use tests/examples/ex_shared.{print_example}
 
 fn mk_pool_datum() -> PoolDatum {
@@ -24,7 +24,7 @@ test example_pool_datum() {
 }
 
 fn mk_pool_scoop() -> PoolRedeemer {
-  PoolScoop { signatory_index: 0, scooper_index: 0, input_order: [(1, None)] }
+  PoolScoop { signatory_index: 0, scooper_index: 0, input_order: [InputOrderItem{index: 1, signed_strategy_execution: None}] }
 }
 
 test example_pool_scoop_redeemer() {

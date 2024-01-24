@@ -36,6 +36,11 @@ pub type PoolDatum {
   protocol_fees: Int,
 }
 
+pub type InputOrderItem {
+  index: Int,
+  signed_strategy_execution: Option<SignedStrategyExecution>,
+}
+
 /// A pool UTXO can be spent for two purposes:
 pub type PoolRedeemer {
   /// Execute a scoop, a batch of transactions all processed at once
@@ -52,7 +57,7 @@ pub type PoolRedeemer {
     /// This is because the cardano ledger re-orders transaction inputs when building the script context; so this could end up processing
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
-    input_order: List<(Int, Option<SignedStrategyExecution>)>,
+    input_order: List<InputOrderItem>,
   }
   /// Withdraw the earned protocol fees into the treasury
   WithdrawFees {
