@@ -65,13 +65,17 @@ function settingsDatum(poolStakeHash: string, userPkh: string): string {
       userPkh,
     ],
     authorizedStakingKeys: [
-      poolStakeHash,
+      {
+        VKeyCredential: { bytes: poolStakeHash },
+      }
     ],
     baseFee: 1000000n,
     simpleFee: 100000n,
     strategyFee: 200000n,
+    poolCreationFee: 0n,
     extensions: 0n,
   };
+  console.log("OK");
   return Data.to(datum, types.SettingsDatum);
 }
 
@@ -646,18 +650,21 @@ async function testMintPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, 
   return minted;
 }
 
-function computeIndexingSet(scripts: Scripts, changeUtxo: UTxO, targetPool: UTxO, orderUtxos: UTxO[]): Map<bigint, null> {
+function computeIndexingSet(scripts: Scripts, changeUtxo: UTxO, targetPool: UTxO, orderUtxos: UTxO[]): [bigint, null][] {
   let toSpend = [];
   toSpend.push(changeUtxo);
   toSpend.push(targetPool);
   toSpend.push(...orderUtxos);
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
   let i = 0n;
-  let indexingSet = new Map();
+  let indexingSet = [];
   for (let i = 0n; i < toSpend.length; i++) {
     let e = toSpend[Number(i)];
     if (e.address == scripts.orderAddress) {
-      indexingSet.set(i, null);
+      indexingSet.push({
+        index: i,
+        signedStrategyExecution: null
+      });
     }
   }
   return indexingSet;
@@ -787,7 +794,6 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   const scoopPoolRedeemer: types.PoolRedeemer = {
     signatoryIndex: 0n,
     scooperIndex: 0n,
-    amortizedBaseFee: amortizedBaseFee,
     inputOrder: indexingSet,
   };
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);

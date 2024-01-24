@@ -46,7 +46,6 @@ export const OrderSchema = Data.Enum([
   Data.Object({ Withdrawal: WithdrawalSchema }),
   Data.Object({ Donation: DonationSchema }),
 ]);
-
 export const CredentialSchema = Data.Enum([
   Data.Object({ VKeyCredential: Data.Object({ bytes: Data.Bytes(), }), }),
   Data.Object({ SCredential: Data.Object({ bytes: Data.Bytes(), }), }),
@@ -66,10 +65,11 @@ export const SettingsDatumSchema = Data.Object({
   treasuryAddress: AddressSchema,
   treasuryAllowance: Data.Array(Data.Integer()),
   authorizedScoopers: Data.Nullable(Data.Array(Data.Bytes())),
-  authorizedStakingKeys: Data.Array(Data.Bytes()),
+  authorizedStakingKeys: Data.Array(CredentialSchema),
   baseFee: Data.Integer(),
   simpleFee: Data.Integer(),
   strategyFee: Data.Integer(),
+  poolCreationFee: Data.Integer(),
   extensions: Data.Integer(),
 });
 export type SettingsDatum = Data.Static<typeof SettingsDatumSchema>;
@@ -186,13 +186,17 @@ export const SignedStrategyExecutionSchema = Data.Object({
 export type SignedStrategyExecution = Data.Static<typeof SignedStrategyExecutionSchema>;
 export const SignedStrategyExecution = SignedStrategyExecutionSchema as unknown as SignedStrategyExecution;
 
+export const InputOrderItemSchema = Data.Object({
+  index: Data.Integer(),
+  signedStrategyExecution: Data.Nullable(SignedStrategyExecutionSchema),
+});
+
 export const PoolSpendRedeemerSchema = Data.Enum([
   Data.Object({
     PoolScoop: Data.Object({
       signatoryIndex: Data.Integer(),
       scooperIndex: Data.Integer(),
-      amortizedBaseFee: Data.Integer(),
-      inputOrder: Data.Map(Data.Integer(), Data.Nullable(SignedStrategyExecutionSchema)),
+      inputOrder: Data.Array(InputOrderItemSchema),
     }),
   }),
   Data.Object({
@@ -214,12 +218,11 @@ export const examplePoolRedeemer = {
   Spend: {
       signatoryIndex: 0n,
       scooperIndex: 0n,
-      amortizedBaseFee: 10000n,
       inputOrder: [
-        [
-          1n,
-          null,
-        ],
+        {
+          index: 1n,
+          signedStrategyExecution: null,
+        }
       ],
   },
 };
