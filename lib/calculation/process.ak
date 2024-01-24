@@ -240,7 +240,7 @@ pub fn process_orders(
   // The initial / current pool state, passed recursively as we process each order
   initial: PoolState,
   // The list of remaining indices into the inputs, specifying which orders to process
-  input_order: List<(Int, Option<SignedStrategyExecution>, Void)>,
+  input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   // The liquidity provider fee, expressed as parts per 10,000 (also known as 'basis points'); this allows us to save some math over storing the full ratio like in V1
   fees_per_10_thousand: Int,
   // The protocol base fee, split across each order
@@ -421,7 +421,7 @@ test process_orders_test() {
   }
   let valid_range = interval.between(1,2)
 
-  let input_order = [(0, None, Void)]
+  let input_order = [(0, None, 0)]
   let inputs = [input]
   let outputs = [output]
 

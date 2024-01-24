@@ -886,8 +886,8 @@ fn scoop(options: ScoopTestOptions) {
     0,
     0,
     [
-      (1, None, Void),
-      (2, None, Void),
+      (1, None, 0),
+      (2, None, 0),
     ]
   )
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
@@ -1053,8 +1053,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     0,
     0,
     [
-      (1, None, Void),
-      (2, None, Void),
+      (1, None, 0),
+      (2, None, 0),
     ]
   )
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)

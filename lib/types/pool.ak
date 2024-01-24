@@ -52,7 +52,7 @@ pub type PoolRedeemer {
     /// This is because the cardano ledger re-orders transaction inputs when building the script context; so this could end up processing
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
-    input_order: List<(Int, Option<SignedStrategyExecution>, Void)>,
+    input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   }
   /// Withdraw the earned protocol fees into the treasury
   WithdrawFees {
