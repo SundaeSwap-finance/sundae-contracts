@@ -75,7 +75,6 @@ function settingsDatum(poolStakeHash: string, userPkh: string): string {
     poolCreationFee: 0n,
     extensions: 0n,
   };
-  console.log("OK");
   return Data.to(datum, types.SettingsDatum);
 }
 
