@@ -186,10 +186,11 @@ export const SignedStrategyExecutionSchema = Data.Object({
 export type SignedStrategyExecution = Data.Static<typeof SignedStrategyExecutionSchema>;
 export const SignedStrategyExecution = SignedStrategyExecutionSchema as unknown as SignedStrategyExecution;
 
-export const InputOrderItemSchema = Data.Object({
-  index: Data.Integer(),
-  signedStrategyExecution: Data.Nullable(SignedStrategyExecutionSchema),
-});
+export const InputOrderItemSchema = Data.Tuple([
+  Data.Integer(),
+  Data.Nullable(SignedStrategyExecutionSchema),
+  Data.Integer(),
+]);
 
 export const PoolSpendRedeemerSchema = Data.Enum([
   Data.Object({
@@ -219,10 +220,7 @@ export const examplePoolRedeemer = {
       signatoryIndex: 0n,
       scooperIndex: 0n,
       inputOrder: [
-        {
-          index: 1n,
-          signedStrategyExecution: null,
-        }
+        [ 1n, null, 0n ],
       ],
   },
 };
