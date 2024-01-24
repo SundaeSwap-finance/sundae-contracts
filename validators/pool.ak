@@ -22,7 +22,7 @@ use tests/examples/ex_settings.{mk_valid_settings_input}
 use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
 use types/order.{Destination, OrderDatum, Swap, Deposit}
 use types/pool.{
-  CreatePool, InputOrderItem, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
+  CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 
@@ -886,8 +886,8 @@ fn scoop(options: ScoopTestOptions) {
     0,
     0,
     [
-      InputOrderItem{index: 1, signed_strategy_execution: None},
-      InputOrderItem{index: 2, signed_strategy_execution: None}
+      (1, None, Void),
+      (2, None, Void),
     ]
   )
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
@@ -1053,8 +1053,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     0,
     0,
     [
-      InputOrderItem{index: 1, signed_strategy_execution: None},
-      InputOrderItem{index: 2, signed_strategy_execution: None}
+      (1, None, Void),
+      (2, None, Void),
     ]
   )
   let result = spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
