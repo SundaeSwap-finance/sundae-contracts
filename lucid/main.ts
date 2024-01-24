@@ -789,7 +789,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   const indexingSet = computeIndexingSet(scripts, changeUtxo, targetPool, orderUtxos);
   console.log("indexingSet: ");
   console.log(indexingSet);
-  const amortizedBaseFee = protocolBaseFee / ordersCount;
+  const amortizedBaseFee = (protocolBaseFee + ordersCount - 1n) / ordersCount;
   const scoopPoolRedeemer: types.PoolRedeemer = {
     signatoryIndex: 0n,
     scooperIndex: 0n,
