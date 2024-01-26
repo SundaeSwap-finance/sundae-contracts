@@ -15,7 +15,7 @@ validator(protocol_boot_utxo: OutputReference) {
       |> transaction.find_input(own_utxo_ref)
     let own_address = own_input.output.address
 
-    // Then find our continuout output;
+    // Then find our continuing output;
     // We can assume the first output is the settings output
     // This is safe because the ledger doesn't reorder the outputs,
     // and if someone constructs it out of order, it'll just fail because the address / value will change
