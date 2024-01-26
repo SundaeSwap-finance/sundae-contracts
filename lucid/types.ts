@@ -46,7 +46,6 @@ export const OrderSchema = Data.Enum([
   Data.Object({ Withdrawal: WithdrawalSchema }),
   Data.Object({ Donation: DonationSchema }),
 ]);
-
 export const CredentialSchema = Data.Enum([
   Data.Object({ VKeyCredential: Data.Object({ bytes: Data.Bytes(), }), }),
   Data.Object({ SCredential: Data.Object({ bytes: Data.Bytes(), }), }),
@@ -187,12 +186,18 @@ export const SignedStrategyExecutionSchema = Data.Object({
 export type SignedStrategyExecution = Data.Static<typeof SignedStrategyExecutionSchema>;
 export const SignedStrategyExecution = SignedStrategyExecutionSchema as unknown as SignedStrategyExecution;
 
+export const InputOrderItemSchema = Data.Tuple([
+  Data.Integer(),
+  Data.Nullable(SignedStrategyExecutionSchema),
+  Data.Integer(),
+]);
+
 export const PoolSpendRedeemerSchema = Data.Enum([
   Data.Object({
     PoolScoop: Data.Object({
       signatoryIndex: Data.Integer(),
       scooperIndex: Data.Integer(),
-      inputOrder: Data.Map(Data.Integer(), Data.Nullable(SignedStrategyExecutionSchema)),
+      inputOrder: Data.Array(InputOrderItemSchema),
     }),
   }),
   Data.Object({
@@ -215,10 +220,7 @@ export const examplePoolRedeemer = {
       signatoryIndex: 0n,
       scooperIndex: 0n,
       inputOrder: [
-        [
-          1n,
-          null,
-        ],
+        [ 1n, null, 0n ],
       ],
   },
 };

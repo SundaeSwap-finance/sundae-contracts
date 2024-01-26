@@ -649,18 +649,18 @@ async function testMintPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, 
   return minted;
 }
 
-function computeIndexingSet(scripts: Scripts, changeUtxo: UTxO, targetPool: UTxO, orderUtxos: UTxO[]): Map<bigint, null> {
+function computeIndexingSet(scripts: Scripts, changeUtxo: UTxO, targetPool: UTxO, orderUtxos: UTxO[]): [bigint, null, bigint][] {
   let toSpend = [];
   toSpend.push(changeUtxo);
   toSpend.push(targetPool);
   toSpend.push(...orderUtxos);
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
   let i = 0n;
-  let indexingSet = new Map();
+  let indexingSet = [];
   for (let i = 0n; i < toSpend.length; i++) {
     let e = toSpend[Number(i)];
     if (e.address == scripts.orderAddress) {
-      indexingSet.set(i, null);
+      indexingSet.push([i, null, 0n]);
     }
   }
   return indexingSet;
