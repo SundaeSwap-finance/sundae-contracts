@@ -57,7 +57,7 @@ pub fn do_deposit(
   let user_gives_b =
     math.min(
       asset_b.3rd,
-      value.quantity_of(input_value, asset_a.1st, asset_a.2nd),
+      value.quantity_of(input_value, asset_b.1st, asset_b.2nd),
     )
 
   // The ratio of a to b might have shifted since the user created their order amount
