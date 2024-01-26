@@ -553,11 +553,11 @@ fn has_expected_pool_value(
 
 // Compare two policy IDs to determine a sort order; used in particular to enforce an ordering on the assets in the pool
 fn compare_asset_class(a: AssetClass, b: AssetClass) {
-  let (aPolicy, aToken) = a
-  let (bPolicy, bToken) = b
-  when bytearray.compare(aPolicy, bPolicy) is {
+  let (a_policy, a_token) = a
+  let (b_policy, b_token) = b
+  when bytearray.compare(a_policy, b_policy) is {
     Less -> Less
-    Equal -> bytearray.compare(aToken, bToken)
+    Equal -> bytearray.compare(a_token, b_token)
     Greater -> Greater
   }
 }
