@@ -1,8 +1,9 @@
 use aiken/list
-use aiken/transaction.{InlineDatum, Spend, Mint, ScriptContext, OutputReference}
+use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference}
 use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
+use shared.{spent_output}
 
 /// The settings validator lets the settings and treasury admins update global settings for the protocol
 ///
@@ -10,10 +11,8 @@ use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, Treasu
 validator(protocol_boot_utxo: OutputReference) {
   fn spend(d: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
     // Find our own input so we know the datum / our own address
-    expect Spend(own_utxo_ref) = ctx.purpose
-    expect Some(own_input) = ctx.transaction.inputs
-      |> transaction.find_input(own_utxo_ref)
-    let own_address = own_input.output.address
+    let own_input = spent_output(ctx)
+    let own_address = own_input.address
 
     // Then find our continuing output;
     // We can assume the first output is the settings output
@@ -31,7 +30,7 @@ validator(protocol_boot_utxo: OutputReference) {
     // TODO: should we allow the ADA to change, just in case the minUTXO changes? that would allow us to add or reclaim
     // ADA if minUTXO changed
     let value_not_changed =
-      own_output.value == own_input.output.value
+      own_output.value == own_input.value
 
     // Make sure we don't mint anything, otherwise someone might mint another settings token
     let no_mint =
