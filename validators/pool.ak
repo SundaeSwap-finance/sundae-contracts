@@ -394,16 +394,11 @@ validator(settings_policy_id: PolicyId) {
         // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
         expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt)
 
-        // Use the asset names we computed above to compute the whole Asset IDs of the tokens we expect
-        let new_pool_ref = (own_policy_id, new_pool_ref_token)
-        let new_pool_nft = (own_policy_id, new_pool_nft_token)
-        let new_pool_lq = (own_policy_id, new_pool_lp_token)
-
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
-              shared.to_value((new_pool_ref.1st, new_pool_ref.2nd, 1))
-            |> value.merge(shared.to_value((new_pool_nft.1st, new_pool_nft.2nd, 1)))
-            |> value.merge(shared.to_value((new_pool_lq.1st, new_pool_lq.2nd, initial_lq)))
+              shared.to_value((own_policy_id, new_pool_ref_token, 1))
+            |> value.merge(shared.to_value((own_policy_id, new_pool_nft_token, 1)))
+            |> value.merge(shared.to_value((own_policy_id, new_pool_lp_token, initial_lq)))
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
