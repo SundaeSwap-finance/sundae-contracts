@@ -66,10 +66,11 @@ export const SettingsDatumSchema = Data.Object({
   treasuryAddress: AddressSchema,
   treasuryAllowance: Data.Array(Data.Integer()),
   authorizedScoopers: Data.Nullable(Data.Array(Data.Bytes())),
-  authorizedStakingKeys: Data.Array(Data.Bytes()),
+  authorizedStakingKeys: Data.Array(CredentialSchema),
   baseFee: Data.Integer(),
   simpleFee: Data.Integer(),
   strategyFee: Data.Integer(),
+  poolCreationFee: Data.Integer(),
   extensions: Data.Integer(),
 });
 export type SettingsDatum = Data.Static<typeof SettingsDatumSchema>;
@@ -191,7 +192,6 @@ export const PoolSpendRedeemerSchema = Data.Enum([
     PoolScoop: Data.Object({
       signatoryIndex: Data.Integer(),
       scooperIndex: Data.Integer(),
-      amortizedBaseFee: Data.Integer(),
       inputOrder: Data.Map(Data.Integer(), Data.Nullable(SignedStrategyExecutionSchema)),
     }),
   }),
@@ -214,7 +214,6 @@ export const examplePoolRedeemer = {
   Spend: {
       signatoryIndex: 0n,
       scooperIndex: 0n,
-      amortizedBaseFee: 10000n,
       inputOrder: [
         [
           1n,

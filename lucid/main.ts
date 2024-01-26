@@ -65,11 +65,14 @@ function settingsDatum(poolStakeHash: string, userPkh: string): string {
       userPkh,
     ],
     authorizedStakingKeys: [
-      poolStakeHash,
+      {
+        VKeyCredential: { bytes: poolStakeHash },
+      }
     ],
     baseFee: 1000000n,
     simpleFee: 100000n,
     strategyFee: 200000n,
+    poolCreationFee: 0n,
     extensions: 0n,
   };
   return Data.to(datum, types.SettingsDatum);
@@ -783,11 +786,10 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   const indexingSet = computeIndexingSet(scripts, changeUtxo, targetPool, orderUtxos);
   console.log("indexingSet: ");
   console.log(indexingSet);
-  const amortizedBaseFee = protocolBaseFee / ordersCount;
+  const amortizedBaseFee = (protocolBaseFee + ordersCount - 1n) / ordersCount;
   const scoopPoolRedeemer: types.PoolRedeemer = {
     signatoryIndex: 0n,
     scooperIndex: 0n,
-    amortizedBaseFee: amortizedBaseFee,
     inputOrder: indexingSet,
   };
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);
