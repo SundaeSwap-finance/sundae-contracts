@@ -1066,43 +1066,80 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   result
 }
 
+// this is for test
+// FIXME(Elaine) figure out how to organize test globals etc
+// this is slightly annoying because aiken is picky about variable scope with tests
+const hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
+fn pool_test_tx_input() -> Input {
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let sberry_policy_id =
+    #"aaaaa3a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let sberry_token_name = #"aaa245525259"
+
+  let user_address =
+    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
+  
+  let funds_input_val =
+      value.from_lovelace(10_000_000_000)
+      |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
+      |> value.add(sberry_policy_id, sberry_token_name, 1_000_000_000)
+    let funds_input =
+        new_tx_input(
+          mk_tx_hash(0).hash,
+          user_address,
+          0,
+          NoDatum,
+        ) |> with_asset_of_tx_input(funds_input_val)
+    funds_input
+} 
+      
 test mint_test_two_nfts() {
-  False
+  let pool_id = pool_ident_from_input(pool_test_tx_input())
+  let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
+  // if we add on another pool NFT token to the pool output, it should fail
+  !mint_test_modify(
+      value.add(_, hash_of_pool_script, new_pool_nft_token, 1),
+      identity,
+      identity,
+      identity
+    )
+}
+
+fn pool_ident_from_input (tx_input: Input) {
+  tx_input.output_reference.transaction_id.hash
+      |> bytearray.concat(#"23") // '#' character
+      |>
+      bytearray.concat(int_to_ident(tx_input.output_reference.output_index))
+      |> hash.blake2b_256
+      |> bytearray.drop(4)
 }
 
 fn mint_test_modify(
   modify_pool_output: fn(Value) -> Value,
   modify_lp_output: fn(Value) -> Value,
   modify_ref_output: fn(Value) -> Value,
-  modify_datum: fn(Datum) -> Datum) {
+  modify_datum: fn(Datum) -> Datum) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(hash_of_pool_script)
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let rberry_token_name = #"524245525259"
   let user_address =
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let settings_input = mk_valid_settings_input([], 1)
-  let funds_input_val =
-    value.from_lovelace(10_000_000_000)
-    |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
-  let funds_input =
-      new_tx_input(
-        mk_tx_hash(0).hash,
-        user_address,
-        0,
-        NoDatum,
-      ) |> with_asset_of_tx_input(funds_input_val)
 
-  let pool_id =
-    funds_input.output_reference.transaction_id.hash
-      |> bytearray.concat(#"23") // '#' character
-      |>
-      bytearray.concat(int_to_ident(funds_input.output_reference.output_index))
-      |> hash.blake2b_256
-      |> bytearray.drop(4)
+  let funds_input = pool_test_tx_input()
+  let pool_id = pool_ident_from_input(funds_input)
+  let funds_input = pool_test_tx_input()
+    // funds_input.output_reference.transaction_id.hash
+    //   |> bytearray.concat(#"23") // '#' character
+    //   |>
+    //   bytearray.concat(int_to_ident(funds_input.output_reference.output_index))
+    //   |> hash.blake2b_256
+    //   |> bytearray.drop(4)
   let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(pool_id)
-  let inline_pool_datum = InlineDatum(
+  let inline_pool_datum = modify_datum(InlineDatum(
     PoolDatum {
       identifier: pool_id,
       assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
@@ -1112,13 +1149,13 @@ fn mint_test_modify(
       fee_finalized: 0,
       protocol_fees: 2_000_000,
     }
-  )
+  ))
   let pool_output_val =
     value.from_asset(rberry_policy_id, rberry_token_name, 1_000_000_000)
       |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
       |> value.merge(value.from_lovelace(1_002_000_000))
-      |> modify_lp_output
-  let pool_output = new_tx_output(user_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
+      |> modify_pool_output
+  let pool_output = new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
     |> add_asset_to_tx_output(pool_output_val)
 
   let lp_output_val =
@@ -1132,6 +1169,7 @@ fn mint_test_modify(
   let ref_output_val = 
     value.from_asset(hash_of_pool_script, new_pool_ref_token, 1)
       |> value.merge(value.from_lovelace(2_000_000))
+      |> modify_ref_output
   let ref_output =
     new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
@@ -1158,314 +1196,12 @@ fn mint_test_modify(
     |> add_tx_output(lp_output)
     |> add_tx_output(pool_output)
 
-  // trace "Old CTX: "
-  // trace cbor.diagnostic(ctxOld)
-  // trace "New CTX: "
-  // trace cbor.diagnostic(ctx)
-
-  // trace "Purpose is identical: "
-  // trace cbor.diagnostic(ctxOld.purpose == ctx.purpose)
-  // trace "Transaction is identical: "
-  // trace cbor.diagnostic(ctxOld.transaction == ctx.transaction)
-
-  // trace "Transaction inputs are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.inputs == ctx.transaction.inputs)
-  // trace "Transaction reference inputs are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.reference_inputs == ctx.transaction.reference_inputs)
-  // trace "Transaction outputs are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.outputs == ctx.transaction.outputs)
-  // trace "Transaction fee is identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.fee == ctx.transaction.fee)
-  // trace "Transaction mint is identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.mint == ctx.transaction.mint)
-  // trace "Transaction certificates are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.certificates == ctx.transaction.certificates)
-  // trace "Transaction withdrawals are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.withdrawals == ctx.transaction.withdrawals)
-  // trace "Transaction validity range is identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.validity_range == ctx.transaction.validity_range)
-  // trace "Transaction extra signatories are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.extra_signatories == ctx.transaction.extra_signatories)
-  // trace "Transaction redeemers are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.redeemers == ctx.transaction.redeemers)
-  // trace "Transaction datums are identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.datums == ctx.transaction.datums)
-  // trace "Transaction id is identical: "
-  // trace cbor.diagnostic(ctxOld.transaction.id == ctx.transaction.id)
-
-  // trace "Old ctx outputs: "
-  // trace cbor.diagnostic(ctxOld.transaction.outputs)
-  // trace "New ctx outputs: "
-  // trace cbor.diagnostic(ctx.transaction.outputs)
-
-  // // trace "Old ctx output 0: "
-  // // trace cbor.diagnostic(ctxOld.transaction.outputs[0])
-  // // list.indexed_map does this
-  // expect _logItOld = when ctxOld.transaction.outputs is {
-  //   [output1, output2, output3] -> {
-  //     trace "Old ctx output 0 address: "
-  //     trace cbor.diagnostic(output1.address)
-  //     trace "Old ctx output 0 value: "
-  //     trace cbor.diagnostic(output1.value)
-  //     trace "Old ctx output 0 datum: "
-  //     trace cbor.diagnostic(output1.datum)
-  //     trace "Old ctx output 0 reference script: "
-  //     trace cbor.diagnostic(output1.reference_script)
-  //     Void
-  //   }
-  //   _ -> {
-  //     trace "ctxOld doesnt have exactly 3 outputs"
-  //     Void
-  //   }
-  // }
-  // expect _logIt = when ctx.transaction.outputs is {
-  //   [output1, output2, output3] -> {
-  //     trace "New ctx output 0 address: "
-  //     trace cbor.diagnostic(output1.address)
-  //     trace "New ctx output 0 value: "
-  //     trace cbor.diagnostic(output1.value)
-  //     trace "New ctx output 0 datum: "
-  //     trace cbor.diagnostic(output1.datum)
-  //     trace "New ctx output 0 reference script: "
-  //     trace cbor.diagnostic(output1.reference_script)
-
-  //     trace "New ctx output 1 address: "
-  //     trace cbor.diagnostic(output2.address)
-  //     trace "New ctx output 1 value: "
-  //     trace cbor.diagnostic(output2.value)
-  //     trace "New ctx output 1 datum: "
-  //     trace cbor.diagnostic(output2.datum)
-  //     trace "New ctx output 1 reference script: "
-  //     trace cbor.diagnostic(output2.reference_script)
-
-  //     trace "New ctx output 2 address: "
-  //     trace cbor.diagnostic(output3.address)
-  //     trace "New ctx output 2 value: "
-  //     trace cbor.diagnostic(output3.value)
-  //     trace "New ctx output 2 datum: "
-  //     trace cbor.diagnostic(output3.datum)
-  //     trace "New ctx output 2 reference script: "
-  //     trace cbor.diagnostic(output3.reference_script)
-
-
-  //     Void
-  //   }
-  //   _ -> {
-  //     trace "ctx doesnt have exactly 3 outputs"
-  //     Void
-  //   }
-  // }
-
-
   let result = mint(settings_policy_id, poolMintRedeemer, ctx)
   result
 }
 
 test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
-  // let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
-  // let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
-  // let pool_address = script_address(hash_of_pool_script)
-  // let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
-  // let rberry_token_name = #"524245525259"
-  // let user_address =
-  //   wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  // let settings_input = mk_valid_settings_input([], 1)
-  // let funds_input = Input {
-  //   output_reference: OutputReference {
-  //     transaction_id: mk_tx_hash(0),
-  //     output_index: 0
-  //   },
-  //   output: Output {
-  //     address: user_address,
-  //     value: value.from_lovelace(10_000_000_000)
-  //       |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000),
-  //     datum: NoDatum,
-  //     reference_script: None,
-  //   },
-  // }
-  // let pool_id =
-  //   funds_input.output_reference.transaction_id.hash
-  //     |> bytearray.concat(#"23") // '#' character
-  //     |>
-  //     bytearray.concat(int_to_ident(funds_input.output_reference.output_index))
-  //     |> hash.blake2b_256
-  //     |> bytearray.drop(4)
-  // let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(pool_id)
-  // let pool_output = Output {
-  //   address: pool_address,
-  //   value: value.from_lovelace(1_002_000_000)
-  //     |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
-  //     |> value.add(hash_of_pool_script, new_pool_nft_token, 1),
-  //   datum: InlineDatum(PoolDatum {
-  //     identifier: pool_id,
-  //     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
-  //     circulating_lp: 1_000_000_000,
-  //     fees_per_10_thousand: (5, 5),
-  //     market_open: 0,
-  //     fee_finalized: 0,
-  //     protocol_fees: 2_000_000,
-  //   }),
-  //   reference_script: None,
-  // }
-  // let lp_output = Output {
-  //   address: user_address,
-  //   value: value.from_lovelace(2_000_000)
-  //     |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 1_000_000_000),
-  //   datum: NoDatum,
-  //   reference_script: None,
-  // }
-  // let ref_output = Output {
-  //   address: user_address,
-  //   value: value.from_lovelace(2_000_000)
-  //     |> value.add(hash_of_pool_script, new_pool_ref_token, 1),
-  //   datum: NoDatum,
-  //   reference_script: None,
-  // }
-  // let poolMintRedeemer = CreatePool {
-  //   assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
-  //   pool_output: 0,
-  //   metadata_output: 2,
-  // }
-  // // let ctxOld = ScriptContext {
-  // //   transaction: Transaction {
-  // //     inputs: [funds_input],
-  // //     reference_inputs: [settings_input],
-  // //     outputs: [pool_output, lp_output, ref_output],
-  // //     fee: value.from_lovelace(1_000_000),
-  // //     mint: value.to_minted_value(
-  // //       value.from_lovelace(0)
-  // //         |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
-  // //         |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-  // //         |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
-  // //     ),
-  // //     certificates: [],
-  // //     withdrawals: dict.new(),
-  // //     validity_range: interval.between(1, 2),
-  // //     extra_signatories: [],
-  // //     redeemers: dict.new(),
-  // //     datums: dict.new(),
-  // //     id: mk_tx_hash(1),
-  // //   },
-  // //   purpose: Mint(hash_of_pool_script),
-  // // }
-  // let ctx = interval.between(1,2)
-  //   |> build_txn_context()
-  //   |> mint_assets(hash_of_pool_script, value.to_minted_value(
-  //       value.from_lovelace(0)
-  //         |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
-  //         |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-  //         |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
-  //     ))
-  //   |> add_tx_input(funds_input)
-  //   |> add_tx_ref_input(settings_input)
-
-  //   // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
-  //   |> add_tx_output(ref_output)
-  //   |> add_tx_output(lp_output)
-  //   |> add_tx_output(pool_output)
-
-  // // trace "Old CTX: "
-  // // trace cbor.diagnostic(ctxOld)
-  // // trace "New CTX: "
-  // // trace cbor.diagnostic(ctx)
-
-  // // trace "Purpose is identical: "
-  // // trace cbor.diagnostic(ctxOld.purpose == ctx.purpose)
-  // // trace "Transaction is identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction == ctx.transaction)
-
-  // // trace "Transaction inputs are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.inputs == ctx.transaction.inputs)
-  // // trace "Transaction reference inputs are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.reference_inputs == ctx.transaction.reference_inputs)
-  // // trace "Transaction outputs are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.outputs == ctx.transaction.outputs)
-  // // trace "Transaction fee is identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.fee == ctx.transaction.fee)
-  // // trace "Transaction mint is identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.mint == ctx.transaction.mint)
-  // // trace "Transaction certificates are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.certificates == ctx.transaction.certificates)
-  // // trace "Transaction withdrawals are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.withdrawals == ctx.transaction.withdrawals)
-  // // trace "Transaction validity range is identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.validity_range == ctx.transaction.validity_range)
-  // // trace "Transaction extra signatories are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.extra_signatories == ctx.transaction.extra_signatories)
-  // // trace "Transaction redeemers are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.redeemers == ctx.transaction.redeemers)
-  // // trace "Transaction datums are identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.datums == ctx.transaction.datums)
-  // // trace "Transaction id is identical: "
-  // // trace cbor.diagnostic(ctxOld.transaction.id == ctx.transaction.id)
-
-  // // trace "Old ctx outputs: "
-  // // trace cbor.diagnostic(ctxOld.transaction.outputs)
-  // // trace "New ctx outputs: "
-  // // trace cbor.diagnostic(ctx.transaction.outputs)
-
-  // // // trace "Old ctx output 0: "
-  // // // trace cbor.diagnostic(ctxOld.transaction.outputs[0])
-  // // // list.indexed_map does this
-  // // expect _logItOld = when ctxOld.transaction.outputs is {
-  // //   [output1, output2, output3] -> {
-  // //     trace "Old ctx output 0 address: "
-  // //     trace cbor.diagnostic(output1.address)
-  // //     trace "Old ctx output 0 value: "
-  // //     trace cbor.diagnostic(output1.value)
-  // //     trace "Old ctx output 0 datum: "
-  // //     trace cbor.diagnostic(output1.datum)
-  // //     trace "Old ctx output 0 reference script: "
-  // //     trace cbor.diagnostic(output1.reference_script)
-  // //     Void
-  // //   }
-  // //   _ -> {
-  // //     trace "ctxOld doesnt have exactly 3 outputs"
-  // //     Void
-  // //   }
-  // // }
-  // // expect _logIt = when ctx.transaction.outputs is {
-  // //   [output1, output2, output3] -> {
-  // //     trace "New ctx output 0 address: "
-  // //     trace cbor.diagnostic(output1.address)
-  // //     trace "New ctx output 0 value: "
-  // //     trace cbor.diagnostic(output1.value)
-  // //     trace "New ctx output 0 datum: "
-  // //     trace cbor.diagnostic(output1.datum)
-  // //     trace "New ctx output 0 reference script: "
-  // //     trace cbor.diagnostic(output1.reference_script)
-
-  // //     trace "New ctx output 1 address: "
-  // //     trace cbor.diagnostic(output2.address)
-  // //     trace "New ctx output 1 value: "
-  // //     trace cbor.diagnostic(output2.value)
-  // //     trace "New ctx output 1 datum: "
-  // //     trace cbor.diagnostic(output2.datum)
-  // //     trace "New ctx output 1 reference script: "
-  // //     trace cbor.diagnostic(output2.reference_script)
-
-  // //     trace "New ctx output 2 address: "
-  // //     trace cbor.diagnostic(output3.address)
-  // //     trace "New ctx output 2 value: "
-  // //     trace cbor.diagnostic(output3.value)
-  // //     trace "New ctx output 2 datum: "
-  // //     trace cbor.diagnostic(output3.datum)
-  // //     trace "New ctx output 2 reference script: "
-  // //     trace cbor.diagnostic(output3.reference_script)
-
-
-  // //     Void
-  // //   }
-  // //   _ -> {
-  // //     trace "ctx doesnt have exactly 3 outputs"
-  // //     Void
-  // //   }
-  // // }
-
-
-  // let result = mint(settings_policy_id, poolMintRedeemer, ctx)
-  // result
 }
 
 // BUG SSW-202: pool_output.address unchecked 
@@ -1562,7 +1298,7 @@ test mint_test_non_ada() {
         value.from_lovelace(0)
           |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
           |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-          |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
+          // |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
       ))
     |> add_tx_input(funds_input)
     |> add_tx_input(settings_input)
