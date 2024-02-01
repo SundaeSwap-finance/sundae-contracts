@@ -5,7 +5,7 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/interval.{IntervalBound, NegativeInfinity, Finite}
 use aiken/transaction.{InlineDatum, NoDatum, Input, Output, OutputReference, TransactionId, ValidityRange}
-use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
+use aiken/transaction/credential.{Address, ScriptCredential, StakeCredential, VerificationKeyCredential}
 use aiken/transaction/value.{Value, PolicyId}
 use aiken/time.{PosixTime}
 use calculation/deposit
@@ -117,6 +117,8 @@ pub fn process_order(
   output_reference: OutputReference,
   // The validity range of the transaction, used to ensure the signed execution is within the correct time window
   tx_valid_range: ValidityRange,
+  // The transaction withdrawals, so we can check strategy executions
+  withdrawals: Dict<StakeCredential, Int>,
   // The value attached to the input, so we can ensure that any surplus tokens are paid out to the destination along with the results of the order; this lets transactions chain
   value: Value,
   // The details of the order to execute, such as whether it's a swap, the limit, etc.
@@ -143,6 +145,7 @@ pub fn process_order(
       let details = strategy.get_strategy(
         output_reference,
         tx_valid_range,
+        withdrawals,
         signer,
         execution,
       )
@@ -151,6 +154,7 @@ pub fn process_order(
         None, // No need to pass a signed execution through again; it doesn't make sense to have multiple nested strategies
         output_reference,
         tx_valid_range,
+        withdrawals,
         value,
         details,
         max_protocol_fee,
@@ -235,6 +239,8 @@ pub fn process_orders(
   this_pool_ident: Ident,
   // The transaction valid range, if we end up processing a strategy
   tx_valid_range: ValidityRange,
+  // THe withdrawals attached to the transaction, for validating strategies
+  withdrawals: Dict<StakeCredential, Int>,
   // The datums in the witness set, in case we need to lookup a non-inline datum
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   // The initial / current pool state, passed recursively as we process each order
@@ -319,6 +325,7 @@ pub fn process_orders(
         sse,
         output_reference,
         tx_valid_range,
+        withdrawals,
         order.value,
         details,
         max_protocol_fee,
@@ -334,6 +341,7 @@ pub fn process_orders(
       process_orders(
         this_pool_ident,
         tx_valid_range,
+        withdrawals,
         datums,
         next_state,
         rest,                  // This advances to the next element from input_order
@@ -425,7 +433,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
