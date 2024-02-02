@@ -1186,8 +1186,9 @@ test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
 }
 
-
-
+// BUG SSW-201
+// pool with pair without ADA will have an additional token
+// so we should test for exotic pairs without ada
 test mint_test_non_ada() {
   let settings_policy_id =
     #"00000000000000000000000000000000000000000000000000000000"
@@ -1271,6 +1272,7 @@ test mint_test_non_ada() {
   let result = mint(settings_policy_id, poolMintRedeemer, ctx)
   !result
 }
+
 // BUG SSW-001: pool_output.address unchecked
 // for testing, we can run the whole of has_expected_pool_value
 test mint_test_wrong_address () {
