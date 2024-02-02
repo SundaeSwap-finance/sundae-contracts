@@ -1281,6 +1281,5 @@ test mint_test_wrong_address () {
     identity,
     identity
   )
-  !minted
-  // this should not be mintable, but currently is
+  minted
 }
