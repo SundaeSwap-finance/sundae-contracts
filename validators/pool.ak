@@ -11,7 +11,7 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, Inline, ScriptCredential, VerificationKeyCredential,
+  Address, Inline, ScriptCredential, VerificationKeyCredential, from_verification_key,
 }
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
@@ -420,8 +420,9 @@ validator(settings_policy_id: PolicyId) {
               new_pool_nft_token,
             ) == 1,
           }
-        // BUG SSW-202: pool_output.address unchecked 
+        // BUG SSW-001: pool_output.address unchecked 
         // for testing, we can run the whole of has_expected_pool_value
+
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
         // This is safe to do for the usual reasons: if they point at a UTXO without the ref token, the transaction will fail.
@@ -1086,7 +1087,7 @@ test mint_test_two_nfts() {
   // let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
   // // if we add on another pool NFT token to the pool output, it should fail
   // !mint_test_modify(
-  //     value.add(_, hash_of_pool_script, new_pool_nft_token, 1),
+  //     value.add(_, hash_of_pool_script, new_pool_nft_token, 1), // lift this over Output
   //     identity,
   //     identity,
   //     identity
@@ -1104,9 +1105,9 @@ fn pool_ident_from_input (tx_input: Input) -> ByteArray {
 }
 
 fn mint_test_modify(
-  modify_pool_output: fn(Value) -> Value,
-  modify_lp_output: fn(Value) -> Value,
-  modify_ref_output: fn(Value) -> Value,
+  modify_pool_output: fn(Output) -> Output,
+  modify_lp_output: fn(Output) -> Output,
+  modify_ref_output: fn(Output) -> Output,
   modify_datum: fn(Datum) -> Datum) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
@@ -1135,25 +1136,25 @@ fn mint_test_modify(
     value.from_asset(rberry_policy_id, rberry_token_name, 1_000_000_000)
       |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
       |> value.merge(value.from_lovelace(1_002_000_000))
-      |> modify_pool_output
   let pool_output = new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
-    |> add_asset_to_tx_output(pool_output_val)
+      |> add_asset_to_tx_output(pool_output_val)
+      |> modify_pool_output
 
   let lp_output_val =
     value.from_asset(hash_of_pool_script, pool_lp_name(pool_id), 1_000_000_000)
       |> value.merge(value.from_lovelace(2_000_000))
-      |> modify_lp_output
   let lp_output =
     new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(lp_output_val)
+      |> modify_lp_output
 
   let ref_output_val =
     value.from_asset(hash_of_pool_script, new_pool_ref_token, 1)
       |> value.merge(value.from_lovelace(2_000_000))
-      |> modify_ref_output
   let ref_output =
     new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
+      |> modify_ref_output
 
   let poolMintRedeemer = CreatePool {
     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
@@ -1185,12 +1186,7 @@ test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
 }
 
-// BUG SSW-202: pool_output.address unchecked
-// for testing, we can run the whole of has_expected_pool_value
 
-// test create_pool_mint_address() {
-//   False
-// }
 
 test mint_test_non_ada() {
   let settings_policy_id =
@@ -1274,4 +1270,17 @@ test mint_test_non_ada() {
 
   let result = mint(settings_policy_id, poolMintRedeemer, ctx)
   !result
+}
+// BUG SSW-001: pool_output.address unchecked
+// for testing, we can run the whole of has_expected_pool_value
+test mint_test_wrong_address () {
+  let minted = mint_test_modify(
+    // change pool nft output address to destination that shouldn't be possible
+    fn (output) { Output{..output, address: from_verification_key(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513") }},
+    identity,
+    identity,
+    identity
+  )
+  !minted
+  // this should not be mintable, but currently is
 }
