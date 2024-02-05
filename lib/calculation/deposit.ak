@@ -179,3 +179,91 @@ test deposit_test() {
   expect final_pool_state.quantity_b.3rd == 1_010_000_000
   True
 }
+
+test deposit_assymetry_test1() {
+  let pool_state = (
+    100,     // A
+    10_000,  // B
+    1_000,   // LP
+  )
+  let user_gives_a = 171
+  let user_gives_b = 94
+  let output = (171, 0, 0)  // user gets back all A, no B and no LPs
+
+  let final_pool_state = deposit_logic_test(pool_state, user_gives_a, user_gives_b, output)
+
+  final_pool_state.1st == 100 + 0         // A: deposited 0
+  && final_pool_state.2nd == 10_000 + 94  // B: deposited 94
+  && final_pool_state.3rd == 1_000 + 0    // LP: minted 0
+}
+
+test deposit_assymetry_test2() {
+  let pool_state = (
+    10_000,  // A
+    100,     // B
+    1_000,   // LP
+  )
+  let user_gives_a = 94
+  let user_gives_b = 171
+  let output = (0, 170, 9)  // user gets back no A, 170 B and 9 LPs
+
+  let final_pool_state = deposit_logic_test(pool_state, user_gives_a, user_gives_b, output)
+
+  final_pool_state.1st == 10_000 + 94     // A: deposited 94
+  && final_pool_state.2nd == 100 + 1      // B: deposited 1
+  && final_pool_state.3rd == 1_000 + 9    // LP: minted 9
+}
+
+/// Helper function to write abstract tests for the deposit logic
+pub fn deposit_logic_test(
+  pool_state: (Int, Int, Int),
+  user_gives_a: Int,
+  user_gives_b: Int,
+  output: (Int, Int, Int)
+) -> (Int, Int, Int) {
+  let addr =
+    Address(
+      VerificationKeyCredential(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      None,
+    )
+  let ada = (#"", #"")
+  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
+  let pool_state = PoolState {
+    quantity_a: (#"", #"", pool_state.1st),
+    quantity_b: (rberry.1st, rberry.2nd, pool_state.2nd),
+    quantity_lp: (lp.1st, lp.2nd, pool_state.3rd),
+  }
+  let input_value =
+    value.from_lovelace(user_gives_a + 2_000_000)
+      |> value.add(rberry.1st, rberry.2nd, user_gives_b)
+  let assets = ((ada.1st, ada.2nd, user_gives_a), (rberry.1st, rberry.2nd, user_gives_b))
+  let order = OrderDatum {
+    pool_ident: None,
+    owner: multisig.Signature(
+      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+    ),
+    max_protocol_fee: 2_500_000,
+    destination: Destination {
+      address: addr,
+      datum: NoDatum,
+    },
+    details: order.Deposit {
+      assets: assets,
+    },
+    extension: Void,
+  }
+  let output = Output {
+    address: addr,
+    value: value.from_lovelace(2_000_000 + output.1st)
+      |> value.add(rberry.1st, rberry.2nd, output.2nd)
+      |> value.add(lp.1st, lp.2nd, output.3rd),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let final_pool_state = do_deposit(pool_state, input_value, assets, order.destination, 0, output)
+
+  (final_pool_state.quantity_a.3rd, final_pool_state.quantity_b.3rd, final_pool_state.quantity_lp.3rd)
+}
