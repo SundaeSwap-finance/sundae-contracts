@@ -13,10 +13,10 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, ScriptCredential, VerificationKeyCredential, Inline
 }
-use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
+use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id, ada_asset_name}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_exact_token_count, count_orders}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_orders}
 use sundae/multisig
 use tests/examples/ex_settings.{mk_valid_settings_input}
 use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
@@ -515,34 +515,44 @@ fn has_expected_pool_value(
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
   // (ADA, Asset B, and the NFT)
-  // We do this as an optimization, since constructing values is expensive
-  // OPTIMIZATION: is it possible to check this with a single traversal? Each quantity_of represents a small linear scan
   if quantity_a_policy_id == ada_policy_id {
-    and {
-      has_exact_token_count(output_value, 3),
-      value.lovelace_of(output_value) == final_protocol_fees + quantity_a_amt,
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
-
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1,
-    }
+    (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1) ==
+      list.foldl(
+        value.flatten(output_value),
+        // (token count, lovelace amount, token b amount, pool nft amount)
+        (0, 0, 0, 0),
+        fn (asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == quantity_a_policy_id {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th)
+          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th + 1)
+          }
+        }
+      )
   } else {
-    // Otherwise, we expect 4 tokens (ADA, Asset A, Asset B, and the NFT)
-    // and the corresponding values
-    and {
-      has_exact_token_count(output_value, 4),
-      value.lovelace_of(output_value) == final_protocol_fees,
-      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt,
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1,
-    }
+    (4, final_protocol_fees, quantity_a_amt, quantity_b_amt, 1) ==
+      list.foldl(
+        value.flatten(output_value),
+        // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
+        (0, 0, 0, 0, 0),
+        fn (asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == ada_policy_id && asset.2nd == ada_asset_name {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th, acc.5th)
+          } else if asset.1st == quantity_a_policy_id && asset.2nd == quantity_a_name {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th, acc.5th)
+          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+            (token_count, acc.2nd, acc.3rd, acc.4th + asset.3rd, acc.5th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th, acc.5th + 1)
+          }
+        }
+      )
   }
 }
 
