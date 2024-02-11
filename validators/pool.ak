@@ -430,13 +430,19 @@ validator(settings_policy_id: PolicyId) {
         // - the pool identifier is set correctly
         // - the assets is set correctly
         // - the initial circulating supply is set correctly
-        // - and the market open time is before the fee finalized time; TODO: should we relax this?
+        // - the market open time is before the fee finalized time; TODO: should we relax this?
         //   I'm not sure it's harmful if someone initializes this with a feeFinalized in the past
+        // - the initial and final fees per 10,000 are both non-negative (>= 0%)
+        // - the intitial and final fees per 10,000 are both less than or equal to 10000 (<= 100%)
         let pool_output_datum_correct = and {
           pool_output_datum.identifier == new_pool_id,
           pool_output_datum.assets == (asset_a, asset_b),
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
+          pool_output_datum.fees_per_10_thousand.1st >= 0,
+          pool_output_datum.fees_per_10_thousand.2nd >= 0,
+          pool_output_datum.fees_per_10_thousand.1st <= 10000,
+          pool_output_datum.fees_per_10_thousand.2nd <= 10000,
         }
 
         // And then check each of the conditions above as the condition for minting
