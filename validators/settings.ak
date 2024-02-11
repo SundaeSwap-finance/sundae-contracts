@@ -27,10 +27,11 @@ validator(protocol_boot_utxo: OutputReference) {
     expect output_datum: SettingsDatum = output_datum
 
     // We check that the value on the input and output are equal, to ensure the settings NFT gets paid back into the output
-    // TODO: should we allow the ADA to change, just in case the minUTXO changes? that would allow us to add or reclaim
-    // ADA if minUTXO changed
+    // We compare `without_lovelace` to leave full freedom for ADA to be added/removed as the minUTXO requirement changes
+    // Note that this can only be spent by the SettingsAdmin or TreasuryAdmin, so we won't leak a small amount of ADA to arbitrary users
+    // Also, it is not expected that the ADA ever be more than the minUTXO cost, so this doesn't expose hundreds of ADA (for example) to the treasury admin
     let value_not_changed =
-      own_output.value == own_input.value
+      value.without_lovelace(own_output.value) == value.without_lovelace(own_input.value)
 
     // Make sure we don't mint anything, otherwise someone might mint another settings token
     let no_mint =
