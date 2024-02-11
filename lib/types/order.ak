@@ -32,11 +32,16 @@ pub type OrderDatum {
 
 /// The destination where funds are to be sent after the order
 pub type Destination {
-  /// The address to attach to the output (such as the users wallet, or another script)
-  address: Address,
-  /// The datum to attach to the output; Could be none in typical cases, but could also be used to compose with other protocols,
-  /// such as paying the results of a swap back to a treasury contract
-  datum: Datum,
+  Fixed {
+    /// The address to attach to the output (such as the users wallet, or another script)
+    address: Address,
+    /// The datum to attach to the output; Could be none in typical cases, but could also be used to compose with other protocols,
+    /// such as paying the results of a swap back to a treasury contract
+    datum: Datum,
+  }
+  /// The result gets paid back to the exact same address and datum it came from; useful for strategies
+  /// with unbounded legs
+  Self
 }
 
 /// There are two ways to delegate authorization of a strategy::

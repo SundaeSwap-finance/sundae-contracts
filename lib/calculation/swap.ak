@@ -1,4 +1,4 @@
-use aiken/transaction.{NoDatum, Output}
+use aiken/transaction.{NoDatum, InlineDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
@@ -6,7 +6,7 @@ use aiken/transaction/value.{
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use sundae/multisig
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination, Fixed, Self, OrderDatum}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 ///
@@ -60,7 +60,7 @@ pub fn swap_takes(
 pub fn do_swap(
   pool_state: PoolState,
   /// The value coming in from the UTXO with the order
-  input_value: Value,
+  input_utxo: Output,
   /// Where the results of the swap need to be paid
   destination: Destination,
   /// The liquidity provider fee to charge
@@ -73,6 +73,7 @@ pub fn do_swap(
   /// The output to compare against
   output: Output,
 ) -> PoolState {
+  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
   // Destructure the pool state
   // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
@@ -83,6 +84,24 @@ pub fn do_swap(
   } = pool_state
   let (a_policy_id, a_asset_name, a_amt) = quantity_a
   let (b_policy_id, b_asset_name, b_amt) = quantity_b
+
+  // Make sure we're paying the result to the correct destination (both the address and the datum),
+  // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
+  // use the input datum for validation
+  expect when destination is {
+    Fixed { address, datum } -> {
+      and {
+        output.address == address,
+        output.datum == datum
+      }
+    }
+    Self -> {
+      and {
+        output.address == input_address,
+        output.datum == input_datum
+      }
+    }
+  }
 
   // There are two symmetric cases, depending on whether you're giving order A or order B
   // If there's a clever way to write this as one branch it might be clearer to read
@@ -106,10 +125,9 @@ pub fn do_swap(
         input_value,
       )
 
-    // Check that the output has the correct destination and value
-    expect output.address == destination.address
-    expect output.datum == destination.datum
+    // Make sure the correct value (including change) carries through to the output
     expect output.value == out_value
+
     // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
     // is satisfied
     expect takes >= min_received.3rd
@@ -137,9 +155,9 @@ pub fn do_swap(
         input_value,
       )
 
-    expect output.address == destination.address
-    expect output.datum == destination.datum
+    // Make sure the correct value (including change) carries through to the output
     expect output.value == out_value
+    
     // Check that mintakes is satisfied
     expect takes >= min_received.3rd
     PoolState {
@@ -179,7 +197,7 @@ test swap_mintakes_too_high() fail {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
     max_protocol_fee: 2_500_000,
-    destination: Destination {
+    destination: Fixed {
       address: addr,
       datum: NoDatum,
     },
@@ -193,7 +211,13 @@ test swap_mintakes_too_high() fail {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input_value, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(order),
+    reference_script: None,
+  }
+  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
   True

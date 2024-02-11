@@ -1,10 +1,10 @@
-use aiken/transaction.{NoDatum, Output}
+use aiken/transaction.{NoDatum, InlineDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use sundae/multisig
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination, Fixed, Self, OrderDatum}
 
 /// A donation describes an amount of assets to deposit into the pool, receiving nothing in return (except for the extra change on the UTXO).
 /// Because every LP token holder has an entitlement to a percentage of the assets in the pool, the donation is distributed to all LP token holders
@@ -17,7 +17,7 @@ pub fn do_donation(
   /// The pool state as a result of processing all orders before this one
   pool_state: PoolState,
   /// The total quantity of tokens on this particular input
-  input_value: Value,
+  input_utxo: Output,
   /// The amounts of each asset being donated
   assets: (SingletonValue, SingletonValue),
   /// The destination (address + datum) that any *change* should be sent
@@ -29,6 +29,7 @@ pub fn do_donation(
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
+  let Output { value: input_value, address: input_address, datum: input_datum, .. } = input_utxo
   // Make sure we're actually donating the pool assets; this is to prevent setting
   // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
   expect assets.1st.1st == pool_state.quantity_a.1st
@@ -48,10 +49,22 @@ pub fn do_donation(
   // is so that we can do a few expects without having to return a value right away
   expect or {
     !has_remainder,
-    and {
-      output.address == destination.address,
-      output.datum == destination.datum,
-      output.value == remainder,
+    // Make sure we're paying the result to the correct destination (both the address and the datum),
+    // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
+    // use the input datum for validation
+    when destination is {
+      Fixed { address, datum } -> {
+        and {
+          output.address == address,
+          output.datum == datum
+        }
+      }
+      Self -> {
+        and {
+          output.address == input_address,
+          output.datum == input_datum
+        }
+      }
     },
   }
   
@@ -109,7 +122,7 @@ test donation() {
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       max_protocol_fee: 2_500_000,
-      destination: Destination { address: addr, datum: NoDatum },
+      destination: Fixed { address: addr, datum: NoDatum },
       details: order.Donation {
         assets: assets,
       },
@@ -123,8 +136,14 @@ test donation() {
       datum: NoDatum,
       reference_script: None,
     }
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(order),
+    reference_script: None,
+  }
   let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input_value, assets, order.destination, 2_500_000, output)
+    do_donation(pool_state, input, assets, order.destination, 2_500_000, output)
   expect !has_remainder
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000

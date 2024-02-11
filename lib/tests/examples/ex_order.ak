@@ -1,12 +1,12 @@
 use aiken/cbor
-use types/order.{Destination, OrderDatum, Swap, Deposit, Withdrawal, Scoop, Cancel}
+use types/order.{Destination, Fixed, OrderDatum, Swap, Deposit, Withdrawal, Scoop, Cancel}
 use aiken/transaction.{NoDatum}
 use sundae/multisig
 use tests/examples/ex_shared.{print_example, wallet_address}
 
 fn mk_swap() -> OrderDatum {
   let addr = wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let dest = Destination { address: addr, datum: NoDatum }
+  let dest = Fixed { address: addr, datum: NoDatum }
   let swap =
     Swap(
       (#"", #"", 10000000),

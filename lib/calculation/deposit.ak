@@ -1,11 +1,11 @@
 use aiken/math
-use aiken/transaction.{NoDatum, Output}
+use aiken/transaction.{NoDatum, Output, InlineDatum}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
+use aiken/transaction/value.{ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
 use shared.{SingletonValue}
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination, Fixed, Self, OrderDatum}
 
 /// Calculate the result of depositing some amount of tokens into the pool
 ///
@@ -14,13 +14,14 @@ use types/order.{Destination, OrderDatum}
 ///
 pub fn do_deposit(
   pool_state: PoolState,
-  input_value: Value,
+  input_utxo: Output,
   assets: (SingletonValue, SingletonValue),
   destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
 ) -> PoolState {
   let (asset_a, asset_b) = assets
+  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
 
   // Policy ID and token name of the assets must match the pool, otherwise someone
   // could load the pool with junk tokens and freeze the pool.
@@ -107,10 +108,23 @@ pub fn do_deposit(
         )
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
-  // with the correct amount
-  expect output.address == destination.address
-  expect output.datum == destination.datum
+  // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
+  // use the input datum for validation
   expect output.value == out_value
+  expect when destination is {
+    Fixed { address, datum } -> {
+      and {
+        output.address == address,
+        output.datum == datum
+      }
+    }
+    Self -> {
+      and {
+        output.address == input_address,
+        output.datum == input_datum
+      }
+    }
+  }
 
   // And construct the final pool state
   PoolState {
@@ -158,7 +172,7 @@ test deposit_test() {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
     max_protocol_fee: 2_500_000,
-    destination: Destination {
+    destination: Fixed {
       address: addr,
       datum: NoDatum,
     },
@@ -174,7 +188,13 @@ test deposit_test() {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_deposit(pool_state, input_value, assets, order.destination, 2_500_000, output)
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(order),
+    reference_script: None,
+  }
+  let final_pool_state = do_deposit(pool_state, input, assets, order.destination, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_010_000_000
   expect final_pool_state.quantity_b.3rd == 1_010_000_000
   True

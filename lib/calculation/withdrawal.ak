@@ -1,12 +1,12 @@
 use aiken/option
 use aiken/math
-use aiken/transaction.{NoDatum, Output}
+use aiken/transaction.{NoDatum, InlineDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
 use shared.{SingletonValue}
-use types/order.{Destination, OrderDatum}
+use types/order.{Destination, Fixed, Self, OrderDatum}
 
 /// Execute a withdrawal order
 ///
@@ -14,13 +14,14 @@ use types/order.{Destination, OrderDatum}
 /// of the circulating supply of LP tokens that was burned.
 pub fn do_withdrawal(
   pool_state: PoolState,     // The interim pool state against which we should calculate the withdrawal
-  input_value: Value,        // The incoming value; may have additional assets on it, for example if executing as part of a larger chain
+  input_utxo: Output,        // The incoming UTXO, useful for returning surplus and handling Self destinations
   amount: SingletonValue,    // The amount to actually withdraw
   destination: Destination,  // The destination that the LP tokens (and change) should be sent to
   actual_protocol_fee: Int,  // The protocol fee to deduct
   output: Output,            // The output to compare the order execution against, to ensure the right quantity was paid out
 ) -> PoolState {
   let (lp_policy, lp_asset_name, amount) = amount
+  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
 
   // Make sure we're withdrawing from the right pool;
   // if we were to provide LP tokens for a different pool, you could withdraw funds that weren't yours
@@ -61,12 +62,25 @@ pub fn do_withdrawal(
           withdrawn_b,
         )
 
-  // Check that the result is paid to the destination with the full value
-  // Like on other order types, the datum here lets us compose with other protocols
-  // or do chained orders within Sundae
-  expect output.address == destination.address
-  expect output.datum == destination.datum
+  
+  // Make sure we're paying the result to the correct destination (both the address and the datum),
+  // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
+  // use the input datum for validation
   expect output.value == remainder
+  expect when destination is {
+    Fixed { address, datum } -> {
+      and {
+        output.address == address,
+        output.datum == datum
+      }
+    }
+    Self -> {
+      and {
+        output.address == input_address,
+        output.datum == input_datum
+      }
+    }
+  }
 
   // Return the final pool state
   PoolState {
@@ -153,7 +167,7 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
     max_protocol_fee: 2_500_000,
-    destination: Destination {
+    destination: Fixed {
       address: addr,
       datum: NoDatum,
     },
@@ -172,7 +186,13 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: NoDatum,
     reference_script: None,
   }
-  let final_pool_state = do_withdrawal(pool_state, input_value, amount, order.destination, 2_500_000, output)
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(order),
+    reference_script: None,
+  }
+  let final_pool_state = do_withdrawal(pool_state, input, amount, order.destination, 2_500_000, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000
   True
