@@ -85,6 +85,13 @@ validator(settings_policy_id: PolicyId) {
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
 
+    // Ensure that the pool output is to the same payment credential; This is critical, because it ensures that the pool NFT
+    // or liquidity aren't paid to some other script in control of an attacker.
+    // Note that we check the stake credential is correctly updated (or not) in the various redeemer cases below.
+    // We also check that the pool output has the correct output, which ensures it contains the pool NFT,
+    // meaning this can't just be a "token output" with the correct payment credential, but everything paid elsewhere.
+    expect pool_output.address.payment_credential == ScriptCredential(pool_script_hash)
+
     // Similarly, destructure the pool datum we found on the output, to access the fields we need to process the scoop
     let PoolDatum {
       identifier: actual_identifier,
