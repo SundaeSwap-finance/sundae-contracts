@@ -22,13 +22,14 @@ jobs:
           aiken check 2>&1 | tee aiken.log || RESULT=$?
           if [ $RESULT -ne 0 ]; then
             FAILING_TESTS=$(grep "FAIL" aiken.log -A 1)
-            echo 'FAILING_TESTS="'$FAILING_TESTS'"' >> $GITHUB_ENV
+            echo "$FAILING_TESTS"
+            echo 'FAILING_TESTS='"$FAILING_TESTS"'' >> $GITHUB_ENV
             cat $GITHUB_ENV
             exit $RESULT
           fi
       - if: failure()
         run: |
-          echo $FAILING_TESTS
+          echo "$FAILING_TESTS"
       - run: aiken build
       - uses: actions/github-script@v6
         if: failure() && env.FAILING_TESTS != ''
@@ -38,5 +39,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Tests failed:\n\n\`\`\`${{ env.FAILING_TESTS }}\`\`\``
+              body: `Tests failed:\n\n\`\`\`\n${{ env.FAILING_TESTS }}\`\`\``
             })
