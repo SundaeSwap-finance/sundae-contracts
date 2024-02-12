@@ -1129,7 +1129,7 @@ test mint_test() {
       fee: value.from_lovelace(1_000_000),
       mint: value.to_minted_value(
         value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000_000)
+          |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
           |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
           |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
       ),
