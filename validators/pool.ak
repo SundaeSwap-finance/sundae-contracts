@@ -1118,7 +1118,7 @@ test mint_test() {
     address: user_address,
     value: value.from_lovelace(2_000_000)
       |> value.add(hash_of_pool_script, new_pool_ref_token, 1),
-    datum: NoDatum,
+    datum: InlineDatum(Void),
     reference_script: None,
   }
   let poolMintRedeemer = CreatePool {
