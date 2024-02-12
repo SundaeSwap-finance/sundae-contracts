@@ -29,19 +29,19 @@ pub fn do_donation(
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
+  let ((asset_a_policy_id, asset_a_asset_name, asset_a_qty), (asset_b_policy_id, asset_b_asset_name, asset_b_qty)) = assets
   // Make sure we're actually donating the pool assets; this is to prevent setting
   // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
-  expect assets.1st.1st == pool_state.quantity_a.1st
-  expect assets.1st.2nd == pool_state.quantity_a.2nd
-  expect assets.2nd.1st == pool_state.quantity_b.1st
-  expect assets.2nd.2nd == pool_state.quantity_b.2nd
+  expect asset_a_policy_id == pool_state.quantity_a.1st
+  expect asset_a_asset_name == pool_state.quantity_a.2nd
+  expect asset_b_policy_id == pool_state.quantity_b.1st
+  expect asset_b_asset_name == pool_state.quantity_b.2nd
   // Compute however much of the UTXO value is *left over* after deducting the donation amount from it; If nonzero, this will need to be returned to the user
   let remainder =
-    shared.to_value(assets.1st)
-      |> value.merge(shared.to_value(assets.2nd))
-      |> value.add(ada_policy_id, ada_asset_name, actual_protocol_fee)
-      |> value.negate
-      |> value.merge(input_value)
+    input_value
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(asset_a_policy_id, asset_a_asset_name, -asset_a_qty)
+      |> value.add(asset_b_policy_id, asset_b_asset_name, -asset_b_qty)
 
   let has_remainder = remainder != value.zero()
   // If we have a remainder, then we need to check the details of the output; this awkward structure
