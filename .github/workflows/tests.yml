@@ -18,9 +18,8 @@ jobs:
       - run: |
           # Run the tests
           set -o pipefail
-          set -e
-          aiken check | tee aiken.log
-          RESULT=$?
+          RESULT=0
+          aiken check | tee aiken.log || RESULT=$?
           if [ $RESULT -ne 0 ]; then
             FAILING_TESTS=$(grep "FAIL" aiken.log -A 1)
             echo $FAILING_TESTS
