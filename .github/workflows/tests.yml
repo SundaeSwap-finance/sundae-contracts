@@ -19,7 +19,7 @@ jobs:
           # Run the tests
           set -o pipefail
           RESULT=0
-          aiken check | tee aiken.log || RESULT=$?
+          aiken check 2>&1 | tee aiken.log || RESULT=$?
           cat aiken.log
           echo "HELLO!"
           if [ $RESULT -ne 0 ]; then
