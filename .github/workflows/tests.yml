@@ -24,9 +24,11 @@ jobs:
             echo "FAILING_TESTS=$FAILING_TESTS" >> $GITHUB_ENV
             exit $RESULT
           fi
+      - run: |
+          echo $FAILING_TESTS
       - run: aiken build
       - uses: actions/github-script@v6
-        if: failure() && ${{ env.FAILING_TESTS }}
+        if: failure()
         with:
           script: |
             github.rest.issues.createComment({
