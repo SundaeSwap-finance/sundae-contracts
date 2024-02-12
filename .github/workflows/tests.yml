@@ -38,5 +38,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Tests failed:\n\n\`\`\`${{ env.FAILING_TESTS }}`
+              body: `Tests failed:\n\n\`\`\`${{ env.FAILING_TESTS }}\`\`\``
             })
