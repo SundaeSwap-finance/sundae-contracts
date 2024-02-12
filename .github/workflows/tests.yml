@@ -26,7 +26,7 @@ jobs:
           fi
       - run: aiken build
       - uses: actions/github-script@v6
-        if: ${{ env.FAILING_TESTS }}
+        if: failure() && ${{ env.FAILING_TESTS }}
         with:
           script: |
             github.rest.issues.createComment({
