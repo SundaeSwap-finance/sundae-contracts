@@ -23,7 +23,7 @@ jobs:
           if [ $RESULT -ne 0 ]; then
             {
               echo 'FAILING_TESTS<<EOF'
-              grep "FAIL" aiken.log -A 1
+              grep "FAIL" aiken.log
               echo EOF
             } >> "$GITHUB_ENV"
             cat $GITHUB_ENV
