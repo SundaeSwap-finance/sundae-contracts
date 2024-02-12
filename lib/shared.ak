@@ -128,6 +128,19 @@ pub fn count_orders(tx_inputs: List<Input>) -> Int {
   )
 }
 
+// Taken from unmerged PR: https://github.com/aiken-lang/stdlib/pull/73/files
+pub fn is_sqrt(self: Int, x: Int) -> Bool {
+  x * x <= self && ( x + 1 ) * ( x + 1 ) > self
+}
+
+test is_sqrt1() {
+  is_sqrt(44203, 210)
+}
+
+test is_sqrt2() {
+  is_sqrt(975461057789971041, 987654321)
+}
+
 /// Check whether a specific value has *exactly* the right amount of tokens
 /// This is important to, for example, efficiently check the pool output has the correct value
 /// Check where this is used, because it's a very subtle bit of logic for where this is safe to do
