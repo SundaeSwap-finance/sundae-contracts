@@ -21,6 +21,7 @@ jobs:
           RESULT=$?
           if [ $RESULT -ne 0 ]; then
             FAILING_TESTS=$(grep "FAIL" aiken.log -A 1)
+            echo $FAILING_TESTS
             echo "FAILING_TESTS=$FAILING_TESTS" >> $GITHUB_ENV
             exit $RESULT
           fi
@@ -29,7 +30,7 @@ jobs:
           echo $FAILING_TESTS
       - run: aiken build
       - uses: actions/github-script@v6
-        if: failure()
+        if: failure() && ${{ env.FAILING_TESTS }}
         with:
           script: |
             github.rest.issues.createComment({
