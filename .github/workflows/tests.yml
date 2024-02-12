@@ -16,7 +16,9 @@ jobs:
           version: v1.0.20-alpha
 
       - run: |
+          # Run the tests
           set -o pipefail
+          set -e
           aiken check | tee aiken.log
           RESULT=$?
           if [ $RESULT -ne 0 ]; then
