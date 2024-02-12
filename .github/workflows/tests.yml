@@ -22,6 +22,8 @@ jobs:
           aiken check | tee aiken.log || RESULT=$?
           if [ $RESULT -ne 0 ]; then
             FAILING_TESTS=$(grep "FAIL" aiken.log -A 1)
+            cat aiken.log
+            echo "HELLO!"
             echo $FAILING_TESTS
             echo "FAILING_TESTS=$FAILING_TESTS" >> $GITHUB_ENV
             exit $RESULT
