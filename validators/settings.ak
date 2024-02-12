@@ -1,5 +1,6 @@
 use aiken/list
 use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference}
+use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
@@ -110,11 +111,11 @@ validator(protocol_boot_utxo: OutputReference) {
   fn mint(_r: Data, ctx: ScriptContext) {
     expect Mint(own_policy_id) = ctx.purpose
 
+    let expected_mint = value.from_asset(own_policy_id, settings_nft_name, 1)
     // Check that we mint *only* one token, and it's exactly our own policy id, and the settings NFT name
     // This ensures that we don't sneakily mint a second NFT for "reasons"
     let mints_exactly_one_settings_nft =
-      value.from_minted_value(ctx.transaction.mint) ==
-        value.from_asset(own_policy_id, settings_nft_name, 1)
+      value.from_minted_value(ctx.transaction.mint) == expected_mint
 
     // And, like mentioned above, ensure that this is a true NFT
     let spends_protocol_boot_utxo =
@@ -122,9 +123,21 @@ validator(protocol_boot_utxo: OutputReference) {
         input.output_reference == protocol_boot_utxo
       })
 
+    // Make sure the output value contains no extra tokens, and is paid to the settings script itself
+    expect [settings_output] = list.filter(ctx.transaction.outputs, fn(output) {
+      value.without_lovelace(output.value) == expected_mint
+    })
+    let pays_to_settings_script = settings_output.address.payment_credential == ScriptCredential(own_policy_id)
+    // Make sure the datum is an inline datum, and has a well-formed datum
+    expect InlineDatum(settings_datum) = settings_output.datum
+    expect _: SettingsDatum = settings_datum
+
+    // TODO: require a signature from the 3 initial admins (or at least the settings admin) to prevent bricking?
+
     and {
       mints_exactly_one_settings_nft,
       spends_protocol_boot_utxo,
+      pays_to_settings_script,
     }
   }
 }
