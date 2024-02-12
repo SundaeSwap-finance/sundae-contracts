@@ -19,7 +19,7 @@ jobs:
           set -o pipefail
           aiken check | tee aiken.log
           RESULT=$?
-          if [ $RESULT -neq 0 ]; then
+          if [ $RESULT -ne 0 ]; then
             FAILING_TESTS=$(grep "FAIL" aiken.log -A 1)
             echo "FAILING_TESTS=$FAILING_TESTS" >> $GITHUB_ENV
             exit $RESULT
