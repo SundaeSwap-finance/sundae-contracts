@@ -1156,3 +1156,60 @@ test mint_test() {
   let result = mint(settings_policy_id, poolMintRedeemer, ctx)
   result
 }
+
+test has_expected_pool_value_test() {
+  // ADA/rberry pool
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(102_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (ada_policy_id, ada_asset_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
+}
+
+test has_expected_pool_value_test2() {
+  // other/rberry pool
+  let other_policy_id = #"fafafafafafafafafafafafafafafafafafafafafafafafafafafafa"
+  let other_token_name = #"fafafafa"
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(2_000_000)
+    |> value.add(other_policy_id, other_token_name, 100_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (other_policy_id, other_token_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
+}
