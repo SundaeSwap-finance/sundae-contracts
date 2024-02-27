@@ -296,7 +296,6 @@ validator(settings_policy_id: PolicyId) {
         // that worked with the void datum, and paid to the real treasury with the correct datum.
         // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
-        expect pool_output.address.payment_credential == pool_input.address.payment_credential
         expect list.any(settings_datum.authorized_staking_keys, fn(a) {
           pool_output.address.stake_credential == Some(Inline(a))
         })
