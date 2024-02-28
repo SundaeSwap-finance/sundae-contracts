@@ -11,6 +11,11 @@ name = "SundaeSwap-finance/aicone"
 version = "ae0852d40cc6332437492102451cf331a3c10b0d"
 source = "github"
 
+[[requirements]]
+name = "aiken-extra/tx_util"
+version = "1.170.202312"
+source = "github"
+
 [[packages]]
 name = "aiken-lang/stdlib"
 version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
@@ -20,6 +25,12 @@ source = "github"
 [[packages]]
 name = "SundaeSwap-finance/aicone"
 version = "ae0852d40cc6332437492102451cf331a3c10b0d"
+requirements = []
+source = "github"
+
+[[packages]]
+name = "aiken-extra/tx_util"
+version = "1.170.202312"
 requirements = []
 source = "github"
 
