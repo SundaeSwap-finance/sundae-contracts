@@ -1,5 +1,5 @@
 use aiken/list
-use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference, Transaction}
+use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference}
 use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
@@ -121,6 +121,7 @@ validator(protocol_boot_utxo: OutputReference) {
       list.any(ctx.transaction.inputs, fn(input) {
         input.output_reference == protocol_boot_utxo
       })
+
     and {
       mints_exactly_one_settings_nft,
       spends_protocol_boot_utxo,
