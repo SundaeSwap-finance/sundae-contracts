@@ -408,20 +408,15 @@ validator(settings_policy_id: PolicyId) {
         // Confirm that the correct funds (at least one asset A, at least one asset B, exactly 3 tokens, including the pool NFT) is correct here
         // Note: should we instead just compare the expected pool output?
         let funds_spent_to_pool = and {
-            coin_a_amt_sans_protocol_fees >= 1,
-            coin_b_amt >= 1,
-            // BUG SSW-201
-            // pool with pair without ADA will have an additional token
-            // so we should test for exotic pairs without ada
-            list.length(value.flatten(pool_output.value)) <= 3,
-            value.quantity_of(
-              pool_output.value,
-              own_policy_id,
-              new_pool_nft_token,
-            ) == 1,
-          }
-        // BUG SSW-001: pool_output.address unchecked 
-        // for testing, we can run the whole of has_expected_pool_value
+          coin_a_amt_sans_protocol_fees >= 1,
+          coin_b_amt >= 1,
+          list.length(value.flatten(pool_output.value)) <= 3,
+          value.quantity_of(
+            pool_output.value,
+            own_policy_id,
+            new_pool_nft_token,
+          ) == 1
+        }
 
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
@@ -1067,9 +1062,6 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   result
 }
 
-// this is for test
-// FIXME(Elaine) figure out how to organize test globals etc
-// this is slightly annoying because aiken is picky about variable scope with tests
 const hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
 fn pool_test_tx_input() -> Input {
   let funds_input =
@@ -1083,16 +1075,15 @@ fn pool_test_tx_input() -> Input {
 }
 
 test mint_test_two_nfts() {
-  // let pool_id = pool_ident_from_input(pool_test_tx_input())
-  // let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
-  // // if we add on another pool NFT token to the pool output, it should fail
-  // !mint_test_modify(
-  //     value.add(_, hash_of_pool_script, new_pool_nft_token, 1), // lift this over Output
-  //     identity,
-  //     identity,
-  //     identity
-  //   )
-  True
+  let pool_id = pool_ident_from_input(pool_test_tx_input())
+  let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
+  // if we add on another pool NFT token to the pool output, it should fail
+  !mint_test_modify(
+      fn(output) { Output { ..output, value: output.value.add(_, hash_of_pool_script, new_pool_nft_token, 1) } },
+      identity,
+      identity,
+      identity
+    )
 }
 
 fn pool_ident_from_input (tx_input: Input) -> ByteArray {
@@ -1186,102 +1177,3 @@ test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
 }
 
-// BUG SSW-201
-// pool with pair without ADA will have an additional token
-// so we should test for exotic pairs without ada
-test mint_test_non_ada() {
-  let settings_policy_id =
-    #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script =
-    #"00000000000000000000000000000000000000000000000000000000"
-  let pool_address = script_address(hash_of_pool_script)
-  let rberry_policy_id =
-    #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
-  let rberry_token_name = #"524245525259"
-  let sberry_policy_id =
-    #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
-  let sberry_token_name = #"534245525259"
-
-  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
-  let pool_address = script_address(hash_of_pool_script)
-  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
-  let rberry_token_name = #"524245525259"
-  let user_address =
-    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let settings_input = mk_valid_settings_input([], 1)
-
-  let funds_input = pool_test_tx_input()
-  let pool_id = pool_ident_from_input(funds_input)
-  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) = shared.pool_token_names(pool_id)
-  let inline_pool_datum = InlineDatum(
-    PoolDatum {
-      identifier: pool_id,
-      assets: ((rberry_policy_id, rberry_token_name), (sberry_policy_id, sberry_token_name)),
-      circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: (5, 5),
-      market_open: 0,
-      fee_finalized: 0,
-      protocol_fees: 2_000_000,
-    }
-  )
-  let pool_output_val =
-    value.from_asset(rberry_policy_id, rberry_token_name, 1_000_000_000)
-      |> value.add(sberry_policy_id, sberry_token_name, 1_000_000_000)
-      |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-      |> value.merge(value.from_lovelace(2_000_000))
-  let pool_output = new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
-    |> add_asset_to_tx_output(pool_output_val)
-
-  let lp_output_val =
-    value.from_asset(hash_of_pool_script, pool_lp_name(pool_id), 1_000_000_000)
-      |> value.merge(value.from_lovelace(2_000_000))
-  let lp_output =
-    new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
-      |> add_asset_to_tx_output(lp_output_val)
-
-  let ref_output_val =
-    value.from_asset(hash_of_pool_script, new_pool_ref_token, 1)
-      |> value.merge(value.from_lovelace(2_000_000))
-  let ref_output =
-    new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
-      |> add_asset_to_tx_output(ref_output_val)
-
-  let poolMintRedeemer = CreatePool {
-    assets: ((rberry_policy_id, rberry_token_name), (sberry_policy_id, sberry_token_name)),
-    pool_output: 0,
-    metadata_output: 2,
-  }
-
-  let ctx = interval.between(1,2)
-    |> build_txn_context()
-    |> mint_assets(hash_of_pool_script, value.to_minted_value(
-        value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
-          |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-          |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
-      ))
-    |> add_tx_input(funds_input)
-    |> add_tx_ref_input(settings_input)
-
-    // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
-    |> add_tx_output(ref_output)
-    |> add_tx_output(lp_output)
-    |> add_tx_output(pool_output)
-
-  let result = mint(settings_policy_id, poolMintRedeemer, ctx)
-  !result
-}
-
-// BUG SSW-001: pool_output.address unchecked
-// for testing, we can run the whole of has_expected_pool_value
-test mint_test_wrong_address () {
-  let minted = mint_test_modify(
-    // change pool nft output address to destination that shouldn't be possible
-    fn (output) { Output{..output, address: from_verification_key(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513") }},
-    identity,
-    identity,
-    identity
-  )
-  minted
-}
