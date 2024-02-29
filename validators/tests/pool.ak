@@ -9,7 +9,7 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, VerificationKeyCredential,
+  Address, VerificationKeyCredential, from_verification_key,
 }
 use aiken/transaction/value.{Value}
 use shared.{
@@ -635,3 +635,14 @@ test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
 }
 
+// make sure pool_output.address is checked to be the pool address
+test mint_test_wrong_address () {
+  let minted = mint_test_modify(
+    // change pool nft output address to destination that shouldn't be possible
+    fn (output) { Output{..output, address: from_verification_key(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513") }},
+    identity,
+    identity,
+    identity
+  )
+  minted
+}
