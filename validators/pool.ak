@@ -85,6 +85,13 @@ validator(settings_policy_id: PolicyId) {
     expect InlineDatum(output_datum) = pool_output.datum
     expect output_datum: PoolDatum = output_datum
 
+    // Ensure that the pool output is to the same payment credential; This is critical, because it ensures that the pool NFT
+    // or liquidity aren't paid to some other script in control of an attacker.
+    // Note that we check the stake credential is correctly updated (or not) in the various redeemer cases below.
+    // We also check that the pool output has the correct output, which ensures it contains the pool NFT,
+    // meaning this can't just be a "token output" with the correct payment credential, but everything paid elsewhere.
+    expect pool_output.address.payment_credential == ScriptCredential(pool_script_hash)
+
     // Similarly, destructure the pool datum we found on the output, to access the fields we need to process the scoop
     let PoolDatum {
       identifier: actual_identifier,
@@ -283,7 +290,6 @@ validator(settings_policy_id: PolicyId) {
         // that worked with the void datum, and paid to the real treasury with the correct datum.
         // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
-        expect pool_output.address.payment_credential == pool_input.address.payment_credential
         expect list.any(settings_datum.authorized_staking_keys, fn(a) {
           pool_output.address.stake_credential == Some(Inline(a))
         })
@@ -436,6 +442,13 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
         }
+
+        // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
+        // and that one of the valid staking addresses is attached
+        expect pool_output.address.payment_credential == ScriptCredential(own_policy_id)
+        expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+          pool_output.address.stake_credential == Some(Inline(a))
+        })
 
         // And then check each of the conditions above as the condition for minting
         and {

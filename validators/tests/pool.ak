@@ -9,7 +9,7 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, VerificationKeyCredential,
+  Address, VerificationKeyCredential, from_verification_key, from_script, with_delegation_key
 }
 use aiken/transaction/value.{Value}
 use shared.{
@@ -35,6 +35,8 @@ type ScoopTestOptions {
   edit_escrow_destination: Option<Address>,
   edit_fee: Option<Value>,
   edit_swap_fees: Option<(Int,Int)>,
+  edit_pool_input_address: Option<Address>,
+  edit_pool_output_address: Option<Address>,
   edit_pool_output_value: Option<Value>,
   edit_settings_datum: Option<Datum>,
 }
@@ -46,6 +48,8 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_escrow_destination: None,
     edit_fee: None,
     edit_swap_fees: None,
+    edit_pool_input_address: None,
+    edit_pool_output_address: None,
     edit_pool_output_value: None,
     edit_settings_datum: None,
   }
@@ -101,8 +105,6 @@ test pool_validator_ignores_fee() {
 }
 
 test scoop_high_swap_fees() {
-  let hash_of_pool_script =
-    #"00000000000000000000000000000000000000000000000000000000"
   let pool_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let dummy_policy_id =
@@ -128,7 +130,7 @@ test scoop_high_swap_fees() {
                dummy_asset_name,
                1_000_000_000 - ( 9_802_950 + 9_611_678 ),
              )
-          |> value.add(hash_of_pool_script, pool_nft_name, 1),
+          |> value.add(pool_script_hash, pool_nft_name, 1),
       ),
     }
   scoop(options)
@@ -149,6 +151,35 @@ test output_missing_nft() fail {
                1_000_000_000 - ( 9_896_088 + 9_702_095 ),
              ),
       ),
+    }
+  scoop(options)
+}
+
+const pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+const random_hash = #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+const other_hash =  #"01010101010101010101010101010101010101010101010101010101"
+test scoop_pool_output_wallet_address() fail {
+  let options =
+    ScoopTestOptions {
+      ..default_scoop_test_options(),
+      edit_pool_output_address: Some(from_verification_key(random_hash)),
+    }
+  scoop(options)
+}
+test scoop_pool_output_wrong_script() fail {
+  let options =
+    ScoopTestOptions {
+      ..default_scoop_test_options(),
+      edit_pool_output_address: Some(from_script(random_hash)),
+    }
+  scoop(options)
+}
+test scoop_pool_output_change_staking_credential() fail {
+  let options =
+    ScoopTestOptions {
+      ..default_scoop_test_options(),
+      edit_pool_input_address: Some(from_script(pool_script_hash) |> with_delegation_key(random_hash)), 
+      edit_pool_output_address: Some(from_script(pool_script_hash) |> with_delegation_key(other_hash)),
     }
   scoop(options)
 }
@@ -197,8 +228,6 @@ fn scoop(options: ScoopTestOptions) {
     #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let dummy_asset_name = #"53554e444145"
   let scooper = #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script =
-    #"00000000000000000000000000000000000000000000000000000000"
   let hash_of_escrow_script =
     #"00000000000000000000000000000000000000000000000000000000"
   let user_addr =
@@ -229,15 +258,15 @@ fn scoop(options: ScoopTestOptions) {
       protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(pool_id)
-  let pool_address = script_address(hash_of_pool_script)
+  let pool_address = script_address(pool_script_hash)
   let pool_input =
     Input {
       output_reference: mk_output_reference(0),
       output: Output {
-        address: pool_address,
+        address: option.or_else(options.edit_pool_input_address, pool_address),
         value: value.from_lovelace(1_000_000_000 + 2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000)
-          |> value.add(hash_of_pool_script, pool_nft_name, 1),
+          |> value.add(pool_script_hash, pool_nft_name, 1),
         datum: InlineDatum(pool_datum),
         reference_script: None,
       },
@@ -309,7 +338,7 @@ fn scoop(options: ScoopTestOptions) {
     }
   let pool_output =
     Output {
-      address: pool_address,
+      address: option.or_else(options.edit_pool_output_address, pool_address),
       value: option.or_else(
         options.edit_pool_output_value,
         value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
@@ -318,7 +347,7 @@ fn scoop(options: ScoopTestOptions) {
                dummy_asset_name,
                1_000_000_000 - ( 9_896_088 + 9_702_095 ),
              )
-          |> value.add(hash_of_pool_script, pool_nft_name, 1),
+          |> value.add(pool_script_hash, pool_nft_name, 1),
       ),
       datum: InlineDatum(pool_out_datum),
       reference_script: None,
@@ -358,7 +387,6 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let dummy_asset_name = #"53554e444145"
   let scooper = #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
   let hash_of_escrow_script = #"00000000000000000000000000000000000000000000000000000000"
   let user_addr = wallet_address(
     #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
@@ -392,14 +420,14 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     protocol_fees: 7_000_000,
   }
   let pool_nft_name = shared.pool_nft_name(pool_id)
-  let pool_address = script_address(hash_of_pool_script)
+  let pool_address = script_address(pool_script_hash)
   let pool_input = Input {
     output_reference: mk_output_reference(0),
     output: Output {
       address: pool_address,
       value: value.from_lovelace(1_000_000_000 + 2_000_000)
         |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000)
-        |> value.add(hash_of_pool_script, pool_nft_name, 1),
+        |> value.add(pool_script_hash, pool_nft_name, 1),
       datum: InlineDatum(pool_datum),
       reference_script: None,
     },
@@ -473,7 +501,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let escrow2_out = Output {
     address: option.or_else(options.edit_escrow_destination, user_addr),
     value: value.from_lovelace(2_000_000)
-      |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
+      |> value.add(pool_script_hash, pool_lp_name(pool_id), 9_900_990)
       |> value.add(dummy_policy_id, dummy_asset_name, 196_990),
     datum: NoDatum,
     reference_script: None,
@@ -483,7 +511,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     value: option.or_else(options.edit_pool_output_value,
       value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
         |> value.add(dummy_policy_id, dummy_asset_name, 1_000_000_000 - 9_896_088 + 10_000_000 - 196_990)
-        |> value.add(hash_of_pool_script, pool_nft_name, 1)),
+        |> value.add(pool_script_hash, pool_nft_name, 1)),
     datum: InlineDatum(pool_out_datum),
     reference_script: None,
   }
@@ -496,7 +524,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee: option.or_else(options.edit_fee, value.from_lovelace(1_000_000)),
       mint: value.to_minted_value(
         value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, pool_lp_name(pool_id), 9_900_990)
+          |> value.add(pool_script_hash, pool_lp_name(pool_id), 9_900_990)
       ),
       certificates: [],
       withdrawals: dict.new(),
@@ -520,7 +548,6 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   result
 }
 
-const hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
 fn pool_test_tx_input() -> Input {
   let funds_input =
     new_tx_input(
@@ -532,12 +559,12 @@ fn pool_test_tx_input() -> Input {
     funds_input
 }
 
-test mint_test_two_nfts() {
+test mint_test_two_nfts() fail {
   let pool_id = pool_ident_from_input(pool_test_tx_input())
   let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
   // if we add on another pool NFT token to the pool output, it should fail
-  !mint_test_modify(
-      fn(output) { Output { ..output, value: value.add(output.value, hash_of_pool_script, new_pool_nft_token, 1) } },
+  mint_test_modify(
+      fn(output) { Output { ..output, value: value.add(output.value, pool_script_hash, new_pool_nft_token, 1) } },
       identity,
       identity,
       identity
@@ -559,8 +586,7 @@ fn mint_test_modify(
   modify_ref_output: fn(Output) -> Output,
   modify_datum: fn(Datum) -> Datum) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
-  let hash_of_pool_script = #"00000000000000000000000000000000000000000000000000000000"
-  let pool_address = script_address(hash_of_pool_script)
+  let pool_address = script_address(pool_script_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let rberry_token_name = #"524245525259"
   let user_address =
@@ -583,14 +609,14 @@ fn mint_test_modify(
   ))
   let pool_output_val =
     value.from_asset(rberry_policy_id, rberry_token_name, 1_000_000_000)
-      |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
+      |> value.add(pool_script_hash, new_pool_nft_token, 1)
       |> value.merge(value.from_lovelace(1_002_000_000))
   let pool_output = new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
       |> add_asset_to_tx_output(pool_output_val)
       |> modify_pool_output
 
   let lp_output_val =
-    value.from_asset(hash_of_pool_script, pool_lp_name(pool_id), 1_000_000_000)
+    value.from_asset(pool_script_hash, pool_lp_name(pool_id), 1_000_000_000)
       |> value.merge(value.from_lovelace(2_000_000))
   let lp_output =
     new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
@@ -598,14 +624,14 @@ fn mint_test_modify(
       |> modify_lp_output
 
   let ref_output_val =
-    value.from_asset(hash_of_pool_script, new_pool_ref_token, 1)
+    value.from_asset(pool_script_hash, new_pool_ref_token, 1)
       |> value.merge(value.from_lovelace(2_000_000))
   let ref_output =
     new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
-  let poolMintRedeemer = CreatePool {
+  let pool_mint_redeemer = CreatePool {
     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
     pool_output: 0,
     metadata_output: 2,
@@ -613,11 +639,11 @@ fn mint_test_modify(
 
   let ctx = interval.between(1,2)
     |> build_txn_context()
-    |> mint_assets(hash_of_pool_script, value.to_minted_value(
+    |> mint_assets(pool_script_hash, value.to_minted_value(
         value.from_lovelace(0)
-          |> value.add(hash_of_pool_script, new_pool_lp_token, 1_000_000_000)
-          |> value.add(hash_of_pool_script, new_pool_nft_token, 1)
-          |> value.add(hash_of_pool_script, new_pool_ref_token, 1)
+          |> value.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
+          |> value.add(pool_script_hash, new_pool_nft_token, 1)
+          |> value.add(pool_script_hash, new_pool_ref_token, 1)
       ))
     |> add_tx_input(funds_input)
     |> add_tx_ref_input(settings_input)
@@ -627,7 +653,7 @@ fn mint_test_modify(
     |> add_tx_output(lp_output)
     |> add_tx_output(pool_output)
 
-  let result = pool_validator.mint(settings_policy_id, poolMintRedeemer, ctx)
+  let result = pool_validator.mint(settings_policy_id, pool_mint_redeemer, ctx)
   result
 }
 
@@ -635,3 +661,20 @@ test mint_test() {
   mint_test_modify(identity, identity, identity, identity)
 }
 
+// make sure pool_output.address is checked to be the pool address
+test mint_test_wrong_address () fail {
+  let minted = mint_test_modify(
+    // change pool nft output address to destination that shouldn't be possible
+    fn (output) {
+      Output{
+        ..output,
+        // TODO: move some of this stuff to constants?
+        address: from_verification_key(random_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
+      }
+    },
+    identity,
+    identity,
+    identity
+  )
+  minted
+}
