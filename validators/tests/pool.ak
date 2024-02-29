@@ -586,7 +586,7 @@ fn mint_test_modify(
   modify_ref_output: fn(Output) -> Output,
   modify_datum: fn(Datum) -> Datum) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
-  let pool_address = script_address(pool_script_hash)
+  let pool_address = script_address(pool_script_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let rberry_token_name = #"524245525259"
   let user_address =
@@ -631,7 +631,7 @@ fn mint_test_modify(
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
-  let poolMintRedeemer = CreatePool {
+  let pool_mint_redeemer = CreatePool {
     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
     pool_output: 0,
     metadata_output: 2,
@@ -653,7 +653,7 @@ fn mint_test_modify(
     |> add_tx_output(lp_output)
     |> add_tx_output(pool_output)
 
-  let result = pool_validator.mint(settings_policy_id, poolMintRedeemer, ctx)
+  let result = pool_validator.mint(settings_policy_id, pool_mint_redeemer, ctx)
   result
 }
 
@@ -665,7 +665,13 @@ test mint_test() {
 test mint_test_wrong_address () fail {
   let minted = mint_test_modify(
     // change pool nft output address to destination that shouldn't be possible
-    fn (output) { Output{..output, address: from_verification_key(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513") }},
+    fn (output) {
+      Output{
+        ..output,
+        // TODO: move some of this stuff to constants?
+        address: from_verification_key(random_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
+      }
+    },
     identity,
     identity,
     identity

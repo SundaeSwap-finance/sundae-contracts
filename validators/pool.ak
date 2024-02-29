@@ -443,6 +443,13 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
         }
 
+        // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
+        // and that one of the valid staking addresses is attached
+        expect pool_output.address.payment_credential == ScriptCredential(own_policy_id)
+        expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+          pool_output.address.stake_credential == Some(Inline(a))
+        })
+
         // And then check each of the conditions above as the condition for minting
         and {
           coin_pair_ordering_is_canonical,
