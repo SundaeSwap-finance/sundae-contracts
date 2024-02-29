@@ -10,6 +10,10 @@ use aiken/transaction.{
 use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
 
+use tests/examples/ex_shared.{
+  script_address, wallet_address, mk_output_reference
+}
+
 /// An alias type for the pool identifier, to make it slightly easier to reason about
 pub type Ident = ByteArray
 
@@ -112,20 +116,18 @@ pub fn is_script(credential: Credential) -> Bool {
 /// without knowing the exact script address they will use
 /// This is quite subtle, so see the note above
 pub fn count_orders(tx_inputs: List<Input>) -> Int {
-  // Can be done as a simple fold
-  list.foldl(
-    tx_inputs,
-    // Note: by starting at -exact_non_order_script_inputs, it's the same as if we subtracted this at the end,
-    // but saves one mathematical operation.
-    -exact_non_order_script_inputs,
-    fn(input, total) {
+  when tx_inputs is {
+    [] -> -exact_non_order_script_inputs
+    [input, ..rest] ->
       // The reason this is important is twofold:
       // - We count them in the first place to ensure that we process every order by the end of the transaction
       // - and we compare the script this way so that if we implement a new order script, with additional logic,
       //   and the correct datum format, it can be processed the pool just fine
-      total + if is_script(input.output.address.payment_credential) { 1 } else { 0 }
-    },
-  )
+      when input.output.address.payment_credential is {
+        ScriptCredential(_) -> count_orders(rest) + 1
+        _ -> count_orders(rest)
+      }
+  }
 }
 
 /// Check whether a specific value has *exactly* the right amount of tokens
@@ -192,4 +194,61 @@ pub fn pool_token_names(pool_ident: Ident) {
     pool_nft_name(pool_ident),
     pool_lp_name(pool_ident),
   )
+}
+
+// Test for count_orders, with 16 inputs of which 10 are orders.
+test count_orders_test() {
+  let hash_of_pool_script =
+    #"00000000000000000000000000000000000000000000000000000000"
+  let pool_address = script_address(hash_of_pool_script)
+  let pool_input =
+    Input {
+      output_reference: mk_output_reference(0),
+      output: Output {
+        address: pool_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+
+  let hash_of_escrow_script =
+    #"00000000000000000000000000000000000000000000000000000000"
+  let escrow_address = script_address(hash_of_escrow_script)
+  let escrow1_in = Input {
+    output_reference: mk_output_reference(2),
+    output: Output {
+      address: escrow_address,
+      value: value.from_lovelace(0),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+  let escrow2_in = Input {
+    output_reference: mk_output_reference(3),
+    output: Output {
+      address: escrow_address,
+      value: value.from_lovelace(0),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+  let other_address = wallet_address(#"fede0000000000000000000000000000000000000000000000000000")
+  let other_in = Input {
+    output_reference: mk_output_reference(4),
+    output: Output {
+      address: other_address,
+      value: value.from_lovelace(0),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+
+  let inputs = [
+    pool_input, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
+    escrow2_in, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
+    escrow2_in, other_in, escrow1_in, escrow2_in
+  ]
+
+  count_orders(inputs) == 10
 }
