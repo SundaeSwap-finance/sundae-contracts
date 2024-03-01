@@ -678,3 +678,19 @@ test mint_test_wrong_address () fail {
   )
   minted
 }
+
+// make sure we can't include any spam on the datum
+test mint_test_nonvoid_datum() fail {
+  let minted = mint_test_modify(
+    identity,
+    identity,
+    fn (ref_metadata_output) {
+      Output {
+        ..ref_metadata_output,
+        datum: InlineDatum("Evil data")
+      }
+    },
+  identity
+  )
+  minted
+}
