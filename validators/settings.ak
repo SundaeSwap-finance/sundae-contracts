@@ -9,7 +9,7 @@ use shared.{spent_output}
 ///
 /// It is parameterized by the protocol_boot_utxo, a constant to make it an NFT by the usual trick.
 validator(protocol_boot_utxo: OutputReference) {
-  fn spend(d: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
+  pub fn spend(d: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
     // Find our own input so we know the datum / our own address
     let own_input = spent_output(ctx)
     let own_address = own_input.address
@@ -107,7 +107,7 @@ validator(protocol_boot_utxo: OutputReference) {
   }
 
   // Let us mint the settings NFT exactly once, by checking that one of the inputs is the protocol_boot_utxo
-  fn mint(_r: Data, ctx: ScriptContext) {
+  pub fn mint(_r: Data, ctx: ScriptContext) {
     expect Mint(own_policy_id) = ctx.purpose
 
     // Check that we mint *only* one token, and it's exactly our own policy id, and the settings NFT name
@@ -128,3 +128,4 @@ validator(protocol_boot_utxo: OutputReference) {
     }
   }
 }
+
