@@ -24,7 +24,6 @@ use types/pool.{
   WithdrawFees,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
-
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
 ///
 /// Parameterized by the Settings policy ID, which makes the script unique, as well as lets us validate / read global settings.
@@ -421,12 +420,14 @@ validator(settings_policy_id: PolicyId) {
         expect Some(metadata_output) =
           list.at(ctx.transaction.outputs, metadata_output_ix)
         expect metadata_output.address == settings_datum.metadata_admin
-        expect
-          value.quantity_of(
-            metadata_output.value,
-            own_policy_id,
-            new_pool_ref_token,
-          ) == 1
+        expect value.quantity_of(metadata_output.value, own_policy_id, new_pool_ref_token) == 1
+        // We also check that the datum on the metadata output is void; It would be complex and in-flexible to enforce any particular structure on this, so we
+        // instead leave it to the metadata admin to spend the output and provide it the correct datum; We also don't want to leave it unspecified, because
+        // 1) the metadata admin might actually be a script address, in which case having no datum will permanently lock the metadata
+        // 2) the pool minter might include malicious metadata, such as an icon pointing at hardcore porn; until the metadata admin spent it, this would appear in users wallets,
+        //    and potentially even on access UIs for the Sundae protocol
+
+        expect metadata_output.datum == InlineDatum(Void)
 
         // And check that the datum is initialized correctly; This is part of why we have a minting policy handling this,
         // as it allows us to authenticate the providence of the datum.

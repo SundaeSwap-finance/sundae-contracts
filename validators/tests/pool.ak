@@ -627,7 +627,7 @@ fn mint_test_modify(
     value.from_asset(pool_script_hash, new_pool_ref_token, 1)
       |> value.merge(value.from_lovelace(2_000_000))
   let ref_output =
-    new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
+    new_tx_output(user_address, 0, InlineDatum(Void)) // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
@@ -675,6 +675,22 @@ test mint_test_wrong_address () fail {
     identity,
     identity,
     identity
+  )
+  minted
+}
+
+// make sure we can't include any spam on the datum
+test mint_test_nonvoid_datum() fail {
+  let minted = mint_test_modify(
+    identity,
+    identity,
+    fn (ref_metadata_output) {
+      Output {
+        ..ref_metadata_output,
+        datum: InlineDatum("Evil data")
+      }
+    },
+  identity
   )
   minted
 }
