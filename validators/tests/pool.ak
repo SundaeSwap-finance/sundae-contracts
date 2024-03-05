@@ -22,7 +22,7 @@ use tests/examples/ex_shared.{
 }
 use types/order.{Deposit, Destination, OrderDatum, Swap}
 use types/pool.{
-  CreatePool, PoolDatum, PoolScoop,
+  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
 }
 use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum}
@@ -568,7 +568,8 @@ test mint_test_two_nfts() fail {
       fn(output) { Output { ..output, value: value.add(output.value, pool_script_hash, new_pool_nft_token, 1) } },
       identity,
       identity,
-      identity
+      identity,
+      identity,
     )
 }
 
@@ -585,7 +586,9 @@ fn mint_test_modify(
   modify_pool_output: fn(Output) -> Output,
   modify_lp_output: fn(Output) -> Output,
   modify_ref_output: fn(Output) -> Output,
-  modify_datum: fn(Datum) -> Datum) -> Bool {
+  modify_datum: fn(Datum) -> Datum,
+  modify_redeemer: fn(PoolMintRedeemer) -> PoolMintRedeemer,
+) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(pool_script_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -632,11 +635,11 @@ fn mint_test_modify(
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
-  let pool_mint_redeemer = CreatePool {
+  let pool_mint_redeemer = modify_redeemer(CreatePool {
     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
     pool_output: 0,
     metadata_output: 2,
-  }
+  })
 
   let ctx = interval.between(1,2)
     |> build_txn_context()
@@ -659,7 +662,43 @@ fn mint_test_modify(
 }
 
 test mint_test() {
-  mint_test_modify(identity, identity, identity, identity)
+  mint_test_modify(identity, identity, identity, identity, identity)
+}
+
+test mint_exotic_pair() {
+  let funds_input = pool_test_tx_input()
+  let pool_id = pool_ident_from_input(funds_input)
+  let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
+  let exotic_pair_value =
+    value.from_asset(#"01", #"54", 1_000_000_000)
+      |> value.add(#"02", #"55", 1_000_000_000)
+      |> value.add(pool_script_hash, new_pool_nft_token, 1)
+      |> value.add(#"", #"", 2_000_000)
+
+  mint_test_modify(
+    fn (output) {
+      Output {
+        ..output,
+        value: exotic_pair_value
+      }
+    },
+    identity,
+    identity,
+    fn(pool_datum) {
+      expect InlineDatum(pool_datum) = pool_datum
+      expect pool_datum: PoolDatum = pool_datum
+      InlineDatum(PoolDatum {
+        ..pool_datum,
+        assets: ((#"01", #"54"), (#"02", #"55")),
+      })
+    },
+    fn(redeemer) {
+      when redeemer is {
+        CreatePool(_, ix, mx) -> CreatePool(((#"01", #"54"), (#"02", #"55")), ix, mx)
+        _ -> fail "expected create pool"
+      }
+    }
+  )
 }
 
 // make sure pool_output.address is checked to be the pool address
@@ -675,7 +714,8 @@ test mint_test_wrong_address () fail {
     },
     identity,
     identity,
-    identity
+    identity,
+    identity,
   )
   minted
 }
@@ -691,7 +731,8 @@ test mint_test_nonvoid_datum() fail {
         datum: InlineDatum("Evil data")
       }
     },
-  identity
+  identity,
+  identity,
   )
   minted
 }

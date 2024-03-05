@@ -541,8 +541,6 @@ pub fn has_expected_pool_value(
         }
       )
     let expected = (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1)
-    trace bytearray.to_hex(cbor.serialise(actual))
-    trace bytearray.to_hex(cbor.serialise(expected))
     // Rather than constructing a value directly (which can be expensive)
     // we can just compare the expected token count and amounts with a single pass over the value
     expected == actual
