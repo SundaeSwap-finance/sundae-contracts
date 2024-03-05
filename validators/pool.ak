@@ -1,4 +1,5 @@
 use aiken/bytearray
+use aiken/cbor
 use aiken/dict
 use aiken/hash
 use aiken/interval
@@ -400,18 +401,12 @@ validator(settings_policy_id: PolicyId) {
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
-        // Confirm that the correct funds (at least one asset A, at least one asset B, exactly 3 tokens, including the pool NFT) is correct here
-        // Note: should we instead just compare the expected pool output?
-        let funds_spent_to_pool = and {
-          coin_a_amt_sans_protocol_fees >= 1,
-          coin_b_amt >= 1,
-          list.length(value.flatten(pool_output.value)) <= 3,
-          value.quantity_of(
-            pool_output.value,
-            own_policy_id,
-            new_pool_nft_token,
-          ) == 1
-        }
+        // Confirm that the correct funds (asset A, asset B, the correct amount of ADA, and the pool NFT) get paid to the pool output
+        let funds_spent_to_pool = has_expected_pool_value(own_policy_id, new_pool_id, pool_output.value, PoolState {
+          quantity_a: (asset_a.1st, asset_a.2nd, coin_a_amt_sans_protocol_fees),
+          quantity_b: (asset_b.1st, asset_b.2nd, coin_b_amt),
+          quantity_lp: (own_policy_id, new_pool_lp_token, initial_lq),
+        }, pool_output_datum.protocol_fees)
 
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
@@ -535,10 +530,7 @@ pub fn has_expected_pool_value(
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
   // (ADA, Asset B, and the NFT)
   if quantity_a_policy_id == ada_policy_id {
-    // Rather than constructing a value directly (which can be expensive)
-    // we can just compare the expected token count and amounts with a single pass over the value
-    (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1) ==
-      list.foldl(
+    let actual = list.foldl(
         value.flatten(output_value),
         // (token count, lovelace amount, token b amount, pool nft amount)
         (0, 0, 0, 0),
@@ -554,6 +546,10 @@ pub fn has_expected_pool_value(
           }
         }
       )
+    let expected = (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1)
+    // Rather than constructing a value directly (which can be expensive)
+    // we can just compare the expected token count and amounts with a single pass over the value
+    expected == actual
   } else {
     // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
     // ADA, the Pool NFT, Asset A, and Asset B
