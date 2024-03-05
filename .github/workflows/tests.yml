@@ -13,7 +13,33 @@ jobs:
 
       - uses: aiken-lang/setup-aiken@v0.1.0
         with:
-          version: v1.0.20-alpha
+          version: v1.0.24-alpha
 
-      - run: aiken check
+      - run: |
+          # Run the tests
+          set -o pipefail
+          RESULT=0
+          aiken check 2>&1 | tee aiken.log || RESULT=$?
+          if [ $RESULT -ne 0 ]; then
+            {
+              echo 'FAILING_TESTS<<EOF'
+              grep "FAIL" aiken.log
+              echo EOF
+            } >> "$GITHUB_ENV"
+            cat $GITHUB_ENV
+            exit $RESULT
+          fi
+      - if: failure()
+        run: |
+          echo "$FAILING_TESTS"
       - run: aiken build
+      - uses: actions/github-script@v6
+        if: failure() && env.FAILING_TESTS != ''
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Tests failed:\n\n\`\`\`\n${{ env.FAILING_TESTS }}\n\`\`\``
+            })
