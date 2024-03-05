@@ -3,7 +3,6 @@ use aiken/dict
 use aiken/hash
 use aiken/interval
 use aiken/list
-use aiken/math
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference,
   ScriptContext, Transaction, TransactionId,
@@ -387,11 +386,14 @@ validator(settings_policy_id: PolicyId) {
             coin_a_amt
           }
 
-        // Calculate the initial number of LP tokens; In particular, we adopt Uniswaps convention of
-        // computing this value as the square root of the product of the two values.
+        // Check that the quantity of LP tokens is correct; In particular, we adopt Uniswaps convention of
+        // using the sqrt of the product of the two values for the initial number of LP tokens to mint..
         // This helps minimize precision loss: it gives decent initial liquidity values for a range of
         // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
-        expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt)
+        // In particular, though, we don't calculate the sqrt here, which is an expensive function; we instead verify that the
+        // amount minted is valid by checking that it squares to the correct product
+        let initial_lq = pool_output_datum.circulating_lp
+        expect shared.is_sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt, initial_lq)
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
