@@ -6,12 +6,14 @@ use types/settings.{SettingsDatum}
 use aiken/transaction.{Input, Output, InlineDatum}
 use tests/examples/ex_shared.{print_example, script_address, mk_output_reference}
 
+pub const example_settings_admin = #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+
 pub fn mk_valid_settings_datum(
   scoopers: List<ByteArray>,
 ) -> SettingsDatum {
   SettingsDatum {
     settings_admin: multisig.Signature(
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+      example_settings_admin,
     ),
     metadata_admin: Address(
       VerificationKeyCredential(
@@ -20,7 +22,7 @@ pub fn mk_valid_settings_datum(
       None,
     ),
     treasury_admin: multisig.Signature(
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+      example_settings_admin,
     ),
     treasury_address: Address(
       VerificationKeyCredential(
@@ -32,7 +34,7 @@ pub fn mk_valid_settings_datum(
     authorized_scoopers: Some(scoopers),
     authorized_staking_keys: [
       VerificationKeyCredential(
-        #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+        example_settings_admin,
       ),
     ],
     base_fee: 0,
@@ -70,7 +72,7 @@ pub fn mk_valid_settings_input(
 test example_settings_datum() {
   print_example(
     cbor.serialise(mk_valid_settings_datum([
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
+      example_settings_admin,
     ])),
   )
 }

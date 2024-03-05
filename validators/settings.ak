@@ -1,9 +1,20 @@
 use aiken/list
-use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference}
+use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference, TransactionId}
 use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
+use tests/examples/ex_settings.{example_settings_admin, mk_valid_settings_datum, }
 use shared.{spent_output}
+use aiken/interval
+use aiken/transaction/credential.{ from_script}
+use tx_util/builder.{
+  add_asset_to_tx_output, build_txn_context,
+  add_tx_input,
+  add_tx_output,
+  new_tx_output,
+  new_tx_input,
+  with_asset_of_tx_input,
+}
 
 /// The settings validator lets the settings and treasury admins update global settings for the protocol
 ///
@@ -128,4 +139,89 @@ validator(protocol_boot_utxo: OutputReference) {
       spends_protocol_boot_utxo,
     }
   }
+}
+
+// Test that we can spend the settings NFT and do a no-op change, except for a new ada lovelace rider value
+test test_spend_settings_change_ada_rider() {
+  let settings_nft_policy = #"01"
+  let first_settings_utxo = OutputReference { transaction_id: TransactionId { hash: #"01"}, output_index: 0 }
+  let first_settings_rider = 2_000_000
+  let first_settings = new_tx_input(
+    first_settings_utxo.transaction_id.hash,
+    from_script(settings_nft_policy),
+    first_settings_rider,
+    InlineDatum(mk_valid_settings_datum([])),
+  ) |> with_asset_of_tx_input(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+
+  let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
+  let second_settings_datum = mk_valid_settings_datum([])
+  
+  let second_settings_redeemer = SettingsAdminUpdate
+
+  let second_settings_output = new_tx_output(
+        from_script(settings_nft_policy),
+        first_settings_rider+1,
+        InlineDatum(second_settings_datum)
+      ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+  let ctx = 
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_input(first_settings)
+      |> add_tx_output(second_settings_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(first_settings.output_reference)
+  
+  let second_settings = spend(protocol_boot_utxo, second_settings_datum, second_settings_redeemer, ctx)
+  second_settings
+}
+
+// Test that we can spend the settings NFT and CAN'T change a non-ADA value while changing rider
+test test_spend_settings_change_value() fail {
+  let settings_nft_policy = #"01"
+  let first_settings_utxo = OutputReference { transaction_id: TransactionId { hash: #"01"}, output_index: 0 }
+  let first_settings_rider = 2_000_000
+  let first_settings = new_tx_input(
+    first_settings_utxo.transaction_id.hash,
+    from_script(settings_nft_policy),
+    first_settings_rider,
+    InlineDatum(mk_valid_settings_datum([])),
+  ) |> with_asset_of_tx_input(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+
+  let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
+  let second_settings_datum = mk_valid_settings_datum([])
+  
+  let second_settings_redeemer = SettingsAdminUpdate
+
+  let second_settings_output = new_tx_output(
+        from_script(settings_nft_policy),
+        first_settings_rider+1,
+        InlineDatum(second_settings_datum)
+      ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+
+  let junk_policy = "junk policy"
+  let junk_name = "junk name"
+  let junk_utxo = OutputReference { transaction_id: TransactionId { hash: #"99"}, output_index: 0 }
+  let junk_input = new_tx_input(
+        junk_utxo.transaction_id.hash,
+        from_script(junk_policy),
+        1,
+        InlineDatum(Void)) |> with_asset_of_tx_input(value.from_asset(junk_policy, junk_name, 1))
+  
+  let junk_output = new_tx_output(
+        from_script(junk_policy),
+        1,
+        InlineDatum(Void)
+      ) |> add_asset_to_tx_output(value.from_asset(junk_policy, junk_name, 1))
+  let ctx = 
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_input(first_settings)
+      |> add_tx_input(junk_input)
+      |> add_tx_output(second_settings_output)
+      |> add_tx_output(junk_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(first_settings.output_reference)
+  
+  let second_settings = spend(protocol_boot_utxo, second_settings_datum, second_settings_redeemer, ctx)
+  second_settings
 }

@@ -17,3 +17,8 @@ source = "github"
 name = "SundaeSwap-finance/aicone"
 version = "ae0852d40cc6332437492102451cf331a3c10b0d"
 source = "github"
+
+[[dependencies]]
+name = "aiken-extra/tx_util"
+version = "1.170.202312"
+source = "github"
