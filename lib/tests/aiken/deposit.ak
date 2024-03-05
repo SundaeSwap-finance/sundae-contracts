@@ -5,7 +5,7 @@ use aiken/transaction/value
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use calculation/shared.{PoolState}
 use calculation/deposit.{do_deposit}
-use types/order.{OrderDatum, Destination, Fixed}
+use types/order.{OrderDatum, Fixed}
 
 test deposit_test() {
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")

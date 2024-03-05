@@ -1,5 +1,5 @@
 use aiken/cbor
-use types/order.{Destination, Fixed, Self, OrderDatum, Swap, Deposit, Withdrawal, Scoop, Cancel}
+use types/order.{Fixed, OrderDatum, Swap, Deposit, Withdrawal, Scoop, Cancel}
 use aiken/transaction.{NoDatum}
 use sundae/multisig
 use tests/examples/ex_shared.{print_example, wallet_address}

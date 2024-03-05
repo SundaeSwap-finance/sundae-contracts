@@ -1,10 +1,8 @@
-use aiken/transaction.{NoDatum, InlineDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
+use aiken/transaction.{Output}
 use aiken/transaction/value.{ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
-use sundae/multisig
-use types/order.{Destination, Fixed, Self, OrderDatum}
+use types/order.{Destination, Fixed, Self}
 
 /// A donation describes an amount of assets to deposit into the pool, receiving nothing in return (except for the extra change on the UTXO).
 /// Because every LP token holder has an entitlement to a percentage of the assets in the pool, the donation is distributed to all LP token holders
@@ -29,20 +27,20 @@ pub fn do_donation(
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
-  let Output { value: input_value, address: input_address, datum: input_datum, .. } = input_utxo
+  let Output { value: input_value, .. } = input_utxo
+  let ((asset_a_policy_id, asset_a_asset_name, asset_a_qty), (asset_b_policy_id, asset_b_asset_name, asset_b_qty)) = assets
   // Make sure we're actually donating the pool assets; this is to prevent setting
   // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
-  expect assets.1st.1st == pool_state.quantity_a.1st
-  expect assets.1st.2nd == pool_state.quantity_a.2nd
-  expect assets.2nd.1st == pool_state.quantity_b.1st
-  expect assets.2nd.2nd == pool_state.quantity_b.2nd
+  expect asset_a_policy_id == pool_state.quantity_a.1st
+  expect asset_a_asset_name == pool_state.quantity_a.2nd
+  expect asset_b_policy_id == pool_state.quantity_b.1st
+  expect asset_b_asset_name == pool_state.quantity_b.2nd
   // Compute however much of the UTXO value is *left over* after deducting the donation amount from it; If nonzero, this will need to be returned to the user
   let remainder =
-    shared.to_value(assets.1st)
-      |> value.merge(shared.to_value(assets.2nd))
-      |> value.add(ada_policy_id, ada_asset_name, actual_protocol_fee)
-      |> value.negate
-      |> value.merge(input_value)
+    input_value
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(asset_a_policy_id, asset_a_asset_name, -asset_a_qty)
+      |> value.add(asset_b_policy_id, asset_b_asset_name, -asset_b_qty)
 
   let has_remainder = remainder != value.zero()
   // If we have a remainder, then we need to check the details of the output; this awkward structure
@@ -60,6 +58,7 @@ pub fn do_donation(
         }
       }
       Self -> {
+        let Output { address: input_address, datum: input_datum, .. } = input_utxo
         and {
           output.address == input_address,
           output.datum == input_datum
@@ -88,64 +87,4 @@ pub fn do_donation(
     },
     has_remainder,
   )
-}
-
-test donation() {
-  let addr =
-    Address(
-      VerificationKeyCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value =
-    value.from_lovelace(3_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        )
-  let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: assets,
-      },
-      extension: Void,
-    }
-  // There's no remainder so do_donation totally ignores this Output record
-  let output =
-    Output {
-      address: addr,
-      value: value.from_lovelace(999_999_999_999_999_999),
-      datum: NoDatum,
-      reference_script: None,
-    }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
-  let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input, assets, order.destination, 2_500_000, output)
-  expect !has_remainder
-  expect final_pool_state.quantity_a.3rd == 1_001_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
-  True
 }

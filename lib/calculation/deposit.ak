@@ -21,7 +21,7 @@ pub fn do_deposit(
   output: Output,
 ) -> PoolState {
   let (asset_a, asset_b) = assets
-  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
+  let Output { value: input_value, .. } = input_utxo
 
   // Policy ID and token name of the assets must match the pool, otherwise someone
   // could load the pool with junk tokens and freeze the pool.
@@ -119,6 +119,7 @@ pub fn do_deposit(
       }
     }
     Self -> {
+      let Output { address: input_address, datum: input_datum, .. } = input_utxo
       and {
         output.address == input_address,
         output.datum == input_datum

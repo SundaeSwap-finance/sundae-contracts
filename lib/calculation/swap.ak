@@ -59,7 +59,7 @@ pub fn swap_takes(
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
 pub fn do_swap(
   pool_state: PoolState,
-  /// The value coming in from the UTXO with the order
+  /// The full UTXO for this swap
   input_utxo: Output,
   /// Where the results of the swap need to be paid
   destination: Destination,
@@ -73,7 +73,7 @@ pub fn do_swap(
   /// The output to compare against
   output: Output,
 ) -> PoolState {
-  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
+  let Output { value: input_value, .. } = input_utxo
   // Destructure the pool state
   // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
@@ -96,6 +96,7 @@ pub fn do_swap(
       }
     }
     Self -> {
+      let Output { address: input_address, datum: input_datum, .. } = input_utxo
       and {
         output.address == input_address,
         output.datum == input_datum

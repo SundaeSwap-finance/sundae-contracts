@@ -445,3 +445,115 @@ test process_orders_test() {
   expect strategies == 0
   True
 }
+
+test process_30_shuffled_orders_test() {
+  let addr =
+    Address(
+      VerificationKeyCredential(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      None,
+    )
+  let ada = (#"", #"")
+  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
+  let pool_state = PoolState {
+    quantity_a: (#"", #"", 1_000_000_000),
+    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
+    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
+  }
+  let order_datum = OrderDatum {
+    pool_ident: None,
+    owner: multisig.Signature(
+      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+    ),
+    max_protocol_fee: 2_500_000,
+    destination: Fixed { 
+      address: addr,
+      datum: NoDatum,
+    },
+    details: order.Donation {
+      assets: ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000)),
+    },
+    extension: Void,
+  }
+  // There's no remainder so do_donation totally ignores this Output record
+  let output = Output {
+    address: addr,
+    value: value.from_lovelace(999_999_999_999_999_999),
+    datum: NoDatum,
+    reference_script: None,
+  }
+
+  let order_output = Output {
+    address: Address(
+      ScriptCredential(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
+      None,
+    ),
+    value: value.from_lovelace(3_500_000)
+      |> value.add(rberry.1st, rberry.2nd, 1_000_000),
+    datum: InlineDatum(order_datum),
+    reference_script: None,
+  }
+
+  let order_datum_data: Data = order_datum
+  let datums = dict.new()
+    |> dict.insert(
+         key: hash.blake2b_256(cbor.serialise(order_datum)),
+         value: order_datum_data,
+         compare: bytearray.compare)
+
+  let input = Input {
+    output_reference: OutputReference {
+      transaction_id: TransactionId {
+        hash: #"0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      output_index: 0,
+    },
+    output: order_output,
+  }
+  let valid_range = interval.between(1,2)
+
+  let inputs = [input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input, input]
+  // shuffled order processing:
+  let input_order = [
+    (11, None, 0),
+    (26, None, 0),
+    (18, None, 0),
+    (2, None, 0),
+    (28, None, 0),
+    (13, None, 0),
+    (16, None, 0),
+    (1, None, 0),
+    (8, None, 0),
+    (27, None, 0),
+    (12, None, 0),
+    (23, None, 0),
+    (22, None, 0),
+    (14, None, 0),
+    (10, None, 0),
+    (0, None, 0),
+    (24, None, 0),
+    (5, None, 0),
+    (7, None, 0),
+    (17, None, 0),
+    (20, None, 0),
+    (29, None, 0),
+    (19, None, 0),
+    (21, None, 0),
+    (9, None, 0),
+    (25, None, 0),
+    (6, None, 0),
+    (4, None, 0),
+    (3, None, 0),
+    (15, None, 0),
+  ]
+  let outputs = [output]
+
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+
+  final_pool_state.quantity_a.3rd == 1_030_000_000 &&
+  final_pool_state.quantity_b.3rd == 1_030_000_000 &&
+  simple == 30 &&
+  strategies == 0
+}

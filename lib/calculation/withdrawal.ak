@@ -21,7 +21,7 @@ pub fn do_withdrawal(
   output: Output,            // The output to compare the order execution against, to ensure the right quantity was paid out
 ) -> PoolState {
   let (lp_policy, lp_asset_name, amount) = amount
-  let Output { address: input_address, datum: input_datum, value: input_value, .. } = input_utxo
+  let Output { value: input_value, .. } = input_utxo
 
   // Make sure we're withdrawing from the right pool;
   // if we were to provide LP tokens for a different pool, you could withdraw funds that weren't yours
@@ -75,6 +75,7 @@ pub fn do_withdrawal(
       }
     }
     Self -> {
+      let Output { address: input_address, datum: input_datum, .. } = input_utxo
       and {
         output.address == input_address,
         output.datum == input_datum
