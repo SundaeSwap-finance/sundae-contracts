@@ -117,6 +117,8 @@ pub fn is_script(credential: Credential) -> Bool {
 /// This is quite subtle, so see the note above
 pub fn count_orders(tx_inputs: List<Input>) -> Int {
   when tx_inputs is {
+    // Note: by using  -exact_non_order_script_inputs for the base case,
+    // it's equivalent to subtracting at the end
     [] -> -exact_non_order_script_inputs
     [input, ..rest] ->
       // The reason this is important is twofold:
