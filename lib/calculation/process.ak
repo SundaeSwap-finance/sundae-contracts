@@ -546,7 +546,7 @@ test process_30_shuffled_orders_test() {
   ]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   final_pool_state.quantity_a.3rd == 1_030_000_000 &&
   final_pool_state.quantity_b.3rd == 1_030_000_000 &&
