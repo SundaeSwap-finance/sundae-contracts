@@ -459,27 +459,29 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum_correct,
         }
       }
-      // when minting an LP token, we just need to make sure the pool NFT is present in one of the inputs,
-      // meaning the pool script will enforce the correct name and quantity.
-      // 
-      // Of particular note, you might expect this to fail when minting the initial LP tokens
-      // but the minting policy only runs once, so it would be running with a different redeemer in that case
-      // And it's not possible to include a *separate* minting redeemer to run the script twice; (TODO: check this)
-      // even if it were, the pool token wouldn't be on the **inuputs** when we're minting the pool.
+      // When minting an LP token, we just need to make sure the pool script is being spent, as it will enforce the correct
+      // name and quantity of the LP tokens.
       //
-      // It's also important that the pool script and the minting script checks that *no other* tokens of this policy are minted,
-      // for example for a different pool. It should be ok if a token from a *different* policy is minted, though.
+      // To do that, we could check for the pool NFT on the inputs, but this is expensive, especially if the pool input ends up being one of the last.
+      // So instead we check that the pool NFT is in the first output (this is safe to assume because it's unique, and if it's in any other output it will fail)
+      // and that we're not minting the pool token (i.e. someone could "pretend" to mint LP tokens, but also mint the pool token to make it look like a scoop)
+      // 
+      // So, lets enumerate the possible cases:
+      // - We use the CreatePool redeemer; this checks that *only* the correct pool token and correct number of LP tokens are minted
+      // - We use the MintLP redeemer; this checks that the pool token (which is unique and locked in the pool script) is in the outputs, and not minted
+      //   - the pool script checks that only the correct number of LP tokens, and nothing else under this policy ID, are minted
+      // And the impossible cases:
+      // - During CreatePool, it would be impossible to mint multiple of the same pool tokens; a different pool token; a different number of LP tokens; or a different pool's LP tokens
+      // - During MintLP, it would be impossible to mint the relevant pool token; thus, the pool script must run, and thus it will be impossible to mint another pool token, a different pool
+      //   ident pool token, a different quantity of LP tokens, or a different pools LP tokens
       MintLP(pool_ident) -> {
         expect Mint(own_policy_id) = ctx.purpose
         let pool_nft_name = shared.pool_nft_name(pool_ident)
-        let allows_to_spend =
-          fn(v) {
-            value.quantity_of(v, own_policy_id, pool_nft_name) == 1
-          }
-        list.any(
-          ctx.transaction.inputs,
-          fn(input) { allows_to_spend(input.output.value) },
-        )
+        expect Some(pool_output) = list.head(ctx.transaction.outputs)
+        and {
+          (pool_output.value |> value.quantity_of(own_policy_id, pool_nft_name)) == 1,
+          (ctx.transaction.mint |> value.from_minted_value |> value.quantity_of(own_policy_id, pool_nft_name)) == 0,
+        }
       }
     }
   }
