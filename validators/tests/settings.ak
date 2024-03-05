@@ -28,7 +28,7 @@ fn test_mint_settings(settings_nfts_count: Int) {
     from_script(settings_nft_policy),
     2_000_000,
     InlineDatum(settings_datum)
-  )
+  ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, settings_nfts_count))
 
   let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
   let protocol_boot_utxo_policy = #"00"
@@ -51,8 +51,8 @@ fn test_mint_settings(settings_nfts_count: Int) {
   minted
 }
 
-test mint_invalid_settings_multiple_nft() {
-  !test_mint_settings(2)
+test mint_invalid_settings_multiple_nft() fail {
+  test_mint_settings(2)
 }
 
 test mint_valid_settings() {
