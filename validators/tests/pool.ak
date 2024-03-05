@@ -11,7 +11,7 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, VerificationKeyCredential, from_verification_key, from_script, with_delegation_key
 }
-use aiken/transaction/value.{Value}
+use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use shared.{
   pool_lp_name,
 }
@@ -24,6 +24,7 @@ use types/order.{Deposit, Destination, OrderDatum, Swap}
 use types/pool.{
   CreatePool, PoolDatum, PoolScoop,
 }
+use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum}
 use tx_util/builder.{add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input, build_txn_context, mint_assets, new_tx_input, new_tx_output}
 use pool as pool_validator
@@ -693,4 +694,61 @@ test mint_test_nonvoid_datum() fail {
   identity
   )
   minted
+}
+
+test has_expected_pool_value_test() {
+  // ADA/rberry pool
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(102_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (ada_policy_id, ada_asset_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  pool_validator.has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
+}
+
+test has_expected_pool_value_test2() {
+  // other/rberry pool
+  let other_policy_id = #"fafafafafafafafafafafafafafafafafafafafafafafafafafafafa"
+  let other_token_name = #"fafafafa"
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(2_000_000)
+    |> value.add(other_policy_id, other_token_name, 100_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (other_policy_id, other_token_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  pool_validator.has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
 }
