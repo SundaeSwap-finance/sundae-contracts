@@ -1,6 +1,6 @@
 use aiken/transaction.{NoDatum, InlineDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
+use aiken/transaction/value.{ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use sundae/multisig

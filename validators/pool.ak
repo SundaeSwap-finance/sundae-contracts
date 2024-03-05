@@ -20,7 +20,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, has_ex
 use sundae/multisig
 use tests/examples/ex_settings.{mk_valid_settings_input}
 use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
-use types/order.{Destination, OrderDatum, Swap, Deposit}
+use types/order.{Destination, Fixed, OrderDatum, Swap, Deposit}
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop, WithdrawFees
 }
@@ -780,7 +780,7 @@ fn scoop(options: ScoopTestOptions) {
         reference_script: None,
       },
     }
-  let dest = Destination { address: user_addr, datum: NoDatum }
+  let dest = Fixed { address: user_addr, datum: NoDatum }
   let swap =
     Swap((#"", #"", 10_000_000), (dummy_policy_id, dummy_asset_name, 0))
   let escrow_datum =
@@ -942,7 +942,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       reference_script: None,
     },
   }
-  let dest = Destination { address: user_addr, datum: NoDatum }
+  let dest = Fixed { address: user_addr, datum: NoDatum }
   let swap =
     Swap(
       (#"", #"", 10_000_000),
