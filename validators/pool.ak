@@ -1,5 +1,4 @@
 use aiken/bytearray
-use aiken/cbor
 use aiken/dict
 use aiken/hash
 use aiken/interval
@@ -62,6 +61,7 @@ validator(settings_policy_id: PolicyId) {
       datums,
       extra_signatories,
       validity_range,
+      withdrawals,
       ..
     } = transaction
 
@@ -136,6 +136,7 @@ validator(settings_policy_id: PolicyId) {
           process_orders(
             actual_identifier,        // The pool identifier, so we can check that each order is for this pool
             validity_range,           // The validity range of the transaction, so we can check strategies haven't expired
+            withdrawals,              // Include the withdrawals, in case a strategy has some kind of attached script condition
             datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
             initial_state,            // The initial pool state, such as the reserves and circulating LP
             input_order,              // The input ordering specified by the scooper

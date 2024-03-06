@@ -1,7 +1,8 @@
 use aiken/transaction.{Datum, OutputReference, ValidityRange}
-use aiken/transaction/credential.{Address, VerificationKey, Signature}
+use aiken/transaction/credential.{Address, VerificationKey, Signature, Script}
 use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
+use aiken/hash.{Hash, Blake2b_224}
 
 /// An order to execute within the SundaeSwap ecosystem
 pub type OrderDatum {
@@ -38,13 +39,21 @@ pub type Destination {
   datum: Datum,
 }
 
+/// There are two ways to delegate authorization of a strategy::
+/// - by a signing key
+/// - or by some script in the withdrawals of the transaction 
+pub type StrategyAuthorization {
+  Signature { signer: VerificationKey }
+  Script { script: Hash<Blake2b_224, Script> }
+}
+
 /// The specific order details for executing an order
 pub type Order {
   /// The details of the order aren't yet determined, but will be communicated out of band to the scoopers
   /// This can be thought of as "late-binding" the order details, so long as the strategy is signed by `signer`
   /// For example, you could use this to implement trailing stop loss, where the order to sell a token is only triggered
   /// after a specific threshold is met.
-  Strategy { signer: VerificationKey }
+  Strategy { auth: StrategyAuthorization }
   /// A swap from one token to another, offering some subset of the UTXO, in return for at least some quantity of another token
   Swap { offer: SingletonValue, min_received: SingletonValue }
   /// A deposit, offering at most two quantities from the UTXO to provide liquidity to the pool, resulting in LP tokens paid to the output to track an ownership percentage of the pool
@@ -83,6 +92,9 @@ pub type StrategyExecution {
   /// These are the late-bound details that the delegated authority chose to execute
   /// likely based on some arbitrary off-chain trigger condition
   details: Order,
+  /// This extension data allows arbitrary other data to be attached that the pool
+  /// doesn't care about, but that the order script might
+  extensions: Data,
 }
 
 /// A specific strategy execution, plus a signature of that data
@@ -90,5 +102,5 @@ pub type SignedStrategyExecution {
   /// The details about how to execute the strategy for a given order
   strategy: StrategyExecution,
   /// An ed25519 signature of the serialized `strategy`
-  signature: Signature,
+  signature: Option<Signature>,
 }

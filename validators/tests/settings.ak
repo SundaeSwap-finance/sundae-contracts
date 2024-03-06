@@ -5,13 +5,13 @@ use aiken/transaction/value
 use sundae/multisig
 use types/settings.{SettingsDatum, SettingsAdminUpdate, settings_nft_name}
 use tx_util/builder.{
-  add_asset_to_tx_output,
   build_txn_context,
   add_tx_input,
   add_tx_output,
   new_tx_output,
   new_tx_input,
   with_asset_of_tx_input,
+  add_asset_to_tx_output,
   mint_assets
 }
 use tests/examples/ex_settings.{example_settings_admin}
