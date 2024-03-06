@@ -11,7 +11,7 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, VerificationKeyCredential, from_verification_key, from_script, with_delegation_key
 }
-use aiken/transaction/value.{Value}
+use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use shared.{
   pool_lp_name,
 }
@@ -22,8 +22,9 @@ use tests/examples/ex_shared.{
 }
 use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
-  CreatePool, PoolDatum, PoolScoop,
+  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
 }
+use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum}
 use tx_util/builder.{add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input, build_txn_context, mint_assets, new_tx_input, new_tx_output}
 use pool as pool_validator
@@ -599,7 +600,8 @@ test mint_test_two_nfts() fail {
       fn(output) { Output { ..output, value: value.add(output.value, pool_script_hash, new_pool_nft_token, 1) } },
       identity,
       identity,
-      identity
+      identity,
+      identity,
     )
 }
 
@@ -616,7 +618,9 @@ fn mint_test_modify(
   modify_pool_output: fn(Output) -> Output,
   modify_lp_output: fn(Output) -> Output,
   modify_ref_output: fn(Output) -> Output,
-  modify_datum: fn(Datum) -> Datum) -> Bool {
+  modify_datum: fn(Datum) -> Datum,
+  modify_redeemer: fn(PoolMintRedeemer) -> PoolMintRedeemer,
+) -> Bool {
   let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(pool_script_hash) |> with_delegation_key(#"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad")
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -663,11 +667,11 @@ fn mint_test_modify(
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
-  let pool_mint_redeemer = CreatePool {
+  let pool_mint_redeemer = modify_redeemer(CreatePool {
     assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
     pool_output: 0,
     metadata_output: 2,
-  }
+  })
 
   let ctx = interval.between(1,2)
     |> build_txn_context()
@@ -690,7 +694,43 @@ fn mint_test_modify(
 }
 
 test mint_test() {
-  mint_test_modify(identity, identity, identity, identity)
+  mint_test_modify(identity, identity, identity, identity, identity)
+}
+
+test mint_exotic_pair() {
+  let funds_input = pool_test_tx_input()
+  let pool_id = pool_ident_from_input(funds_input)
+  let (_, new_pool_nft_token, _) = shared.pool_token_names(pool_id)
+  let exotic_pair_value =
+    value.from_asset(#"01", #"54", 1_000_000_000)
+      |> value.add(#"02", #"55", 1_000_000_000)
+      |> value.add(pool_script_hash, new_pool_nft_token, 1)
+      |> value.add(#"", #"", 2_000_000)
+
+  mint_test_modify(
+    fn (output) {
+      Output {
+        ..output,
+        value: exotic_pair_value
+      }
+    },
+    identity,
+    identity,
+    fn(pool_datum) {
+      expect InlineDatum(pool_datum) = pool_datum
+      expect pool_datum: PoolDatum = pool_datum
+      InlineDatum(PoolDatum {
+        ..pool_datum,
+        assets: ((#"01", #"54"), (#"02", #"55")),
+      })
+    },
+    fn(redeemer) {
+      when redeemer is {
+        CreatePool(_, ix, mx) -> CreatePool(((#"01", #"54"), (#"02", #"55")), ix, mx)
+        _ -> fail "expected create pool"
+      }
+    }
+  )
 }
 
 // make sure pool_output.address is checked to be the pool address
@@ -706,7 +746,8 @@ test mint_test_wrong_address () fail {
     },
     identity,
     identity,
-    identity
+    identity,
+    identity,
   )
   minted
 }
@@ -722,7 +763,65 @@ test mint_test_nonvoid_datum() fail {
         datum: InlineDatum("Evil data")
       }
     },
-  identity
+  identity,
+  identity,
   )
   minted
+}
+
+test has_expected_pool_value_test() {
+  // ADA/rberry pool
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(102_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (ada_policy_id, ada_asset_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  pool_validator.has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
+}
+
+test has_expected_pool_value_test2() {
+  // other/rberry pool
+  let other_policy_id = #"fafafafafafafafafafafafafafafafafafafafafafafafafafafafa"
+  let other_token_name = #"fafafafa"
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let identifier = #"00000000000000000000000000000000000000000000000000000000"
+  let (_, pool_nft_token, pool_lp_token) = shared.pool_token_names(identifier)
+  let pool_value = value.from_lovelace(2_000_000)
+    |> value.add(other_policy_id, other_token_name, 100_000_000)
+    |> value.add(rberry_policy_id, rberry_token_name, 100_000_000)
+    |> value.add(pool_script_hash, pool_nft_token, 1)
+  let outcome = PoolState {
+    quantity_lp: (pool_script_hash, pool_lp_token, 99),
+    quantity_a: (other_policy_id, other_token_name, 100_000_000),
+    quantity_b: (rberry_policy_id, rberry_token_name, 100_000_000)
+  }
+  let protocol_fees = 2_000_000
+
+  pool_validator.has_expected_pool_value(
+    pool_script_hash,
+    identifier,
+    pool_value,
+    outcome,
+    protocol_fees,
+  )
 }

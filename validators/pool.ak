@@ -3,7 +3,6 @@ use aiken/dict
 use aiken/hash
 use aiken/interval
 use aiken/list
-use aiken/math
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference,
   ScriptContext, Transaction, TransactionId,
@@ -11,13 +10,10 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, Inline, ScriptCredential,
 }
-use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id}
+use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id, ada_asset_name}
 use calculation/process.{pool_input_to_state, process_orders}
 use calculation/shared.{PoolState} as calc_shared
-use shared.{
-  AssetClass, Ident, count_orders, has_exact_token_count, pool_lp_name,
-  pool_nft_name, spent_output,
-}
+use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_orders}
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
@@ -389,11 +385,14 @@ validator(settings_policy_id: PolicyId) {
             coin_a_amt
           }
 
-        // Calculate the initial number of LP tokens; In particular, we adopt Uniswaps convention of
-        // computing this value as the square root of the product of the two values.
+        // Check that the quantity of LP tokens is correct; In particular, we adopt Uniswaps convention of
+        // using the sqrt of the product of the two values for the initial number of LP tokens to mint..
         // This helps minimize precision loss: it gives decent initial liquidity values for a range of
         // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
-        expect Some(initial_lq) = math.sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt)
+        // In particular, though, we don't calculate the sqrt here, which is an expensive function; we instead verify that the
+        // amount minted is valid by checking that it squares to the correct product
+        let initial_lq = pool_output_datum.circulating_lp
+        expect shared.is_sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt, initial_lq)
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
@@ -403,18 +402,12 @@ validator(settings_policy_id: PolicyId) {
         let mint_is_correct =
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
-        // Confirm that the correct funds (at least one asset A, at least one asset B, exactly 3 tokens, including the pool NFT) is correct here
-        // Note: should we instead just compare the expected pool output?
-        let funds_spent_to_pool = and {
-          coin_a_amt_sans_protocol_fees >= 1,
-          coin_b_amt >= 1,
-          list.length(value.flatten(pool_output.value)) <= 3,
-          value.quantity_of(
-            pool_output.value,
-            own_policy_id,
-            new_pool_nft_token,
-          ) == 1
-        }
+        // Confirm that the correct funds (asset A, asset B, the correct amount of ADA, and the pool NFT) get paid to the pool output
+        let funds_spent_to_pool = has_expected_pool_value(own_policy_id, new_pool_id, pool_output.value, PoolState {
+          quantity_a: (asset_a.1st, asset_a.2nd, coin_a_amt_sans_protocol_fees),
+          quantity_b: (asset_b.1st, asset_b.2nd, coin_b_amt),
+          quantity_lp: (own_policy_id, new_pool_lp_token, initial_lq),
+        }, pool_output_datum.protocol_fees)
 
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
@@ -437,13 +430,19 @@ validator(settings_policy_id: PolicyId) {
         // - the pool identifier is set correctly
         // - the assets is set correctly
         // - the initial circulating supply is set correctly
-        // - and the market open time is before the fee finalized time; TODO: should we relax this?
+        // - the market open time is before the fee finalized time; TODO: should we relax this?
         //   I'm not sure it's harmful if someone initializes this with a feeFinalized in the past
+        // - the initial and final fees per 10,000 are both non-negative (>= 0%)
+        // - the intitial and final fees per 10,000 are both less than or equal to 10000 (<= 100%)
         let pool_output_datum_correct = and {
           pool_output_datum.identifier == new_pool_id,
           pool_output_datum.assets == (asset_a, asset_b),
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
+          pool_output_datum.fees_per_10_thousand.1st >= 0,
+          pool_output_datum.fees_per_10_thousand.2nd >= 0,
+          pool_output_datum.fees_per_10_thousand.1st <= 10000,
+          pool_output_datum.fees_per_10_thousand.2nd <= 10000,
         }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
@@ -461,27 +460,29 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum_correct,
         }
       }
-      // when minting an LP token, we just need to make sure the pool NFT is present in one of the inputs,
-      // meaning the pool script will enforce the correct name and quantity.
-      // 
-      // Of particular note, you might expect this to fail when minting the initial LP tokens
-      // but the minting policy only runs once, so it would be running with a different redeemer in that case
-      // And it's not possible to include a *separate* minting redeemer to run the script twice; (TODO: check this)
-      // even if it were, the pool token wouldn't be on the **inuputs** when we're minting the pool.
+      // When minting an LP token, we just need to make sure the pool script is being spent, as it will enforce the correct
+      // name and quantity of the LP tokens.
       //
-      // It's also important that the pool script and the minting script checks that *no other* tokens of this policy are minted,
-      // for example for a different pool. It should be ok if a token from a *different* policy is minted, though.
+      // To do that, we could check for the pool NFT on the inputs, but this is expensive, especially if the pool input ends up being one of the last.
+      // So instead we check that the pool NFT is in the first output (this is safe to assume because it's unique, and if it's in any other output it will fail)
+      // and that we're not minting the pool token (i.e. someone could "pretend" to mint LP tokens, but also mint the pool token to make it look like a scoop)
+      // 
+      // So, lets enumerate the possible cases:
+      // - We use the CreatePool redeemer; this checks that *only* the correct pool token and correct number of LP tokens are minted
+      // - We use the MintLP redeemer; this checks that the pool token (which is unique and locked in the pool script) is in the outputs, and not minted
+      //   - the pool script checks that only the correct number of LP tokens, and nothing else under this policy ID, are minted
+      // And the impossible cases:
+      // - During CreatePool, it would be impossible to mint multiple of the same pool tokens; a different pool token; a different number of LP tokens; or a different pool's LP tokens
+      // - During MintLP, it would be impossible to mint the relevant pool token; thus, the pool script must run, and thus it will be impossible to mint another pool token, a different pool
+      //   ident pool token, a different quantity of LP tokens, or a different pools LP tokens
       MintLP(pool_ident) -> {
         expect Mint(own_policy_id) = ctx.purpose
         let pool_nft_name = shared.pool_nft_name(pool_ident)
-        let allows_to_spend =
-          fn(v) {
-            value.quantity_of(v, own_policy_id, pool_nft_name) == 1
-          }
-        list.any(
-          ctx.transaction.inputs,
-          fn(input) { allows_to_spend(input.output.value) },
-        )
+        expect Some(pool_output) = list.head(ctx.transaction.outputs)
+        and {
+          (pool_output.value |> value.quantity_of(own_policy_id, pool_nft_name)) == 1,
+          (ctx.transaction.mint |> value.from_minted_value |> value.quantity_of(own_policy_id, pool_nft_name)) == 0,
+        }
       }
     }
   }
@@ -517,7 +518,7 @@ fn minted_correct_pool_tokens(
 
 /// Check that the UTXO contents are correct given a specific pool outcome
 /// In particular, it must have the final A reserves, the final B reserves, the pool NFT, and the protocol fees
-fn has_expected_pool_value(
+pub fn has_expected_pool_value(
   pool_script_hash: PolicyId,
   identifier: Ident,
   output_value: Value,
@@ -529,33 +530,49 @@ fn has_expected_pool_value(
   let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
   // (ADA, Asset B, and the NFT)
-  // We do this as an optimization, since constructing values is expensive
-  // OPTIMIZATION: is it possible to check this with a single traversal? Each quantity_of represents a small linear scan
   if quantity_a_policy_id == ada_policy_id {
-    and {
-      has_exact_token_count(output_value, 3),
-      value.lovelace_of(output_value) == final_protocol_fees + quantity_a_amt,
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1,
-    }
+    let actual = list.foldl(
+        value.flatten(output_value),
+        // (token count, lovelace amount, token b amount, pool nft amount)
+        (0, 0, 0, 0),
+        fn (asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == quantity_a_policy_id {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th)
+          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th + 1)
+          }
+        }
+      )
+    let expected = (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1)
+    // Rather than constructing a value directly (which can be expensive)
+    // we can just compare the expected token count and amounts with a single pass over the value
+    expected == actual
   } else {
-    // Otherwise, we expect 4 tokens (ADA, Asset A, Asset B, and the NFT)
-    // and the corresponding values
-    and {
-      has_exact_token_count(output_value, 4),
-      value.lovelace_of(output_value) == final_protocol_fees,
-      value.quantity_of(output_value, quantity_a_policy_id, quantity_a_name) == quantity_a_amt,
-      value.quantity_of(output_value, quantity_b_policy_id, quantity_b_name) == quantity_b_amt,
-      value.quantity_of(
-        output_value,
-        pool_script_hash,
-        pool_nft_name(identifier),
-      ) == 1,
-    }
+    // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
+    // ADA, the Pool NFT, Asset A, and Asset B
+    (4, final_protocol_fees, quantity_a_amt, quantity_b_amt, 1) ==
+      list.foldl(
+        value.flatten(output_value),
+        // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
+        (0, 0, 0, 0, 0),
+        fn (asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == ada_policy_id && asset.2nd == ada_asset_name {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th, acc.5th)
+          } else if asset.1st == quantity_a_policy_id && asset.2nd == quantity_a_name {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th, acc.5th)
+          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+            (token_count, acc.2nd, acc.3rd, acc.4th + asset.3rd, acc.5th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th, acc.5th + 1)
+          }
+        }
+      )
   }
 }
 
