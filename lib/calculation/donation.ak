@@ -50,21 +50,24 @@ pub fn do_donation(
     // Make sure we're paying the result to the correct destination (both the address and the datum),
     // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
     // use the input datum for validation
-    when destination is {
-      Fixed { address, datum } -> {
-        and {
-          output.address == address,
-          output.datum == datum
+    and {
+      output.value == remainder,
+      when destination is {
+        Fixed { address, datum } -> {
+          and {
+            output.address == address,
+            output.datum == datum
+          }
         }
-      }
-      Self -> {
-        let Output { address: input_address, datum: input_datum, .. } = input_utxo
-        and {
-          output.address == input_address,
-          output.datum == input_datum
+        Self -> {
+          let Output { address: input_address, datum: input_datum, .. } = input_utxo
+          and {
+            output.address == input_address,
+            output.datum == input_datum
+          }
         }
-      }
-    },
+      },
+    }
   }
   
   // Compute the new pool state, which is exactly the old pool state, plus the 
