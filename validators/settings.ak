@@ -10,7 +10,7 @@ use shared.{spent_output}
 ///
 /// It is parameterized by the protocol_boot_utxo, a constant to make it an NFT by the usual trick.
 validator(protocol_boot_utxo: OutputReference) {
-  pub fn spend(d: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
+  pub fn spend(input_datum: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
     // Find our own input so we know the datum / our own address
     let own_input = spent_output(ctx)
     let own_address = own_input.address
@@ -28,10 +28,11 @@ validator(protocol_boot_utxo: OutputReference) {
     expect output_datum: SettingsDatum = output_datum
 
     // We check that the value on the input and output are equal, to ensure the settings NFT gets paid back into the output
-    // TODO: should we allow the ADA to change, just in case the minUTXO changes? that would allow us to add or reclaim
-    // ADA if minUTXO changed
+    // We compare `without_lovelace` to leave full freedom for ADA to be added/removed as the minUTXO requirement changes
+    // Note that this can only be spent by the SettingsAdmin or TreasuryAdmin, so we won't leak a small amount of ADA to arbitrary users
+    // Also, it is not expected that the ADA ever be more than the minUTXO cost, so this doesn't expose hundreds of ADA (for example) to the treasury admin
     let value_not_changed =
-      own_output.value == own_input.value
+      value.without_lovelace(own_output.value) == value.without_lovelace(own_input.value)
 
     // Make sure we don't mint anything, otherwise someone might mint another settings token
     let no_mint =
@@ -48,27 +49,26 @@ validator(protocol_boot_utxo: OutputReference) {
         // so large that it exceeds execution units?
         let signed_by_admin =
           multisig.satisfied(
-            d.settings_admin,
+            input_datum.settings_admin,
             ctx.transaction.extra_signatories,
             ctx.transaction.validity_range,
           )
 
         // Settings admin can change any datum fields except for these
-        // TODO: This code is kind of hard to read: it's checking that some fields are *unchanged*
-        // but the way we think about admin controls is in what they *are* allowed to change
-        // one way to make this clearer is to construct an "allowed datum", by using
-        // fields allowed to change from the output, and fields not allowed to change from the input
-        // then comparing it to the output
-        let datum_updated_legally =
-            output_datum.authorized_staking_keys == d.authorized_staking_keys
-            && output_datum.treasury_address == d.treasury_address
-            && output_datum.treasury_allowance == d.treasury_allowance
+        let allowed_datum = SettingsDatum {
+          // Most fields *can* be updated by the admin, so we start from the output datum
+          ..output_datum,
+          // But ensure that these fields haven't been changed
+          authorized_staking_keys: input_datum.authorized_staking_keys,
+          treasury_address: input_datum.treasury_address,
+          treasury_allowance: input_datum.treasury_allowance,
+        }
         // TODO: move base_fee, simple_fee, and strategy_fee to the treasury admin instead, maybe?
         // TODO: enforce maximum scooper keys to some large N, to prevent locking the datum?
 
         and {
           signed_by_admin,
-          datum_updated_legally,
+          output_datum == allowed_datum,
           value_not_changed,
           no_mint,
         }
@@ -76,30 +76,26 @@ validator(protocol_boot_utxo: OutputReference) {
       TreasuryAdminUpdate -> {
         let signed_by_admin =
           multisig.satisfied(
-            d.treasury_admin,
+            input_datum.treasury_admin,
             ctx.transaction.extra_signatories,
             ctx.transaction.validity_range,
           )
 
         // Treasury admin can change any datum fields except for these
-        // i.e. can change the treasury address and treasury allowance
-        // TODO: similar to above, and even more eggregiously here, it's confusing to parse this
-        // because we normally think about what the admin *can* change, not what they *can't* change
-        let datum_updated_legally =
-            output_datum.authorized_staking_keys == d.authorized_staking_keys
-            && output_datum.settings_admin == d.settings_admin
-            && output_datum.metadata_admin == d.metadata_admin
-            && output_datum.treasury_admin == d.treasury_admin
-            && output_datum.authorized_scoopers == d.authorized_scoopers
-            && output_datum.base_fee == d.base_fee
-            && output_datum.simple_fee == d.simple_fee
-            && output_datum.strategy_fee == d.strategy_fee
-            && output_datum.extensions == d.extensions
+        // i.e. can change the treasury address, treasury allowance, and the authorized staking keys
+        let allowed_datum = SettingsDatum {
+          // Most of the fields can't change, so we start from the input datum
+          ..input_datum,
+          // These three can be updated, so we pull whatever is in the output datum
+          authorized_staking_keys: output_datum.authorized_staking_keys,
+          treasury_address: output_datum.treasury_address,
+          treasury_allowance: output_datum.treasury_allowance,
+        }
         // TODO: enforce maximum staking keys to some large N, to prevent locking the Datum
 
         and {
           signed_by_admin,
-          datum_updated_legally,
+          output_datum == allowed_datum,
           value_not_changed,
           no_mint,
         }
@@ -141,4 +137,3 @@ validator(protocol_boot_utxo: OutputReference) {
     }
   }
 }
-
