@@ -20,7 +20,7 @@ use tests/examples/ex_settings.{mk_valid_settings_input}
 use tests/examples/ex_shared.{
   mk_output_reference, mk_tx_hash, script_address, wallet_address,
 }
-use types/order.{Deposit, Destination, OrderDatum, Swap}
+use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
   PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
 }
@@ -33,7 +33,8 @@ use pool as pool_validator
 type ScoopTestOptions {
   edit_escrow_1_value: Option<Value>,
   edit_escrow_2_value: Option<Value>,
-  edit_escrow_destination: Option<Address>,
+  edit_escrow_intended_destination: Option<Destination>,
+  edit_escrow_actual_destination: Option<Destination>,
   edit_fee: Option<Value>,
   edit_swap_fees: Option<(Int,Int)>,
   edit_pool_input_address: Option<Address>,
@@ -46,7 +47,8 @@ fn default_scoop_test_options() -> ScoopTestOptions {
   ScoopTestOptions {
     edit_escrow_1_value: None,
     edit_escrow_2_value: None,
-    edit_escrow_destination: None,
+    edit_escrow_intended_destination: None,
+    edit_escrow_actual_destination: None,
     edit_fee: None,
     edit_swap_fees: None,
     edit_pool_input_address: None,
@@ -72,7 +74,7 @@ test scoop_bad_destination() fail {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_escrow_destination: Some(burn_addr),
+      edit_escrow_actual_destination: Some(Fixed(burn_addr, NoDatum)),
     }
   scoop(options)
 }
@@ -272,7 +274,7 @@ fn scoop(options: ScoopTestOptions) {
         reference_script: None,
       },
     }
-  let dest = Destination { address: user_addr, datum: NoDatum }
+  let dest = option.or_else(options.edit_escrow_intended_destination, Fixed { address: user_addr, datum: NoDatum })
   let swap =
     Swap((#"", #"", 10_000_000), (dummy_policy_id, dummy_asset_name, 0))
   let escrow_datum =
@@ -315,26 +317,37 @@ fn scoop(options: ScoopTestOptions) {
       }
     Input { output_reference, output: updated_output }
   }
+  let (escrow1_out_addr, escrow1_out_datum) = when options.edit_escrow_actual_destination is {
+    Some(Fixed(dest, datum)) -> (dest, datum)
+    Some(Self) -> (escrow_address, InlineDatum(escrow_datum))
+    None -> (user_addr, NoDatum)
+  }
   let escrow1_out =
     Output {
-      address: option.or_else(options.edit_escrow_destination, user_addr),
+      address: escrow1_out_addr,
       value: option.or_else(
         options.edit_escrow_1_value,
         value.from_lovelace(2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 9_896_088),
       ),
-      datum: NoDatum,
+      datum: escrow1_out_datum,
       reference_script: None,
     }
+  // TODO: manage separately?
+  let (escrow2_out_addr, escrow2_out_datum) = when options.edit_escrow_actual_destination is {
+    Some(Fixed(dest, datum)) -> (dest, datum)
+    Some(Self) -> (escrow_address, InlineDatum(escrow_datum))
+    None -> (user_addr, NoDatum)
+  }
   let escrow2_out =
     Output {
-      address: option.or_else(options.edit_escrow_destination, user_addr),
+      address: escrow2_out_addr,
       value: option.or_else(
         options.edit_escrow_2_value,
         value.from_lovelace(2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 9_702_095),
       ),
-      datum: NoDatum,
+      datum: escrow2_out_datum,
       reference_script: None,
     }
   let pool_output =
@@ -433,7 +446,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       reference_script: None,
     },
   }
-  let dest = Destination { address: user_addr, datum: NoDatum }
+  let dest = options.edit_escrow_intended_destination |> option.or_else(Fixed { address: user_addr, datum: NoDatum })
   let swap =
     Swap(
       (#"", #"", 10_000_000),
@@ -491,20 +504,30 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       output: updated_output,
     }
   }
+  let (escrow1_out_addr, escrow1_out_datum) = when options.edit_escrow_actual_destination is {
+    Some(Fixed(dest, datum)) -> (dest, datum)
+    Some(Self) -> (escrow_address, InlineDatum(escrow_datum_1))
+    None -> (user_addr, NoDatum)
+  }
   let escrow1_out = Output {
-    address: option.or_else(options.edit_escrow_destination, user_addr),
+    address: escrow1_out_addr,
     value: option.or_else(options.edit_escrow_1_value,
       value.from_lovelace(2_000_000)
         |> value.add(dummy_policy_id, dummy_asset_name, 9_896_088)),
-    datum: NoDatum,
+    datum: escrow1_out_datum,
     reference_script: None,
   }
+  let (escrow2_out_addr, escrow2_out_datum) = when options.edit_escrow_actual_destination is {
+    Some(Fixed(dest, datum)) -> (dest, datum)
+    Some(Self) -> (escrow_address, InlineDatum(escrow_datum_2))
+    None -> (user_addr, NoDatum)
+  }
   let escrow2_out = Output {
-    address: option.or_else(options.edit_escrow_destination, user_addr),
+    address: escrow2_out_addr,
     value: value.from_lovelace(2_000_000)
       |> value.add(pool_script_hash, pool_lp_name(pool_id), 9_900_990)
       |> value.add(dummy_policy_id, dummy_asset_name, 196_990),
-    datum: NoDatum,
+    datum: escrow2_out_datum,
     reference_script: None,
   }
   let pool_output = Output {
@@ -547,6 +570,15 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   )
   let result = pool_validator.spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
+}
+
+test scoop_strategy_self() {
+  let options = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_escrow_intended_destination: Some(Self),
+    edit_escrow_actual_destination: Some(Self),
+  }
+  scoop(options)
 }
 
 fn pool_test_tx_input() -> Input {

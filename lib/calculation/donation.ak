@@ -1,8 +1,8 @@
 use aiken/transaction.{Output}
-use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
+use aiken/transaction/value.{ada_policy_id, ada_asset_name}
 use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
-use types/order.{Destination}
+use types/order.{Destination, Fixed, Self}
 
 /// A donation describes an amount of assets to deposit into the pool, receiving nothing in return (except for the extra change on the UTXO).
 /// Because every LP token holder has an entitlement to a percentage of the assets in the pool, the donation is distributed to all LP token holders
@@ -15,7 +15,7 @@ pub fn do_donation(
   /// The pool state as a result of processing all orders before this one
   pool_state: PoolState,
   /// The total quantity of tokens on this particular input
-  input_value: Value,
+  input_utxo: Output,
   /// The amounts of each asset being donated
   assets: (SingletonValue, SingletonValue),
   /// The destination (address + datum) that any *change* should be sent
@@ -27,6 +27,7 @@ pub fn do_donation(
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
 ) -> (PoolState, Bool) {
+  let Output { value: input_value, .. } = input_utxo
   let ((asset_a_policy_id, asset_a_asset_name, asset_a_qty), (asset_b_policy_id, asset_b_asset_name, asset_b_qty)) = assets
   // Make sure we're actually donating the pool assets; this is to prevent setting
   // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
@@ -46,11 +47,27 @@ pub fn do_donation(
   // is so that we can do a few expects without having to return a value right away
   expect or {
     !has_remainder,
+    // Make sure we're paying the result to the correct destination (both the address and the datum),
+    // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
+    // use the input datum for validation
     and {
-      output.address == destination.address,
-      output.datum == destination.datum,
       output.value == remainder,
-    },
+      when destination is {
+        Fixed { address, datum } -> {
+          and {
+            output.address == address,
+            output.datum == datum
+          }
+        }
+        Self -> {
+          let Output { address: input_address, datum: input_datum, .. } = input_utxo
+          and {
+            output.address == input_address,
+            output.datum == input_datum
+          }
+        }
+      },
+    }
   }
   
   // Compute the new pool state, which is exactly the old pool state, plus the 

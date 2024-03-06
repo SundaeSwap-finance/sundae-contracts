@@ -1,5 +1,5 @@
 use aiken/cbor
-use types/order.{Destination, OrderDatum, Swap, Deposit, Withdrawal, Strategy, StrategyExecution, SignedStrategyExecution, Signature, Scoop, Cancel}
+use types/order.{Fixed, OrderDatum, Swap, Deposit, Withdrawal, Strategy, StrategyExecution, SignedStrategyExecution, Signature, Scoop, Cancel}
 use aiken/transaction.{NoDatum, OutputReference, TransactionId}
 use aiken/interval
 use sundae/multisig
@@ -7,7 +7,7 @@ use tests/examples/ex_shared.{print_example, wallet_address}
 
 fn mk_swap() -> OrderDatum {
   let addr = wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let dest = Destination { address: addr, datum: NoDatum }
+  let dest = Fixed { address: addr, datum: NoDatum }
   let swap =
     Swap(
       (#"", #"", 10000000),
@@ -35,7 +35,7 @@ test example_swap() {
 
 fn mk_deposit() -> OrderDatum {
   let addr = wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let dest = Destination { address: addr, datum: NoDatum }
+  let dest = Fixed { address: addr, datum: NoDatum }
   let deposit =
     Deposit((
       (#"", #"", 10000000),
@@ -63,7 +63,7 @@ test example_deposit() {
 
 fn mk_withdrawal() {
   let addr = wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let dest = Destination { address: addr, datum: NoDatum }
+  let dest = Fixed { address: addr, datum: NoDatum }
   let withdrawal =
     Withdrawal(
       (
@@ -88,10 +88,9 @@ test example_withdrawal() {
   print_example(mk_withdrawal())
 }
 
-
 fn mk_strategy() {
   let addr = wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
-  let dest = Destination { address: addr, datum: NoDatum }
+  let dest = Fixed { address: addr, datum: NoDatum }
   let strategy = Strategy(Signature(#"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf"))
   OrderDatum {
     pool_ident: Some(#"fc2c4a6ae8048b0b5affc169dfd496a7ace7d08288c476d9d7a5804e"),

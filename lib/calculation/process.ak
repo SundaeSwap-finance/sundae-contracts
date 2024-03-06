@@ -18,7 +18,7 @@ use calculation/withdrawal
 use calculation/strategy
 use shared.{Ident, datum_of, pool_lp_name, is_script}
 use sundae/multisig
-use types/order.{Order, Destination, OrderDatum, SignedStrategyExecution}
+use types/order.{Order, Destination, Fixed, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
 
 /// Construct the initial pool state for processing a set of orders
@@ -119,6 +119,8 @@ pub fn process_order(
   tx_valid_range: ValidityRange,
   // The transaction withdrawals, so we can check strategy executions
   withdrawals: Dict<StakeCredential, Int>,
+  // The input being processed
+  input: Output,
   // The value attached to the input, so we can ensure that any surplus tokens are paid out to the destination along with the results of the order; this lets transactions chain
   value: Value,
   // The details of the order to execute, such as whether it's a swap, the limit, etc.
@@ -155,6 +157,7 @@ pub fn process_order(
         output_reference,
         tx_valid_range,
         withdrawals,
+        input,
         value,
         details,
         max_protocol_fee,
@@ -177,7 +180,7 @@ pub fn process_order(
       let next =
         swap.do_swap(
           initial,
-          value,
+          input,
           destination,
           fees_per_10_thousand,
           fee,
@@ -194,7 +197,7 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a deposit
-      let next = deposit.do_deposit(initial, value, assets, destination, fee, output)
+      let next = deposit.do_deposit(initial, input, assets, destination, fee, output)
       (next, rest_outputs)
     }
     order.Withdrawal(amount) -> {
@@ -205,7 +208,7 @@ pub fn process_order(
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a withdrawal
       let next =
-        withdrawal.do_withdrawal(initial, value, amount, destination, fee, output)
+        withdrawal.do_withdrawal(initial, input, amount, destination, fee, output)
       (next, rest_outputs)
     }
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
@@ -219,7 +222,7 @@ pub fn process_order(
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a donation
       let (next, used_output) =
-        donation.do_donation(initial, value, assets, destination, fee, output)
+        donation.do_donation(initial, input, assets, destination, fee, output)
       // If a donation has no change (ex it has exactly the donation + the fee) then we don't have an output dedicated to the order
       // so we can skip over it
       // TODO: can we just return used_output here instead of passing around the lists of outputs?
@@ -239,7 +242,7 @@ pub fn process_orders(
   this_pool_ident: Ident,
   // The transaction valid range, if we end up processing a strategy
   tx_valid_range: ValidityRange,
-  // THe withdrawals attached to the transaction, for validating strategies
+  // The withdrawals attached to the transaction, for validating strategies
   withdrawals: Dict<StakeCredential, Int>,
   // The datums in the witness set, in case we need to lookup a non-inline datum
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
@@ -326,6 +329,7 @@ pub fn process_orders(
         output_reference,
         tx_valid_range,
         withdrawals,
+        order,
         order.value,
         details,
         max_protocol_fee,
@@ -383,7 +387,7 @@ test process_orders_test() {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
     max_protocol_fee: 2_500_000,
-    destination: Destination {
+    destination: Fixed {
       address: addr,
       datum: NoDatum,
     },
@@ -464,7 +468,7 @@ test process_30_shuffled_orders_test() {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     ),
     max_protocol_fee: 2_500_000,
-    destination: Destination {
+    destination: Fixed { 
       address: addr,
       datum: NoDatum,
     },
