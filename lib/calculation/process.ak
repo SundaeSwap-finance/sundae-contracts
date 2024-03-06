@@ -242,7 +242,7 @@ pub fn process_orders(
   this_pool_ident: Ident,
   // The transaction valid range, if we end up processing a strategy
   tx_valid_range: ValidityRange,
-  // THe withdrawals attached to the transaction, for validating strategies
+  // The withdrawals attached to the transaction, for validating strategies
   withdrawals: Dict<StakeCredential, Int>,
   // The datums in the witness set, in case we need to lookup a non-inline datum
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
