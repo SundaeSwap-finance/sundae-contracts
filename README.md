@@ -4,6 +4,9 @@ This repository contains version 3 and onward of the smart contracts for the Sun
 
 > Note: Version 1 consisted of the closed source Plutus v1 contracts written in 2021; Version 2 consisted of a short lived attempt to rewrite them in Plutus v2, before we decided to migrate to Aiken. It's also convenient, as we also released a "v2" of the UI, and so many were getting confused when we spoke of the "v2 contracts", not understanding the difference.
 
+Migration plan document: https://docs.google.com/document/d/1iGdx3LXb-5EJNpRe-6u6FTc0k75fg2BIQj8cG5DvQVo/edit#heading=h.2ifsxfxprbh8
+Link to formal V3 whitepaper: https://cdn.sundaeswap.finance/SundaeV3.pdf
+
 ## Layout
 
 The repository is organized as follows:
