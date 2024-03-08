@@ -1,12 +1,15 @@
+use aiken/dict
 use aiken/list
-use aiken/transaction/value
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/transaction.{ScriptContext, InlineDatum}
+use aiken/interval
+use aiken/transaction.{Transaction, Output, ScriptContext, InlineDatum}
 use aiken/transaction/credential.{Script, ScriptCredential}
+use aiken/transaction/value
 use sundae/multisig
 use shared
 use types/pool.{PoolDatum}
 use types/oracle.{OracleRedeemer, OracleDatum, Mint, Burn}
+use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
 
 // The oracle script holds an oracle token, and a snapshot of the pool price at the *end* of some scoop.
 // This allows other protocols to build integrations that read the pool price (for some confidence interval) without worrying about contention
@@ -91,4 +94,75 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
       Burn -> True
     }
   }
+}
+
+test oracle() {
+  let oracle_policy_id = #"00000000000000000000000000000000000000000000000000000000"
+  let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
+  let pool_address = script_address(pool_script_hash)
+  let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let rberry_token_name = #"524245525259"
+  let user_address =
+    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
+  let pool_id = #"00"
+  let pool_lp_name = shared.pool_lp_name(pool_id)
+  let pool_nft_name = shared.pool_nft_name(pool_id)
+  // This looks like a fresh pool but pretend that we're scooping
+  let pool_output = Output {
+    address: pool_address,
+    value: value.from_lovelace(1_000_000_000)
+      |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
+      |> value.add(pool_script_hash, pool_nft_name, 1),
+    datum: InlineDatum(PoolDatum {
+      identifier: pool_id,
+      assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
+      circulating_lp: 1_000_000_000,
+      fees_per_10_thousand: (5, 5),
+      market_open: 0,
+      fee_finalized: 0,
+      protocol_fees: 2_000_000,
+    }),
+    reference_script: None,
+  }
+  let oracleMintRedeemer = Mint(pool_id)
+  let oracle_name = shared.oracle_sft_name()
+  let oracle_output = Output {
+    address: script_address(oracle_policy_id),
+    value: value.from_lovelace(1_000_000)
+      |> value.add(oracle_policy_id, oracle_name, 1),
+    datum: InlineDatum(OracleDatum {
+      owner:
+        multisig.Signature(
+          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+        ),
+      valid_range: interval.between(1, 2),
+      pool_ident: pool_id,
+      reserve_a: ("", "", 1_000_000_000),
+      reserve_b: (rberry_policy_id, rberry_token_name, 1_000_000_000),
+      circulating_lp: (pool_script_hash, pool_lp_name, 1_000_000_000),
+    }),
+    reference_script: None,
+  }
+  let ctx = ScriptContext {
+    transaction: Transaction {
+      inputs: [],
+      outputs: [pool_output, oracle_output],
+      reference_inputs: [],
+      fee: value.from_lovelace(1_000_000),
+      mint: value.to_minted_value(
+        value.from_lovelace(0)
+          |> value.add(oracle_policy_id, oracle_name, 1)
+      ),
+      certificates: [],
+      withdrawals: dict.new(),
+      validity_range: interval.between(1, 2),
+      extra_signatories: [],
+      redeemers: dict.new(),
+      datums: dict.new(),
+      id: mk_tx_hash(1),
+    },
+    purpose: transaction.Mint(oracle_policy_id),
+  }
+  let result = mint(oracle_policy_id, oracleMintRedeemer, ctx)
+  result
 }
