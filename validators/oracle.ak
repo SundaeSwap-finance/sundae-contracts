@@ -97,8 +97,24 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
 }
 
 test oracle_basic() {
-  mint_oracle(identity, identity)
+  mint_oracle(
+    identity,
+    identity,
+    identity,
+  )
 }
+
+test oracle_burn_mint() {
+  mint_oracle(
+    identity,
+    identity,
+    fn(old_redeemer) {
+      Burn
+    }
+  )
+}
+
+
 
 // Minting policy enforces that the reserves are correct
 !test oracle_wrong_datum() {
@@ -109,6 +125,7 @@ test oracle_basic() {
         reserve_a: ("", "", 1_000_000_000_000_000_000),
       }
     },
+    identity,
     identity,
   )
 }
@@ -125,12 +142,14 @@ test oracle_fake_token() {
     fn(_) {
       "fake"
     },
+    identity,
   )
 }
 
 fn mint_oracle(
   modify_oracle_datum: fn(OracleDatum) -> OracleDatum,
   modify_oracle_name: fn(ByteArray) -> ByteArray,
+  modify_redeemer: fn(OracleRedeemer) -> OracleRedeemer,
 ) {
   let oracle_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
@@ -159,7 +178,7 @@ fn mint_oracle(
     }),
     reference_script: None,
   }
-  let oracleMintRedeemer = Mint(pool_id)
+  let oracleMintRedeemer = modify_redeemer(Mint(pool_id))
   let oracle_name = modify_oracle_name(shared.oracle_sft_name())
   let oracle_output = Output {
     address: script_address(oracle_policy_id),
