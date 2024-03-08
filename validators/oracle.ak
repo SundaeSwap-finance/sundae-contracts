@@ -96,7 +96,42 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   }
 }
 
-test oracle() {
+test oracle_basic() {
+  mint_oracle(identity, identity)
+}
+
+// Minting policy enforces that the reserves are correct
+!test oracle_wrong_datum() {
+  mint_oracle(
+    fn(old_datum) {
+      OracleDatum {
+        ..old_datum,
+        reserve_a: ("", "", 1_000_000_000_000_000_000),
+      }
+    },
+    identity,
+  )
+}
+
+// If we mint a token with the wrong name, we can choose whatever datum we want
+test oracle_fake_token() {
+  mint_oracle(
+    fn(old_datum) {
+      OracleDatum {
+        ..old_datum,
+        reserve_a: ("", "", 1_000_000_000_000_000_000),
+      }
+    },
+    fn(_) {
+      "fake"
+    },
+  )
+}
+
+fn mint_oracle(
+  modify_oracle_datum: fn(OracleDatum) -> OracleDatum,
+  modify_oracle_name: fn(ByteArray) -> ByteArray,
+) {
   let oracle_policy_id = #"00000000000000000000000000000000000000000000000000000000"
   let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(pool_script_hash)
@@ -125,12 +160,12 @@ test oracle() {
     reference_script: None,
   }
   let oracleMintRedeemer = Mint(pool_id)
-  let oracle_name = shared.oracle_sft_name()
+  let oracle_name = modify_oracle_name(shared.oracle_sft_name())
   let oracle_output = Output {
     address: script_address(oracle_policy_id),
     value: value.from_lovelace(1_000_000)
       |> value.add(oracle_policy_id, oracle_name, 1),
-    datum: InlineDatum(OracleDatum {
+    datum: InlineDatum(modify_oracle_datum(OracleDatum {
       owner:
         multisig.Signature(
           #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
@@ -140,7 +175,7 @@ test oracle() {
       reserve_a: ("", "", 1_000_000_000),
       reserve_b: (rberry_policy_id, rberry_token_name, 1_000_000_000),
       circulating_lp: (pool_script_hash, pool_lp_name, 1_000_000_000),
-    }),
+    })),
     reference_script: None,
   }
   let ctx = ScriptContext {
