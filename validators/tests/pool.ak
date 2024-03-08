@@ -9,24 +9,24 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, VerificationKeyCredential, from_verification_key, from_script, with_delegation_key
+  Inline, Address, ScriptCredential, VerificationKeyCredential, from_verification_key, from_script, with_delegation_key
 }
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use shared.{
   pool_lp_name,
 }
 use sundae/multisig
-use tests/examples/ex_settings.{mk_valid_settings_input}
+use tests/examples/ex_settings.{mk_valid_settings_input, example_treasury_admin, example_treasury_address, example_settings_admin}
 use tests/examples/ex_shared.{
   mk_output_reference, mk_tx_hash, script_address, wallet_address,
 }
 use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
-  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
+  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop, WithdrawFees
 }
 use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum}
-use tx_util/builder.{add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input, build_txn_context, mint_assets, new_tx_input, new_tx_output}
+use tx_util/builder.{add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input, build_txn_context, mint_assets, new_tx_input, new_tx_output, with_asset_of_tx_input}
 use pool as pool_validator
 
 
@@ -570,6 +570,75 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   )
   let result = pool_validator.spend(settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
+}
+
+fn withdraw_fees_transaction (options: ScoopTestOptions) {
+  let settings_policy_id = #"00000000000000000000000000000000000000000000000000000000"
+  
+  let withdraw_amount = 100
+  let withdraw_fees_redeemer = WithdrawFees {
+    amount: 100,
+    treasury_output: 1,
+  }
+
+  let dummy_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
+  let dummy_asset_name = #"53554e444145"
+  
+  let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_nft_name = shared.pool_nft_name(pool_id)
+  let pool_output_address = Address { payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(VerificationKeyCredential(example_settings_admin))) }
+  let pool_datum = PoolDatum {
+    identifier: pool_id,
+    assets: (
+      (#"", #""),
+      (dummy_policy_id, dummy_asset_name),
+    ),
+    circulating_lp: 1_000_000_000,
+    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+    market_open: 0,
+    fee_finalized: 0,
+    protocol_fees: 2_000_000,
+  }
+  let pool_rider = 2_000_000
+  // pool_test_tx_input deduplicate?
+  let pool_input = new_tx_input(
+    mk_tx_hash(0).hash,
+    script_address(pool_script_hash),
+    1_000_000_000 + pool_rider,
+    InlineDatum(pool_datum))
+    |> with_asset_of_tx_input(value.from_asset(dummy_policy_id, dummy_asset_name, 1_000_000_000))
+    |> with_asset_of_tx_input(value.from_asset(pool_script_hash, pool_nft_name, 1))
+
+  let pool_out_datum = PoolDatum {
+    ..pool_datum,
+    protocol_fees: pool_datum.protocol_fees - withdraw_amount,
+  }
+
+  let pool_output = new_tx_output(pool_output_address, 0, InlineDatum(pool_out_datum))
+    |> add_asset_to_tx_output(value.from_lovelace(1_000_000_000 + pool_rider - withdraw_amount))
+    |> add_asset_to_tx_output(value.from_asset(dummy_policy_id, dummy_asset_name, 1_000_000_000))
+    |> add_asset_to_tx_output(value.from_asset(pool_script_hash, pool_nft_name, 1))
+
+  let treasury_output = new_tx_output(
+    Address(VerificationKeyCredential(example_treasury_address), None),
+    0,
+    InlineDatum(Void))
+    |> add_asset_to_tx_output(value.from_lovelace(withdraw_amount))
+
+  let ctx = interval.between(1,2)
+    |> build_txn_context()
+    |> add_tx_ref_input(mk_valid_settings_input([], 1))
+    |> add_tx_input(pool_input)
+    |> add_tx_output(treasury_output)
+    |> add_tx_output(pool_output)
+    |> builder.add_signatory(example_treasury_admin)
+    |> builder.spend(pool_input.output_reference)
+  let result = pool_validator.spend(settings_policy_id, pool_datum, withdraw_fees_redeemer, ctx)
+  result
+}
+
+test withdraw_fees_transaction_test() {
+  withdraw_fees_transaction(default_scoop_test_options())
 }
 
 test scoop_strategy_self() {

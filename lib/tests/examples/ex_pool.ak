@@ -31,7 +31,7 @@ test example_pool_scoop_redeemer() {
   print_example(mk_pool_scoop())
 }
 
-fn mk_withdraw_fees_redeemer() -> PoolRedeemer {
+pub fn mk_withdraw_fees_redeemer() -> PoolRedeemer {
   WithdrawFees { amount: 100, treasury_output: 1 }
 }
 
