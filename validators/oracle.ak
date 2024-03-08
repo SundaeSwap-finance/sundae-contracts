@@ -9,7 +9,7 @@ use sundae/multisig
 use shared
 use types/pool.{PoolDatum}
 use types/oracle.{OracleRedeemer, OracleDatum, Mint, Burn}
-use tests/examples/ex_shared.{wallet_address, script_address, mk_output_reference, mk_tx_hash}
+use tests/examples/ex_shared.{script_address, mk_tx_hash}
 
 // The oracle script holds an oracle token, and a snapshot of the pool price at the *end* of some scoop.
 // This allows other protocols to build integrations that read the pool price (for some confidence interval) without worrying about contention
@@ -108,7 +108,7 @@ test oracle_burn_mint() {
   mint_oracle(
     identity,
     identity,
-    fn(old_redeemer) {
+    fn(_) {
       Burn
     }
   )
@@ -156,8 +156,6 @@ fn mint_oracle(
   let pool_address = script_address(pool_script_hash)
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
   let rberry_token_name = #"524245525259"
-  let user_address =
-    wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let pool_id = #"00"
   let pool_lp_name = shared.pool_lp_name(pool_id)
   let pool_nft_name = shared.pool_nft_name(pool_id)

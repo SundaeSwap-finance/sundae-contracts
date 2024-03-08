@@ -3,7 +3,6 @@ use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{Value, ada_policy_id, ada_asset_name}
 use sundae/multisig
 use types/order.{Destination, OrderDatum}
-use types/oracle.{OracleDatum}
 
 pub fn check_oracle(
   input_value: Value,
@@ -31,9 +30,6 @@ test oracle() {
       ),
       None,
     )
-  let ada = (#"", #"")
-  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
   let input_value =
     value.from_lovelace(4_500_000)
   let order = OrderDatum {
@@ -67,9 +63,6 @@ test oracle_bad_datum() {
       ),
       None,
     )
-  let ada = (#"", #"")
-  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
   let input_value =
     value.from_lovelace(4_500_000)
   let order = OrderDatum {
