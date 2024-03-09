@@ -3,8 +3,7 @@ use aiken/transaction.{NoDatum, InlineDatum, Output}
 use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value
 use calculation/oracle.{check_oracle}
-use types/order.{OrderDatum, Destination}
-use sundae/multisig
+use types/order.{Fixed}
 
 test oracle() {
   let addr =
@@ -16,18 +15,15 @@ test oracle() {
     )
   let input_value =
     value.from_lovelace(4_500_000)
-  let order = OrderDatum {
-    pool_ident: None,
-    owner: multisig.Signature(
-      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-    ),
-    max_protocol_fee: 2_500_000,
-    destination: Destination {
-      address: addr,
-      datum: NoDatum,
-    },
-    details: order.Oracle,
-    extension: Void,
+  let destination = Fixed {
+        address: addr,
+        datum: NoDatum,
+    }
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(Void),
+    reference_script: None,
   }
   let output = Output {
     address: addr,
@@ -35,11 +31,10 @@ test oracle() {
     datum: NoDatum,
     reference_script: None,
   }
-  let ok = check_oracle(input_value, order, 2_500_000, output)
-  ok
+  check_oracle(input, destination, 2_500_000, output)
 }
 
-test oracle_bad_datum() {
+test oracle_bad_datum() fail {
   let addr =
     Address(
       ScriptCredential(
@@ -49,18 +44,15 @@ test oracle_bad_datum() {
     )
   let input_value =
     value.from_lovelace(4_500_000)
-  let order = OrderDatum {
-    pool_ident: None,
-    owner: multisig.Signature(
-      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-    ),
-    max_protocol_fee: 2_500_000,
-    destination: Destination {
+  let destination = Fixed {
       address: addr,
       datum: NoDatum,
-    },
-    details: order.Oracle,
-    extension: Void,
+    }
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(Void),
+    reference_script: None,
   }
   let output = Output {
     address: addr,
@@ -68,6 +60,5 @@ test oracle_bad_datum() {
     datum: InlineDatum(Void),
     reference_script: None,
   }
-  let ok = check_oracle(input_value, order, 2_500_000, output)
-  !ok
+  check_oracle(input, destination, 2_500_000, output)
 }

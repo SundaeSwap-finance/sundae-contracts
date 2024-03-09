@@ -1,5 +1,5 @@
 aiken() {
-  /run/current-system/sw/bin/aiken $*
+  /usr/bin/env aiken $*
 }
 
 set -e

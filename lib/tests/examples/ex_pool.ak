@@ -24,14 +24,14 @@ test example_pool_datum() {
 }
 
 fn mk_pool_scoop() -> PoolRedeemer {
-  PoolScoop { signatory_index: 0, scooper_index: 0, amortized_base_fee: 2_500_000, input_order: [(1, None)] }
+  PoolScoop { signatory_index: 0, scooper_index: 0, input_order: [(1, None, 0)] }
 }
 
 test example_pool_scoop_redeemer() {
   print_example(mk_pool_scoop())
 }
 
-fn mk_withdraw_fees_redeemer() -> PoolRedeemer {
+pub fn mk_withdraw_fees_redeemer() -> PoolRedeemer {
   WithdrawFees { amount: 100, treasury_output: 1 }
 }
 
