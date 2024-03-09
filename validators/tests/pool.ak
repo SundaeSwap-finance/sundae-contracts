@@ -16,7 +16,7 @@ use shared.{
   pool_lp_name,
 }
 use sundae/multisig
-use tests/examples/ex_settings.{mk_valid_settings_input, example_treasury_admin, example_treasury_address, example_settings_admin}
+use tests/examples/ex_settings.{mk_valid_settings_input, mk_valid_settings_datum, example_treasury_admin, example_treasury_address, example_settings_admin}
 use tests/examples/ex_shared.{
   mk_output_reference, mk_tx_hash, script_address, wallet_address,
 }
@@ -25,7 +25,7 @@ use types/pool.{
   PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop, WithdrawFees
 }
 use calculation/shared.{PoolState} as calc_shared
-use types/settings.{SettingsDatum}
+use types/settings.{SettingsDatum, settings_nft_name}
 use tx_util/builder.{add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input, build_txn_context, mint_assets, new_tx_input, new_tx_output, with_asset_of_tx_input}
 use pool as pool_validator
 
@@ -586,7 +586,8 @@ fn withdraw_fees_transaction (options: ScoopTestOptions) {
   
   let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
   let pool_nft_name = shared.pool_nft_name(pool_id)
-  let pool_output_address = Address { payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(VerificationKeyCredential(example_settings_admin))) }
+  let default_pool_output_address = Address { payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(VerificationKeyCredential(example_settings_admin))) }
+  let pool_output_address = option.or_else(options.edit_pool_output_address, default_pool_output_address)
   let pool_datum = PoolDatum {
     identifier: pool_id,
     assets: (
@@ -625,9 +626,16 @@ fn withdraw_fees_transaction (options: ScoopTestOptions) {
     InlineDatum(Void))
     |> add_asset_to_tx_output(value.from_lovelace(withdraw_amount))
 
+  let settings_datum = option.or_else(options.edit_settings_datum, InlineDatum(mk_valid_settings_datum([])))
+  let settings_input = new_tx_input(
+    mk_tx_hash(1).hash,
+    script_address(settings_policy_id),
+    1,
+    settings_datum) |> with_asset_of_tx_input(value.from_asset(settings_policy_id, settings_nft_name, 1))
+
   let ctx = interval.between(1,2)
     |> build_txn_context()
-    |> add_tx_ref_input(mk_valid_settings_input([], 1))
+    |> add_tx_ref_input(settings_input)
     |> add_tx_input(pool_input)
     |> add_tx_output(treasury_output)
     |> add_tx_output(pool_output)
@@ -639,6 +647,44 @@ fn withdraw_fees_transaction (options: ScoopTestOptions) {
 
 test withdraw_fees_transaction_test() {
   withdraw_fees_transaction(default_scoop_test_options())
+}
+
+test withdraw_fees_transaction_change_pool_staking_address_valid_test() {
+  let example_address = VerificationKeyCredential( #"123456")
+  let options = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_settings_datum: Some(InlineDatum(SettingsDatum {
+      ..mk_valid_settings_datum([]),
+      authorized_staking_keys: [
+        VerificationKeyCredential(
+          example_settings_admin,
+        ),
+        example_address
+      ],
+    })),
+    edit_pool_output_address: Some(Address{payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(example_address))}),
+  }
+  withdraw_fees_transaction(options)
+}
+
+test withdraw_fees_transaction_change_pool_staking_address_invalid_test() fail {
+  let example_address = VerificationKeyCredential( #"123456")
+  let thief_address = VerificationKeyCredential( #"654321")
+
+  let options = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_settings_datum: Some(InlineDatum(SettingsDatum {
+      ..mk_valid_settings_datum([]),
+      authorized_staking_keys: [
+        VerificationKeyCredential(
+          example_settings_admin,
+        ),
+        example_address
+      ],
+    })),
+    edit_pool_output_address: Some(Address{payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(thief_address))}),
+  }
+  withdraw_fees_transaction(options)
 }
 
 test scoop_strategy_self() {
