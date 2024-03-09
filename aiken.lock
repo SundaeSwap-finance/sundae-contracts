@@ -16,6 +16,11 @@ name = "aiken-extra/tx_util"
 version = "1.170.202312"
 source = "github"
 
+[[requirements]]
+name = "aiken-lang/fuzz"
+version = "main"
+source = "github"
+
 [[packages]]
 name = "aiken-lang/stdlib"
 version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
@@ -34,4 +39,11 @@ version = "1.170.202312"
 requirements = []
 source = "github"
 
+[[packages]]
+name = "aiken-lang/fuzz"
+version = "main"
+requirements = []
+source = "github"
+
 [etags]
+"aiken-lang/fuzz@main" = [{ secs_since_epoch = 1710006522, nanos_since_epoch = 340411801 }, "c5d0e99d3716ec37c99ed14dbbc183fe06cb6530a9a2387f3624c55943c04c75"]

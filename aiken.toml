@@ -22,3 +22,8 @@ source = "github"
 name = "aiken-extra/tx_util"
 version = "1.170.202312"
 source = "github"
+
+[[dependencies]]
+name = "aiken-lang/fuzz"
+version = "main"
+source = "github"
