@@ -14,6 +14,7 @@ fn mk_pool_datum() -> PoolDatum {
     circulating_lp: 20229488080013,
     bid_fees_per_10_thousand: (2000, 500),
     ask_fees_per_10_thousand: (2000, 500),
+    fee_manager: None,
     market_open: 100,
     fee_finalized: 1000,
     protocol_fees: 10000000,

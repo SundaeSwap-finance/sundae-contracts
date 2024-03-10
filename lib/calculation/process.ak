@@ -63,6 +63,7 @@ pub fn pool_input_to_state(
     ask_fees_per_10_thousand,
     market_open,
     fee_finalized,
+    ..
   } = datum
   let (asset_a, asset_b) = assets
   let (asset_a_policy_id, asset_a_name) = asset_a

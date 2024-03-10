@@ -17,7 +17,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
-  WithdrawFees,
+  WithdrawFees, UpdatePoolFees,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
@@ -247,13 +247,7 @@ validator(settings_policy_id: PolicyId) {
         // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
         // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
         let expected_datum = PoolDatum {
-          identifier: datum.identifier,
-          assets: datum.assets,
-          circulating_lp: datum.circulating_lp,
-          bid_fees_per_10_thousand: datum.bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand: datum.ask_fees_per_10_thousand,
-          fee_finalized: datum.fee_finalized,
-          market_open: datum.market_open,
+          ..datum,
           protocol_fees: initial_protocol_fees - amount,
         }
         expect output_datum == expected_datum
@@ -267,6 +261,7 @@ validator(settings_policy_id: PolicyId) {
           settings_datum.treasury_admin,
           extra_signatories,
           validity_range,
+          withdrawals,
         )
 
         // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
@@ -295,6 +290,26 @@ validator(settings_policy_id: PolicyId) {
         })
         // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
         expect value.lovelace_of(treasury_output.value) >= to_treasury
+        True
+      }
+      UpdatePoolFees -> {
+        expect Some(fee_manager) = datum.fee_manager
+        let expected_datum = PoolDatum {
+          ..datum,
+          bid_fees_per_10_thousand: output_datum.bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand: output_datum.ask_fees_per_10_thousand,
+          fee_manager: output_datum.fee_manager,
+        }
+        expect output_datum == expected_datum
+
+        expect multisig.satisfied(
+          fee_manager,
+          extra_signatories,
+          validity_range,
+          withdrawals,
+        )
+
+        expect pool_output.value == pool_input.value
         True
       }
     }

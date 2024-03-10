@@ -15,7 +15,7 @@ source = "github"
 
 [[dependencies]]
 name = "SundaeSwap-finance/aicone"
-version = "ae0852d40cc6332437492102451cf331a3c10b0d"
+version = "faca3e33f1cc7183e2f3801ee56b705883c6832e"
 source = "github"
 
 [[dependencies]]

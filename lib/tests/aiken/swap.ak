@@ -104,6 +104,7 @@ test swap_different_bid_ask() {
     datum: InlineDatum(order),
     reference_script: None,
   }
+  trace @"Test"
   let final_pool_state = do_swap(pool_state, input, order.destination, 5, 100, 2_500_000, swap_offer, swap_min_received, output)
   // If we charged 5%, from the bid fee, it would be `- 9_896_088`, but because we charged a higher fee, the user got less in return
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 - 9_802_950
