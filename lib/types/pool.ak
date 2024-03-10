@@ -15,12 +15,13 @@ pub type PoolDatum {
   /// - circulating_lp is always equal to the number of LP tokens that have been minted and are in circulation
   /// - A users LP tokens (or burned LP tokens), as a percentage of the circulating LP tokens, represent the percentage of assets they just deposited or withdrew.
   circulating_lp: Int,
-  /// The basis points to charge on each trade
+  /// The basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders
   /// For example, a 1% fee would be represented as 100 (out of 10,000), and a 0.3% fee would be represented as 30
   /// The two values represent the fees as of `market_open` and as of `fee_finalized`, respectively, with a linear
   /// decay from one to the other.
   /// The transaction uses the valid_from field to charge the largest fee the transaction *could* be obligated to pay
-  fees_per_10_thousand: (Int, Int),
+  bid_fees_per_10_thousand: (Int, Int),
+  ask_fees_per_10_thousand: (Int, Int),
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
   /// TODO: deposits and arguably withdrawals should be processed before the market open
   market_open: PosixTime,

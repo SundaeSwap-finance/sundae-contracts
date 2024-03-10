@@ -53,8 +53,60 @@ test swap_mintakes_too_high() fail {
     datum: InlineDatum(order),
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 2_500_000, swap_offer, swap_min_received, output)
+  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 5, 2_500_000, swap_offer, swap_min_received, output)
   expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
   expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
+  True
+}
+
+test swap_different_bid_ask() {
+  let addr =
+    Address(
+      VerificationKeyCredential(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      None,
+    )
+  let ada = (#"", #"")
+  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
+  let pool_state = PoolState {
+    quantity_a: (#"", #"", 1_000_000_000),
+    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
+    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
+  }
+  let input_value =
+    value.from_lovelace(4_500_000) |> value.add(rberry.1st, rberry.2nd, 10_000_000)
+  let swap_offer = (rberry.1st, rberry.2nd, 10_000_000)
+  let swap_min_received = (ada.1st, ada.2nd, 0)
+  let order = OrderDatum {
+    pool_ident: None,
+    owner: multisig.Signature(
+      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+    ),
+    max_protocol_fee: 2_500_000,
+    destination: Fixed {
+      address: addr,
+      datum: NoDatum,
+    },
+    details: order.Swap { offer: swap_offer, min_received: swap_min_received, },
+    extension: Void,
+  }
+  let output = Output {
+    address: addr,
+    value: value.from_lovelace(11_802_950),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let input = Output {
+    address: addr,
+    value: input_value,
+    datum: InlineDatum(order),
+    reference_script: None,
+  }
+  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 100, 2_500_000, swap_offer, swap_min_received, output)
+  // If we charged 5%, from the bid fee, it would be `- 9_896_088`, but because we charged a higher fee, the user got less in return
+  expect final_pool_state.quantity_a.3rd == 1_000_000_000 - 9_802_950
+  expect final_pool_state.quantity_b.3rd == 1_000_000_000 + 10_000_000
   True
 }

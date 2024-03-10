@@ -36,7 +36,7 @@ type ScoopTestOptions {
   edit_escrow_intended_destination: Option<Destination>,
   edit_escrow_actual_destination: Option<Destination>,
   edit_fee: Option<Value>,
-  edit_swap_fees: Option<(Int,Int)>,
+  edit_swap_fees: Option<((Int,Int), (Int, Int))>,
   edit_pool_input_address: Option<Address>,
   edit_pool_output_address: Option<Address>,
   edit_pool_output_value: Option<Value>,
@@ -117,7 +117,7 @@ test scoop_high_swap_fees() {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_swap_fees: Some((swap_fee, swap_fee)),
+      edit_swap_fees: Some(((swap_fee, swap_fee), (swap_fee, swap_fee))),
       edit_escrow_1_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(dummy_policy_id, dummy_asset_name, 9_802_950),
@@ -240,12 +240,14 @@ fn scoop(options: ScoopTestOptions) {
       #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
     )
   let pool_id = #"00000000000000000000000000000000000000000000000000000000"
+  let fees = option.or_else(options.edit_swap_fees, ((5,5),(5,5)))
   let pool_datum =
     PoolDatum {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+      bid_fees_per_10_thousand: fees.1st,
+      ask_fees_per_10_thousand: fees.2nd,
       market_open: 0,
       fee_finalized: 100,
       protocol_fees: 2_000_000,
@@ -255,7 +257,8 @@ fn scoop(options: ScoopTestOptions) {
       identifier: pool_id,
       assets: ((#"", #""), (dummy_policy_id, dummy_asset_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+      bid_fees_per_10_thousand: fees.1st,
+      ask_fees_per_10_thousand: fees.2nd,
       market_open: 0,
       fee_finalized: 0,
       protocol_fees: 7_000_000,
@@ -409,6 +412,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
   )
   let pool_id = #"000000000000000000000000000000000000000000000000000000000000"
+  let pool_fees = option.or_else(options.edit_swap_fees, ((5,5),(5,5)))
   let pool_datum = PoolDatum {
     identifier: pool_id,
     assets: (
@@ -416,7 +420,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+    bid_fees_per_10_thousand: pool_fees.1st,
+    ask_fees_per_10_thousand: pool_fees.2nd,
     market_open: 0,
     fee_finalized: 0,
     protocol_fees: 2_000_000,
@@ -428,7 +433,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_009_900_990,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+    bid_fees_per_10_thousand: pool_fees.1st,
+    ask_fees_per_10_thousand: pool_fees.2nd,
     market_open: 0,
     fee_finalized: 0,
     protocol_fees: 7_000_000,
@@ -588,6 +594,7 @@ fn withdraw_fees_transaction (options: ScoopTestOptions) {
   let pool_nft_name = shared.pool_nft_name(pool_id)
   let default_pool_output_address = Address { payment_credential: ScriptCredential(pool_script_hash), stake_credential: Some(Inline(VerificationKeyCredential(example_settings_admin))) }
   let pool_output_address = option.or_else(options.edit_pool_output_address, default_pool_output_address)
+  let pool_fees = option.or_else(options.edit_swap_fees, ((5,5),(5,5)))
   let pool_datum = PoolDatum {
     identifier: pool_id,
     assets: (
@@ -595,7 +602,8 @@ fn withdraw_fees_transaction (options: ScoopTestOptions) {
       (dummy_policy_id, dummy_asset_name),
     ),
     circulating_lp: 1_000_000_000,
-    fees_per_10_thousand: option.or_else(options.edit_swap_fees, (5,5)),
+    bid_fees_per_10_thousand: pool_fees.1st,
+    ask_fees_per_10_thousand: pool_fees.2nd,
     market_open: 0,
     fee_finalized: 0,
     protocol_fees: 2_000_000,
@@ -752,7 +760,8 @@ fn mint_test_modify(
       identifier: pool_id,
       assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
       circulating_lp: 1_000_000_000,
-      fees_per_10_thousand: (5, 5),
+      bid_fees_per_10_thousand: (5, 5),
+      ask_fees_per_10_thousand: (5, 5),
       market_open: 0,
       fee_finalized: 0,
       protocol_fees: 2_000_000,
