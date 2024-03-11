@@ -2,11 +2,12 @@ use aiken/dict
 use aiken/list
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
-use aiken/transaction.{Transaction, Output, ScriptContext, InlineDatum}
-use aiken/transaction/credential.{Script, ScriptCredential}
+use aiken/transaction.{Transaction, TransactionId, Input, OutputReference, Output, ScriptContext, InlineDatum}
+use aiken/transaction/credential.{Address, Script, ScriptCredential}
 use aiken/transaction/value
 use sundae/multisig
 use shared
+use types/order.{OrderDatum, Fixed}
 use types/pool.{PoolDatum}
 use types/oracle.{OracleRedeemer, OracleDatum, Mint, Burn}
 use tests/examples/ex_shared.{script_address, mk_tx_hash}
@@ -16,7 +17,7 @@ use tests/examples/ex_shared.{script_address, mk_tx_hash}
 //
 // It's important to use the price at the *end* of the scoop, or at the beginning, rather than just using the price
 // "at the time" the order was processed. If we expose the pool price mid-stream, then it is easy to sandwich the order between two others.
-// By using the snapshot at the end of the order, such an attacker exposes themselves to arbitrage opportunities which makes such an attack riskier.   
+// By using the snapshot at the end of the order, such an attacker exposes themselves to arbitrage opportunities which makes such an attack riskier.
 validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   // In order to spend the oracle script, two things must be true:
   // - it must be signed by the "owner"
@@ -47,7 +48,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   // Burning an oracle token is always allowed
   fn mint(redeemer: OracleRedeemer, ctx: ScriptContext) {
     when redeemer is {
-      Mint(pool_ident) -> {
+      Mint(pool_ident, order_index) -> {
         expect transaction.Mint(own_policy_id) = ctx.purpose
         let pool_lp_name = shared.pool_lp_name(pool_ident)
         let pool_nft_name = shared.pool_nft_name(pool_ident)
@@ -62,6 +63,12 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
           circulating_lp,
           ..
         } = pool_datum
+
+        expect Some(oracle_order) = list.at(ctx.transaction.inputs, order_index)
+        expect Some(oracle_order_datum) = shared.datum_of(ctx.transaction.datums, oracle_order.output)
+        expect oracle_order_datum: OrderDatum = oracle_order_datum
+        expect owner = oracle_order_datum.extension
+        expect owner: multisig.MultisigScript = owner
 
         let reserve_a = (asset_a.1st, asset_a.2nd, value.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd))
         let reserve_b = (asset_b.1st, asset_b.2nd, value.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd))
@@ -81,6 +88,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
                 expect oracle_datum: OracleDatum = oracle_datum
                 expect oracle_datum.valid_range == ctx.transaction.validity_range
                 expect oracle_datum.pool_ident == pool_ident
+                expect oracle_datum.owner == owner
                 expect reserve_a == oracle_datum.reserve_a
                 expect reserve_b == oracle_datum.reserve_b
                 expect circulating_lp == oracle_datum.circulating_lp
@@ -117,7 +125,7 @@ test oracle_burn_mint() {
 
 
 // Minting policy enforces that the reserves are correct
-!test oracle_wrong_datum() {
+test oracle_wrong_datum() fail {
   mint_oracle(
     fn(old_datum) {
       OracleDatum {
@@ -152,6 +160,14 @@ fn mint_oracle(
   modify_redeemer: fn(OracleRedeemer) -> OracleRedeemer,
 ) {
   let oracle_policy_id = #"00000000000000000000000000000000000000000000000000000000"
+  let oracle_address = Address {
+    payment_credential: ScriptCredential(oracle_policy_id),
+    stake_credential: None,
+  }
+  let order_address = Address {
+    payment_credential: ScriptCredential(#"1234"),
+    stake_credential: None,
+  }
   let pool_script_hash = #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(pool_script_hash)
   let rberry_policy_id = #"9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77"
@@ -176,28 +192,47 @@ fn mint_oracle(
     }),
     reference_script: None,
   }
-  let oracleMintRedeemer = modify_redeemer(Mint(pool_id))
+  let my_multisig = multisig.Signature(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let oracle_name = modify_oracle_name(shared.oracle_sft_name())
+  let oracle_order_input = Input {
+    output_reference: OutputReference {
+      transaction_id: TransactionId { hash: #"00" },
+      output_index: 0,
+    },
+    output: Output {
+      address: order_address,
+      value: value.from_lovelace(1_000_000),
+      datum: InlineDatum(OrderDatum {
+        pool_ident: None,
+        owner: multisig.AnyOf([]),
+        max_protocol_fee: 1_000_000,
+        destination: Fixed(oracle_address, InlineDatum(my_multisig)),
+        details: order.Record((oracle_policy_id, oracle_name)),
+        extension: my_multisig,
+      }),
+      reference_script: None,
+    },
+  }
+  let oracleMintRedeemer = modify_redeemer(Mint(pool_id, 0))
   let oracle_output = Output {
     address: script_address(oracle_policy_id),
     value: value.from_lovelace(1_000_000)
       |> value.add(oracle_policy_id, oracle_name, 1),
-    datum: InlineDatum(modify_oracle_datum(OracleDatum {
-      owner:
-        multisig.Signature(
-          #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-        ),
-      valid_range: interval.between(1, 2),
-      pool_ident: pool_id,
-      reserve_a: ("", "", 1_000_000_000),
-      reserve_b: (rberry_policy_id, rberry_token_name, 1_000_000_000),
-      circulating_lp: (pool_script_hash, pool_lp_name, 1_000_000_000),
-    })),
+    datum: InlineDatum(modify_oracle_datum(
+      OracleDatum {
+        owner: my_multisig,
+        valid_range: interval.between(1, 2),
+        pool_ident: pool_id,
+        reserve_a: ("", "", 1_000_000_000),
+        reserve_b: (rberry_policy_id, rberry_token_name, 1_000_000_000),
+        circulating_lp: (pool_script_hash, pool_lp_name, 1_000_000_000),
+      },
+    )),
     reference_script: None,
   }
   let ctx = ScriptContext {
     transaction: Transaction {
-      inputs: [],
+      inputs: [oracle_order_input],
       outputs: [pool_output, oracle_output],
       reference_inputs: [],
       fee: value.from_lovelace(1_000_000),

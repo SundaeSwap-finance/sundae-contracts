@@ -1,5 +1,6 @@
 use aiken/transaction.{Datum, OutputReference, ValidityRange}
 use aiken/transaction/credential.{Address, VerificationKey, Signature, Script}
+use aiken/transaction/value.{PolicyId, AssetName}
 use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
 use aiken/hash.{Hash, Blake2b_224}
@@ -76,7 +77,7 @@ pub type Order {
   /// protocols create interesting options: for example, an incentive program for their liquidity providers, etc.
   Donation { assets: (SingletonValue, SingletonValue) }
   // Create an oracle UTXO, for other protocols to read the price at a given time
-  Oracle
+  Record { policy: (PolicyId, AssetName) }
 }
 
 /// An order can be spent either to Scoop (execute) it, or to cancel it
