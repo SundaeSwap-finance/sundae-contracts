@@ -21,21 +21,49 @@ use sundae/multisig
 use types/order.{Order, Destination, Fixed, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
 
+pub fn calculate_fees(
+  fees: (Int, Int),
+  market_open: PosixTime,
+  fee_finalized: PosixTime,
+  valid_from: PosixTime,
+) {
+  // So, if the transaction is guaranteed to run after fee_finalized, charge the final fee rate
+  if valid_from > fee_finalized {
+    fees.2nd
+  } else {
+    // Otherwise, calculate the duration of this decay period
+    let duration = fee_finalized - market_open
+    if duration == 0 {
+      // If it's zero (market_open == fee_finalized) then just use the final fee rate
+      fees.2nd
+    } else {
+      // Otherwise, calculate how much has elapsed since the market open
+      // then the full range of the fee rate
+      // then, starting from the opening fee rate, linearly increase (or decrease) the fees by that range
+      let elapsed = valid_from - market_open
+      let range = fees.2nd - fees.1st
+      fees.1st + (elapsed * range / duration)
+    }
+  }
+}
+
 /// Construct the initial pool state for processing a set of orders
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
   datum: PoolDatum,
   input: Output,
   valid_from: IntervalBound<PosixTime>,
-) -> (PoolState, Int, Int) {
+) -> (PoolState, Int, Int, Int) {
   let PoolDatum {
     assets,
     protocol_fees,
     identifier,
     circulating_lp,
-    fees_per_10_thousand,
+    bid_fees_per_10_thousand,
+    ask_fees_per_10_thousand,
     market_open,
     fee_finalized,
+    ..
   } = datum
   let (asset_a, asset_b) = assets
   let (asset_a_policy_id, asset_a_name) = asset_a
@@ -61,25 +89,9 @@ pub fn pool_input_to_state(
   }
   // Calculate the fees per 10k rate to use for this whole scoop
   // We let the creator of the pool specify a fee rate that decays (or increases) between market_open and fee_finalized
-  let fees =
-    // So, if the transaction is guaranteed to run after fee_finalized, charge the final fee rate
-    if valid_from > fee_finalized {
-      fees_per_10_thousand.2nd
-    } else {
-      // Otherwise, calculate the duration of this decay period
-      let duration = fee_finalized - market_open
-      if duration == 0 {
-        // If it's zero (market_open == fee_finalized) then just use the final fee rate
-        fees_per_10_thousand.2nd
-      } else {
-        // Otherwise, calculate how much has elapsed since the market open
-        // then the full range of the fee rate
-        // then, starting from the opening fee rate, linearly increase (or decrease) the fees by that range
-        let elapsed = valid_from - market_open
-        let range = fees_per_10_thousand.2nd - fees_per_10_thousand.1st
-        fees_per_10_thousand.1st + (elapsed * range / duration)
-      }
-    }
+  let bid_fees = calculate_fees(bid_fees_per_10_thousand, market_open, fee_finalized, valid_from)
+  let ask_fees = calculate_fees(ask_fees_per_10_thousand, market_open, fee_finalized, valid_from)
+    
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order
   // TODO: we could potentially save quite a bit by not passing around this object, and passing around a lot of parameters instead...
   (PoolState {
@@ -94,7 +106,7 @@ pub fn pool_input_to_state(
       value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     ),
     quantity_lp: (pool_token_policy, pool_lp_name(identifier), circulating_lp),
-  }, fees, protocol_fees)
+  }, bid_fees, ask_fees, protocol_fees)
 }
 
 /// If the order is restricted to a specific pool, then make sure pool_ident matches that; otherwise just return true
@@ -129,8 +141,9 @@ pub fn process_order(
   max_protocol_fee: Int,
   // The destination where the result of the order must be sent; useful for chaining transactions, as it lets you specify a datum for the output
   destination: Destination,
-  // The liquidity provider fee to charge, expressed as parts per 10,000. also called basis points
-  fees_per_10_thousand: Int,
+  // The liquidity provider fee to charge for bid (A -> B) and ask (B -> A) orders, expressed as parts per 10,000. also called basis points
+  bid_fees_per_10_thousand: Int,
+  ask_fees_per_10_thousand: Int,
   // The base fee, divided among all the participants in the scoop
   amortized_base_fee: Int,
   // The amount to charge for simple vs strategy orders, taken from the settings
@@ -162,7 +175,8 @@ pub fn process_order(
         details,
         max_protocol_fee,
         destination,
-        fees_per_10_thousand,
+        bid_fees_per_10_thousand,
+        ask_fees_per_10_thousand,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
         // because even though we're using the same logic, we're charging a different fee for strategies
@@ -182,7 +196,8 @@ pub fn process_order(
           initial,
           input,
           destination,
-          fees_per_10_thousand,
+          bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand,
           fee,
           offer,
           min_received,
@@ -250,8 +265,9 @@ pub fn process_orders(
   initial: PoolState,
   // The list of remaining indices into the inputs, specifying which orders to process
   input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
-  // The liquidity provider fee, expressed as parts per 10,000 (also known as 'basis points'); this allows us to save some math over storing the full ratio like in V1
-  fees_per_10_thousand: Int,
+  // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders, expressed as parts per 10,000
+  bid_fees_per_10_thousand: Int,
+  ask_fees_per_10_thousand: Int,
   // The protocol base fee, split across each order
   amortized_base_fee: Int,
   // The simple and strategy fees from the settings datum
@@ -334,7 +350,8 @@ pub fn process_orders(
         details,
         max_protocol_fee,
         destination,
-        fees_per_10_thousand,
+        bid_fees_per_10_thousand,
+        ask_fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
@@ -349,7 +366,8 @@ pub fn process_orders(
         datums,
         next_state,
         rest,                  // This advances to the next element from input_order
-        fees_per_10_thousand,
+        bid_fees_per_10_thousand,
+        ask_fees_per_10_thousand,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
@@ -437,7 +455,7 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   expect final_pool_state.quantity_a.3rd == 1_001_000_000
   expect final_pool_state.quantity_b.3rd == 1_001_000_000
@@ -550,7 +568,7 @@ test process_30_shuffled_orders_test() {
   ]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
   final_pool_state.quantity_a.3rd == 1_030_000_000 &&
   final_pool_state.quantity_b.3rd == 1_030_000_000 &&

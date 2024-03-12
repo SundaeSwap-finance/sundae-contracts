@@ -24,6 +24,7 @@ pub fn swap_takes(
   // The quantity of the token that should be given to the user that the pool already has
   pool_take: Int,
   // The percentage fee collected on behalf of the liquidity providers, represented as the numerator of a fraction over 10,000 (commonly referred to as basis points)
+  // already adjusted for bid or ask
   fees_per_10_thousand: Int,
   // The ADA fee to deduct as part of the protocol fee
   actual_protocol_fee: Int,
@@ -61,8 +62,9 @@ pub fn do_swap(
   input_utxo: Output,
   /// Where the results of the swap need to be paid
   destination: Destination,
-  /// The liquidity provider fee to charge
-  fees_per_10_thousand: Int,
+  /// The liquidity provider fee to charge for bid (A -> B) or ask (B -> A) orders
+  bid_fees_per_10_thousand: Int,
+  ask_fees_per_10_thousand: Int,
   actual_protocol_fee: Int,
   /// The amount of value from the UTXO that is "on offer" for the trade
   offer: SingletonValue,
@@ -118,7 +120,7 @@ pub fn do_swap(
         b_asset_name,
         a_amt,
         b_amt,
-        fees_per_10_thousand,
+        bid_fees_per_10_thousand,
         actual_protocol_fee,
         offer_amt,
         input_value,
@@ -148,7 +150,7 @@ pub fn do_swap(
         a_asset_name,
         b_amt,
         a_amt,
-        fees_per_10_thousand,
+        ask_fees_per_10_thousand,
         actual_protocol_fee,
         offer_amt,
         input_value,

@@ -39,6 +39,7 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
       settings_datum.treasury_admin,
       extra_signatories,
       validity_range,
+      withdrawals,
     )
 
     when purpose is {

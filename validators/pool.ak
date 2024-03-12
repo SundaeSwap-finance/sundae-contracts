@@ -17,7 +17,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
-  WithdrawFees,
+  WithdrawFees, UpdatePoolFees,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
@@ -127,7 +127,7 @@ validator(settings_policy_id: PolicyId) {
         // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
         // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
         // (excluding protocol fees, which shouldn't factor into the price)
-        let (initial_state, fees_per_10_thousand, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        let (initial_state, bid_fees, ask_fees, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
 
         // Process the orders in order, and decide the final pool state we should see
         // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
@@ -140,7 +140,8 @@ validator(settings_policy_id: PolicyId) {
             datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
             initial_state,            // The initial pool state, such as the reserves and circulating LP
             input_order,              // The input ordering specified by the scooper
-            fees_per_10_thousand,     // The liquidity provider fee to charge, in parts per 10,000 (basis points)
+            bid_fees,                 // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
+            ask_fees,                 // ... for Ask (swap B -> A)
             amortized_base_fee,       // The base fee split by the number of orders, paid for each user
             simple_fee,               // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
             strategy_fee,             // The fee to charge for each "strategy" order
@@ -230,7 +231,8 @@ validator(settings_policy_id: PolicyId) {
         and {
           datum.identifier == output_datum.identifier,
           datum.assets == output_datum.assets,
-          datum.fees_per_10_thousand == output_datum.fees_per_10_thousand,
+          datum.bid_fees_per_10_thousand == output_datum.bid_fees_per_10_thousand,
+          datum.ask_fees_per_10_thousand == output_datum.ask_fees_per_10_thousand,
           datum.market_open == output_datum.market_open,
           // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
           pool_input.address.stake_credential == pool_output.address.stake_credential,
@@ -245,12 +247,7 @@ validator(settings_policy_id: PolicyId) {
         // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
         // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
         let expected_datum = PoolDatum {
-          identifier: datum.identifier,
-          assets: datum.assets,
-          circulating_lp: datum.circulating_lp,
-          fees_per_10_thousand: datum.fees_per_10_thousand,
-          fee_finalized: datum.fee_finalized,
-          market_open: datum.market_open,
+          ..datum,
           protocol_fees: initial_protocol_fees - amount,
         }
         expect output_datum == expected_datum
@@ -264,6 +261,7 @@ validator(settings_policy_id: PolicyId) {
           settings_datum.treasury_admin,
           extra_signatories,
           validity_range,
+          withdrawals,
         )
 
         // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
@@ -292,6 +290,26 @@ validator(settings_policy_id: PolicyId) {
         })
         // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
         expect value.lovelace_of(treasury_output.value) >= to_treasury
+        True
+      }
+      UpdatePoolFees -> {
+        expect Some(fee_manager) = datum.fee_manager
+        let expected_datum = PoolDatum {
+          ..datum,
+          bid_fees_per_10_thousand: output_datum.bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand: output_datum.ask_fees_per_10_thousand,
+          fee_manager: output_datum.fee_manager,
+        }
+        expect output_datum == expected_datum
+
+        expect multisig.satisfied(
+          fee_manager,
+          extra_signatories,
+          validity_range,
+          withdrawals,
+        )
+
+        expect pool_output.value == pool_input.value
         True
       }
     }
@@ -439,10 +457,14 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.assets == (asset_a, asset_b),
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
-          pool_output_datum.fees_per_10_thousand.1st >= 0,
-          pool_output_datum.fees_per_10_thousand.2nd >= 0,
-          pool_output_datum.fees_per_10_thousand.1st <= 10000,
-          pool_output_datum.fees_per_10_thousand.2nd <= 10000,
+          pool_output_datum.bid_fees_per_10_thousand.1st >= 0,
+          pool_output_datum.bid_fees_per_10_thousand.2nd >= 0,
+          pool_output_datum.bid_fees_per_10_thousand.1st <= 10000,
+          pool_output_datum.bid_fees_per_10_thousand.2nd <= 10000,
+          pool_output_datum.ask_fees_per_10_thousand.1st >= 0,
+          pool_output_datum.ask_fees_per_10_thousand.2nd >= 0,
+          pool_output_datum.ask_fees_per_10_thousand.1st <= 10000,
+          pool_output_datum.ask_fees_per_10_thousand.2nd <= 10000,
         }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)

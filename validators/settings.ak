@@ -52,6 +52,7 @@ validator(protocol_boot_utxo: OutputReference) {
             input_datum.settings_admin,
             ctx.transaction.extra_signatories,
             ctx.transaction.validity_range,
+            ctx.transaction.withdrawals,
           )
 
         // Settings admin can change any datum fields except for these
@@ -79,6 +80,7 @@ validator(protocol_boot_utxo: OutputReference) {
             input_datum.treasury_admin,
             ctx.transaction.extra_signatories,
             ctx.transaction.validity_range,
+            ctx.transaction.withdrawals,
           )
 
         // Treasury admin can change any datum fields except for these
