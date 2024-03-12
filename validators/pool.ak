@@ -1,5 +1,6 @@
 use aiken/bytearray
 use aiken/dict
+use aiken/cbor
 use aiken/hash
 use aiken/interval
 use aiken/list
@@ -48,6 +49,7 @@ use types/settings.{SettingsDatum, find_settings_datum}
 /// A + B*n + C < (A + B) * n
 validator(settings_policy_id: PolicyId) {
   pub fn spend(datum: PoolDatum, redeemer: PoolRedeemer, ctx: ScriptContext) {
+
     // First, we destructure the transaction right upfront, because field access is O(n),
     // and we want access to these fields with just a single pass over the transaction
     // This will be a common pattern throughout the scripts
@@ -72,30 +74,6 @@ validator(settings_policy_id: PolicyId) {
     // *and* to know the policy ID of pool tokens, because this is a dual spending/minting validator.
     expect ScriptCredential(pool_script_hash) = pool_input.address.payment_credential
 
-    // Find the pool output; we can assume the pool output is the first output, because:
-    // - The ledger doesn't reorder outputs, just inputs
-    // - We check that the address is correct, so if the first output was to a different contract, we would fail
-    // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
-    // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
-    expect Some(pool_output) = list.head(outputs)
-    expect InlineDatum(output_datum) = pool_output.datum
-    expect output_datum: PoolDatum = output_datum
-
-    // Ensure that the pool output is to the same payment credential; This is critical, because it ensures that the pool NFT
-    // or liquidity aren't paid to some other script in control of an attacker.
-    // Note that we check the stake credential is correctly updated (or not) in the various redeemer cases below.
-    // We also check that the pool output has the correct output, which ensures it contains the pool NFT,
-    // meaning this can't just be a "token output" with the correct payment credential, but everything paid elsewhere.
-    expect pool_output.address.payment_credential == ScriptCredential(pool_script_hash)
-
-    // Similarly, destructure the pool datum we found on the output, to access the fields we need to process the scoop
-    let PoolDatum {
-      identifier: actual_identifier,
-      circulating_lp: actual_circulating_lp,
-      protocol_fees: actual_protocol_fees,
-      ..
-    } = output_datum
-
     // The protocol configures many global settings via a "settings" UTXO, updatable by certain administrators
     // This is included as a reference input, so we have a utility to check the reference inputs for the settings NFT
     // Note: it's important to check for the NFT, because checking just for the address would let someone pay random funds to the settings address.
@@ -107,6 +85,32 @@ validator(settings_policy_id: PolicyId) {
     when redeemer is {
       // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
       PoolScoop{ signatory_index, scooper_index, input_order } -> {
+        // Find the pool output, the output datum, and destructure it to access the fields we need to process the scoop
+        let (
+          Output {
+            address: pool_output_address,
+            value: pool_output_value,
+            ..
+          },
+          PoolDatum {
+            identifier: actual_identifier,
+            circulating_lp: actual_circulating_lp,
+            protocol_fees: actual_protocol_fees,
+            assets: actual_assets,
+            bid_fees_per_10_thousand: actual_bid_fees_per_10_thousand,
+            ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
+            market_open: actual_market_open,
+            ..
+          }
+        ) = find_pool_output(outputs)
+
+        // Ensure that the pool output is to the same payment credential; This is critical, because it ensures that the pool NFT
+        // or liquidity aren't paid to some other script in control of an attacker.
+        // Note that we check the stake credential is correctly updated (or not) in the various redeemer cases below.
+        // We also check that the pool output has the correct output, which ensures it contains the pool NFT,
+        // meaning this can't just be a "token output" with the correct payment credential, but everything paid elsewhere.
+        expect pool_output_address.payment_credential == ScriptCredential(pool_script_hash)
+
         // Deconstruct the settings datum with the fields we need for a scoop
         let SettingsDatum { authorized_scoopers, base_fee, simple_fee, strategy_fee, .. } =
           settings_datum
@@ -203,7 +207,7 @@ validator(settings_policy_id: PolicyId) {
 
         // Make sure we correctly track the circulating LP tokens; If this gets out of sync with what we've actually minted,
         // then users will be able to either redeem assets they aren't entitled to, or be unable to access funds they are entitled to.
-        expect output_datum.circulating_lp == outcome.quantity_lp.3rd
+        expect actual_circulating_lp == outcome.quantity_lp.3rd
 
         // We also check that the pool output has the right value (as mentioned above)
         // In particular, the pool must have:
@@ -214,8 +218,8 @@ validator(settings_policy_id: PolicyId) {
         expect
           has_expected_pool_value(
             pool_script_hash,
-            output_datum.identifier,
-            pool_output.value,
+            actual_identifier,
+            pool_output_value,
             outcome,
             actual_protocol_fees,
           )
@@ -229,32 +233,20 @@ validator(settings_policy_id: PolicyId) {
 
         // And make sure each of these fields is unchanged
         and {
-          datum.identifier == output_datum.identifier,
-          datum.assets == output_datum.assets,
-          datum.bid_fees_per_10_thousand == output_datum.bid_fees_per_10_thousand,
-          datum.ask_fees_per_10_thousand == output_datum.ask_fees_per_10_thousand,
-          datum.market_open == output_datum.market_open,
+          datum.identifier == actual_identifier,
+          datum.assets == actual_assets,
+          datum.bid_fees_per_10_thousand == actual_bid_fees_per_10_thousand,
+          datum.ask_fees_per_10_thousand == actual_ask_fees_per_10_thousand,
+          datum.market_open == actual_market_open,
           // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
-          pool_input.address.stake_credential == pool_output.address.stake_credential,
+          pool_input.address.stake_credential == pool_output_address.stake_credential,
         }
       }
       WithdrawFees { amount, treasury_output } -> {
-        let PoolDatum { protocol_fees: initial_protocol_fees, .. } = datum
+        let PoolDatum { circulating_lp: initial_circulating_lp, protocol_fees: initial_protocol_fees, .. } = datum
         // Make sure we withdraw *only* up to what we've earned
         // We allow less than, so that you can leave some behind for the minUTXO cost, or continuing to earn staking rewards, etc.
         expect amount <= initial_protocol_fees
-
-        // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
-        // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
-        let expected_datum = PoolDatum {
-          ..datum,
-          protocol_fees: initial_protocol_fees - amount,
-        }
-        expect output_datum == expected_datum
-
-        // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
-        let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
-        expect pool_output.value == expected_output_value
 
         // Only the treasury administrator is allowed to withdraw the fees, to prevent DDOS, and because of the allowance below
         expect multisig.satisfied(
@@ -285,23 +277,68 @@ validator(settings_policy_id: PolicyId) {
         // that worked with the void datum, and paid to the real treasury with the correct datum.
         // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
-        expect list.any(settings_datum.authorized_staking_keys, fn(a) {
-          pool_output.address.stake_credential == Some(Inline(a))
-        })
         // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
         expect value.lovelace_of(treasury_output.value) >= to_treasury
-        True
+
+        if initial_circulating_lp == 0 {
+          // If circulating_lp is 0, all of the assets have been withdrawn, and so the UTXO will be
+          // ADA (for the treasury fees) and the pool NFT; so we can very cleverly check that the pool
+          // NFT is burned by negating the input, and stripping off the lovelace
+          expect value.from_minted_value(mint) == value.negate(value.without_lovelace(pool_input.value))
+          True
+        } else {
+          let (
+              Output {
+                address: pool_output_address,
+                value: pool_output_value,
+                ..
+              },
+              output_datum
+            ) = find_pool_output(outputs)
+          expect pool_output_address.payment_credential == ScriptCredential(pool_script_hash)
+
+          // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
+          // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
+          let expected_datum = PoolDatum {
+            ..datum,
+            protocol_fees: initial_protocol_fees - amount,
+          }
+          expect output_datum == expected_datum
+
+          // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
+          let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
+          expect pool_output_value == expected_output_value
+          expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+            pool_output_address.stake_credential == Some(Inline(a))
+          })
+          True
+        }
       }
       UpdatePoolFees -> {
-        expect Some(fee_manager) = datum.fee_manager
+        let (
+          Output {
+            address: pool_output_address,
+            value: pool_output_value,
+            ..
+          },
+          pool_output_datum,
+        ) = find_pool_output(outputs)
+        let PoolDatum {
+          bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand,
+          fee_manager: output_fee_manager,
+          ..
+        } = pool_output_datum
+
         let expected_datum = PoolDatum {
           ..datum,
-          bid_fees_per_10_thousand: output_datum.bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand: output_datum.ask_fees_per_10_thousand,
-          fee_manager: output_datum.fee_manager,
+          bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand,
+          fee_manager: output_fee_manager,
         }
-        expect output_datum == expected_datum
+        expect pool_output_datum == expected_datum
 
+        expect Some(fee_manager) = datum.fee_manager
         expect multisig.satisfied(
           fee_manager,
           extra_signatories,
@@ -309,7 +346,10 @@ validator(settings_policy_id: PolicyId) {
           withdrawals,
         )
 
-        expect pool_output.value == pool_input.value
+        trace cbor.diagnostic(pool_output_address)
+        trace cbor.diagnostic(pool_input.address)
+        expect pool_output_address == pool_input.address
+        expect pool_output_value == pool_input.value
         True
       }
     }
@@ -508,6 +548,18 @@ validator(settings_policy_id: PolicyId) {
       }
     }
   }
+}
+
+fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
+    // Find the pool output; we can assume the pool output is the first output, because:
+    // - The ledger doesn't reorder outputs, just inputs
+    // - We check that the address is correct, so if the first output was to a different contract, we would fail
+    // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
+    // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
+    expect Some(pool_output) = list.head(outputs)
+    expect InlineDatum(output_datum) = pool_output.datum
+    expect output_datum: PoolDatum = output_datum
+    (pool_output, output_datum)
 }
 
 /// This is responsible for checking that the minting value on the transaction is valid

@@ -737,9 +737,10 @@ fn update_pool_fees_transaction (options: ScoopTestOptions) {
   }
   let pool_rider = 2_000_000
   // pool_test_tx_input deduplicate?
+  let pool_input_address = option.or_else(options.edit_pool_input_address, default_pool_output_address)
   let pool_input = new_tx_input(
     mk_tx_hash(0).hash,
-    script_address(pool_script_hash),
+    pool_input_address,
     1_000_000_000 + pool_rider,
     InlineDatum(pool_datum))
     |> with_asset_of_tx_input(value.from_asset(dummy_policy_id, dummy_asset_name, 1_000_000_000))
