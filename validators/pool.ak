@@ -281,6 +281,8 @@ validator(settings_policy_id: PolicyId) {
         expect value.lovelace_of(treasury_output.value) >= to_treasury
 
         if initial_circulating_lp == 0 {
+          // If there is no liquidity, just require the treasury admin to withdraw everything
+          expect amount == initial_protocol_fees
           // If circulating_lp is 0, all of the assets have been withdrawn, and so the UTXO will be
           // ADA (for the treasury fees) and the pool NFT; so we can very cleverly check that the pool
           // NFT is burned by negating the input, and stripping off the lovelace
