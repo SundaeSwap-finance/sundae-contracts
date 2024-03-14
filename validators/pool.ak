@@ -1,6 +1,5 @@
 use aiken/bytearray
 use aiken/dict
-use aiken/cbor
 use aiken/hash
 use aiken/interval
 use aiken/list
@@ -348,8 +347,6 @@ validator(settings_policy_id: PolicyId) {
           withdrawals,
         )
 
-        trace cbor.diagnostic(pool_output_address)
-        trace cbor.diagnostic(pool_input.address)
         expect pool_output_address == pool_input.address
         expect pool_output_value == pool_input.value
         True
