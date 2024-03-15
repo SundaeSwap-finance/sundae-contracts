@@ -33,6 +33,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
         datum.owner,
         ctx.transaction.extra_signatories,
         ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
       ),
       list.all(
         ctx.transaction.outputs,

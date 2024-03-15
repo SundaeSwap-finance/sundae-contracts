@@ -264,6 +264,7 @@ validator(settings_policy_id: PolicyId) {
           settings_datum.treasury_admin,
           extra_signatories,
           validity_range,
+          withdrawals,
         )
 
         // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
