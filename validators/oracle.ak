@@ -144,18 +144,18 @@ test oracle_redeemer_indices_can_have_extras() {
     identity,
     identity,
     fn(_) {
-      Mint(pool_id, [0, 999, -1])
+      Mint(pool_id, [0, 1, 999, -1])
     }
   )
 }
 
-test oracle_redeemer_indices_must_be_valid() fail {
+test oracle_redeemer_indices_must_match_up() fail {
   let pool_id = #"00"
   mint_oracle(
     identity,
     identity,
     fn(_) {
-      Mint(pool_id, [1])
+      Mint(pool_id, [1, 0])
     }
   )
 }
@@ -228,9 +228,10 @@ fn mint_oracle(
     }),
     reference_script: None,
   }
-  let my_multisig = multisig.Signature(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
+  let user_1_multisig = multisig.Signature(#"01")
+  let user_2_multisig = multisig.Signature(#"02")
   let oracle_name = modify_oracle_name(shared.oracle_sft_name())
-  let oracle_order_input = Input {
+  let oracle_order_input_1 = Input {
     output_reference: OutputReference {
       transaction_id: TransactionId { hash: #"00" },
       output_index: 0,
@@ -242,21 +243,57 @@ fn mint_oracle(
         pool_ident: None,
         owner: multisig.AnyOf([]),
         max_protocol_fee: 1_000_000,
-        destination: Fixed(oracle_address, InlineDatum(my_multisig)),
+        destination: Fixed(oracle_address, InlineDatum(multisig.AnyOf([]))),
         details: order.Record((oracle_policy_id, oracle_name)),
-        extension: my_multisig,
+        extension: user_1_multisig,
       }),
       reference_script: None,
     },
   }
-  let oracleMintRedeemer = modify_redeemer(Mint(pool_id, [0]))
-  let oracle_output = Output {
+  let oracle_order_input_2 = Input {
+    output_reference: OutputReference {
+      transaction_id: TransactionId { hash: #"00" },
+      output_index: 1,
+    },
+    output: Output {
+      address: order_address,
+      value: value.from_lovelace(1_000_000),
+      datum: InlineDatum(OrderDatum {
+        pool_ident: None,
+        owner: multisig.AnyOf([]),
+        max_protocol_fee: 1_000_000,
+        destination: Fixed(oracle_address, InlineDatum(multisig.AnyOf([]))),
+        details: order.Record((oracle_policy_id, oracle_name)),
+        extension: user_2_multisig,
+      }),
+      reference_script: None,
+    },
+  }
+
+  let oracleMintRedeemer = modify_redeemer(Mint(pool_id, [0, 1]))
+  let oracle_output_1 = Output {
     address: script_address(oracle_policy_id),
     value: value.from_lovelace(1_000_000)
       |> value.add(oracle_policy_id, oracle_name, 1),
     datum: InlineDatum(modify_oracle_datum(
       OracleDatum {
-        owner: my_multisig,
+        owner: user_1_multisig,
+        valid_range: interval.between(1, 2),
+        pool_ident: pool_id,
+        reserve_a: ("", "", 1_000_000_000),
+        reserve_b: (rberry_policy_id, rberry_token_name, 1_000_000_000),
+        circulating_lp: (pool_script_hash, pool_lp_name, 1_000_000_000),
+      },
+    )),
+    reference_script: None,
+  }
+  let oracle_output_2 = Output {
+    address: script_address(oracle_policy_id),
+    value: value.from_lovelace(1_000_000)
+      |> value.add(oracle_policy_id, oracle_name, 1),
+    datum: InlineDatum(modify_oracle_datum(
+      OracleDatum {
+        owner: user_2_multisig,
         valid_range: interval.between(1, 2),
         pool_ident: pool_id,
         reserve_a: ("", "", 1_000_000_000),
@@ -268,8 +305,8 @@ fn mint_oracle(
   }
   let ctx = ScriptContext {
     transaction: Transaction {
-      inputs: [oracle_order_input],
-      outputs: [pool_output, oracle_output],
+      inputs: [oracle_order_input_1, oracle_order_input_2],
+      outputs: [pool_output, oracle_output_1, oracle_output_2],
       reference_inputs: [],
       fee: value.from_lovelace(1_000_000),
       mint: value.to_minted_value(
