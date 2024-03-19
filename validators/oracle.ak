@@ -15,6 +15,9 @@ use tests/examples/ex_shared.{script_address, mk_tx_hash}
 // The oracle script holds an oracle token, and a snapshot of the pool price at the *end* of some scoop.
 // This allows other protocols to build integrations that read the pool price (for some confidence interval) without worrying about contention
 //
+// In particular, this is an agnostic format; because the `record` order type just specifies the policy ID that needs to be minted,
+// you could write other versions of the "Oracle" script that supported other oracle formats, like Charli3 or OrcFax.
+//
 // It's important to use the price at the *end* of the scoop, or at the beginning, rather than just using the price
 // "at the time" the order was processed. If we expose the pool price mid-stream, then it is easy to sandwich the order between two others.
 // By using the snapshot at the end of the order, such an attacker exposes themselves to arbitrage opportunities which makes such an attack riskier.
@@ -50,13 +53,19 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   fn mint(redeemer: OracleRedeemer, ctx: ScriptContext) {
     when redeemer is {
       Mint(pool_ident, order_index) -> {
+        // First, find our policy ID
         expect transaction.Mint(own_policy_id) = ctx.purpose
+
+        // Calculate the expected pool token names, so we can look for the pool name, and record the LP tokens
         let pool_lp_name = shared.pool_lp_name(pool_ident)
         let pool_nft_name = shared.pool_nft_name(pool_ident)
 
+        // Find the pool output, i.e. the one with the pool NFT, so we can record the prices
         expect Some(pool_output) = list.head(ctx.transaction.outputs)
         expect pool_output.address.payment_credential == ScriptCredential(pool_script_hash)
         expect value.quantity_of(pool_output.value, own_policy_id, pool_nft_name) == 1
+
+        // Then unpack the pool datum
         expect InlineDatum(pool_datum) = pool_output.datum
         expect pool_datum: PoolDatum = pool_datum
         let PoolDatum {
@@ -65,6 +74,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
           ..
         } = pool_datum
 
+        // 
         expect Some(oracle_order) = list.at(ctx.transaction.inputs, order_index)
         expect Some(oracle_order_datum) = shared.datum_of(ctx.transaction.datums, oracle_order.output)
         expect oracle_order_datum: OrderDatum = oracle_order_datum
