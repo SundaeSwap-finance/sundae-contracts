@@ -16,6 +16,6 @@ pub type OracleDatum {
 }
 
 pub type OracleRedeemer {
-  Mint(Ident, Int)
+  Mint(Ident, List<Int>)
   Burn
 }

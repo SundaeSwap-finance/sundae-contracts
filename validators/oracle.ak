@@ -52,8 +52,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   // Burning an oracle token is always allowed
   fn mint(redeemer: OracleRedeemer, ctx: ScriptContext) {
     when redeemer is {
-      Mint(pool_ident, order_index) -> {
-        // First, find our policy ID
+      Mint(pool_ident, order_indices) -> {
         expect transaction.Mint(own_policy_id) = ctx.purpose
 
         // Calculate the expected pool token names, so we can look for the pool name, and record the LP tokens
@@ -74,26 +73,31 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
           ..
         } = pool_datum
 
-        // 
-        expect Some(oracle_order) = list.at(ctx.transaction.inputs, order_index)
-        expect Some(oracle_order_datum) = shared.datum_of(ctx.transaction.datums, oracle_order.output)
-        expect oracle_order_datum: OrderDatum = oracle_order_datum
-        expect owner = oracle_order_datum.extension
-        expect owner: multisig.MultisigScript = owner
-
         let reserve_a = (asset_a.1st, asset_a.2nd, value.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd))
         let reserve_b = (asset_b.1st, asset_b.2nd, value.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd))
         let circulating_lp = (pool_script_hash, pool_lp_name, circulating_lp)
 
         let oracle_name = shared.oracle_sft_name()
 
-        list.all(
+        // For each output that produces an oracle, there should be an oracle
+        // order in the inputs given by the nth item of the order_indices list
+        // in the redeemer
+        let (_, no_duplicate_minted_oracles) = list.foldl(
           ctx.transaction.outputs,
-          fn(output) {
+          (0, True),
+          fn(output, state) {
+            let (oracle_minted_index, no_duplicates) = state
             let qty = value.quantity_of(output.value, own_policy_id, oracle_name)
             when qty is {
-              0 -> True
+              0 -> (oracle_minted_index, no_duplicates)
               1 -> {
+                expect Some(this_order_index) = list.at(order_indices, oracle_minted_index)
+                expect Some(oracle_order) = list.at(ctx.transaction.inputs, this_order_index)
+                expect Some(oracle_order_datum) = shared.datum_of(ctx.transaction.datums, oracle_order.output)
+                expect oracle_order_datum: OrderDatum = oracle_order_datum
+                expect owner = oracle_order_datum.extension
+                expect owner: multisig.MultisigScript = owner
+
                 expect output.address.payment_credential == ScriptCredential(own_policy_id)
                 expect Some(oracle_datum) = shared.datum_of(ctx.transaction.datums, output)
                 expect oracle_datum: OracleDatum = oracle_datum
@@ -103,12 +107,13 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
                 expect reserve_a == oracle_datum.reserve_a
                 expect reserve_b == oracle_datum.reserve_b
                 expect circulating_lp == oracle_datum.circulating_lp
-                True
+                (oracle_minted_index + 1, no_duplicates)
               }
-              _ -> False
+              _ -> (0, False)
             }
           }
         )
+        no_duplicate_minted_oracles
       }
       Burn -> True
     }
@@ -133,7 +138,27 @@ test oracle_burn_mint() {
   )
 }
 
+test oracle_redeemer_indices_can_have_extras() {
+  let pool_id = #"00"
+  mint_oracle(
+    identity,
+    identity,
+    fn(_) {
+      Mint(pool_id, [0, 999, -1])
+    }
+  )
+}
 
+test oracle_redeemer_indices_must_be_valid() fail {
+  let pool_id = #"00"
+  mint_oracle(
+    identity,
+    identity,
+    fn(_) {
+      Mint(pool_id, [1])
+    }
+  )
+}
 
 // Minting policy enforces that the reserves are correct
 test oracle_wrong_datum() fail {
@@ -224,7 +249,7 @@ fn mint_oracle(
       reference_script: None,
     },
   }
-  let oracleMintRedeemer = modify_redeemer(Mint(pool_id, 0))
+  let oracleMintRedeemer = modify_redeemer(Mint(pool_id, [0]))
   let oracle_output = Output {
     address: script_address(oracle_policy_id),
     value: value.from_lovelace(1_000_000)
