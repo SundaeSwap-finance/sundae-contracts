@@ -14,21 +14,20 @@ use tx_util/builder.{
   add_asset_to_tx_output,
   mint_assets
 }
-use tests/examples/ex_settings.{example_settings_admin}
+use tests/examples/ex_settings.{example_settings_admin, example_metadata_admin, example_treasury_admin}
 use settings as settings_validator
+use tests/constants
 
 fn test_mint_settings(settings_nfts_count: Int) {
-  let settings_nft_policy = #"00"
-
-  let settings_nft = value.to_minted_value(value.from_asset(settings_nft_policy, settings_nft_name, settings_nfts_count))
+  let settings_nft = value.to_minted_value(value.from_asset(constants.settings_policy_id, settings_nft_name, settings_nfts_count))
 
   let settings_datum = mk_valid_settings_datum([]) // Some([]) for authorized_scoopers means no one can scoop
 
   let settings_output = new_tx_output(
-    from_script(settings_nft_policy),
+    from_script(constants.settings_policy_id),
     2_000_000,
     InlineDatum(settings_datum)
-  ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, settings_nfts_count))
+  ) |> add_asset_to_tx_output(value.from_asset(constants.settings_policy_id, settings_nft_name, settings_nfts_count))
 
   let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
   let protocol_boot_utxo_policy = #"00"
@@ -42,7 +41,7 @@ fn test_mint_settings(settings_nfts_count: Int) {
   let ctx = 
     interval.between(1, 2)
       |> build_txn_context()
-      |> mint_assets(settings_nft_policy, settings_nft)
+      |> mint_assets(constants.settings_policy_id, settings_nft)
       |> add_tx_input(protocol_boot_utxo_input)
       |> add_tx_output(settings_output)
 
@@ -63,30 +62,20 @@ fn mk_valid_settings_datum(
   scoopers: List<ByteArray>,
 ) -> SettingsDatum {
   SettingsDatum {
-    settings_admin: multisig.Signature(
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
-    ),
+    settings_admin: multisig.Signature(example_settings_admin),
     metadata_admin: Address(
-      VerificationKeyCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      VerificationKeyCredential(example_metadata_admin),
       None,
     ),
-    treasury_admin: multisig.Signature(
-      #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad",
-    ),
+    treasury_admin: multisig.Signature(example_treasury_admin),
     treasury_address: Address(
-      VerificationKeyCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      VerificationKeyCredential(constants.payment_key),
       None,
     ),
     treasury_allowance: (1, 10),
     authorized_scoopers: Some(scoopers),
     authorized_staking_keys: [
-      VerificationKeyCredential(
-        #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
-      ),
+      VerificationKeyCredential(constants.stake_key),
     ],
     base_fee: 0,
     simple_fee: 2_500_000,
@@ -98,15 +87,14 @@ fn mk_valid_settings_datum(
 
 // Test that we can spend the settings NFT and do a no-op change, except for a new ada lovelace rider value
 test test_spend_settings_change_ada_rider() {
-  let settings_nft_policy = #"01"
   let first_settings_utxo = OutputReference { transaction_id: TransactionId { hash: #"01"}, output_index: 0 }
   let first_settings_rider = 2_000_000
   let first_settings = new_tx_input(
     first_settings_utxo.transaction_id.hash,
-    from_script(settings_nft_policy),
+    from_script(constants.settings_policy_id),
     first_settings_rider,
     InlineDatum(mk_valid_settings_datum([])),
-  ) |> with_asset_of_tx_input(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+  ) |> with_asset_of_tx_input(value.from_asset(constants.settings_policy_id, settings_nft_name, 1))
 
   let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
   let second_settings_datum = mk_valid_settings_datum([])
@@ -114,10 +102,10 @@ test test_spend_settings_change_ada_rider() {
   let second_settings_redeemer = SettingsAdminUpdate
 
   let second_settings_output = new_tx_output(
-        from_script(settings_nft_policy),
+        from_script(constants.settings_policy_id),
         first_settings_rider+1,
         InlineDatum(second_settings_datum)
-      ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+      ) |> add_asset_to_tx_output(value.from_asset(constants.settings_policy_id, settings_nft_name, 1))
   let ctx = 
     interval.between(1, 2)
       |> build_txn_context()
@@ -126,21 +114,19 @@ test test_spend_settings_change_ada_rider() {
       |> builder.add_signatory(example_settings_admin)
       |> builder.spend(first_settings.output_reference)
   
-  let second_settings = settings_validator.spend(protocol_boot_utxo, second_settings_datum, second_settings_redeemer, ctx)
-  second_settings
+  settings_validator.spend(protocol_boot_utxo, second_settings_datum, second_settings_redeemer, ctx)
 }
 
 // Test that we can spend the settings NFT and CAN'T change a non-ADA value while changing rider
 test test_spend_settings_change_value() fail {
-  let settings_nft_policy = #"01"
   let first_settings_utxo = OutputReference { transaction_id: TransactionId { hash: #"01"}, output_index: 0 }
   let first_settings_rider = 2_000_000
   let first_settings = new_tx_input(
     first_settings_utxo.transaction_id.hash,
-    from_script(settings_nft_policy),
+    from_script(constants.settings_policy_id),
     first_settings_rider,
     InlineDatum(mk_valid_settings_datum([])),
-  ) |> with_asset_of_tx_input(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+  ) |> with_asset_of_tx_input(value.from_asset(constants.settings_policy_id, settings_nft_name, 1))
 
   let protocol_boot_utxo = OutputReference { transaction_id: TransactionId { hash: #"00"}, output_index: 0 }
   let second_settings_datum = mk_valid_settings_datum([])
@@ -148,10 +134,10 @@ test test_spend_settings_change_value() fail {
   let second_settings_redeemer = SettingsAdminUpdate
 
   let second_settings_output = new_tx_output(
-        from_script(settings_nft_policy),
+        from_script(constants.settings_policy_id),
         first_settings_rider+1,
         InlineDatum(second_settings_datum)
-      ) |> add_asset_to_tx_output(value.from_asset(settings_nft_policy, settings_nft_name, 1))
+      ) |> add_asset_to_tx_output(value.from_asset(constants.settings_policy_id, settings_nft_name, 1))
 
   let junk_policy = "junk policy"
   let junk_name = "junk name"

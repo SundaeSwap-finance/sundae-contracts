@@ -6,10 +6,10 @@ use types/settings.{SettingsDatum}
 use aiken/transaction.{Input, Output, InlineDatum}
 use tests/examples/ex_shared.{print_example, script_address, mk_output_reference}
 
-pub const example_settings_admin = #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
-pub const example_treasury_admin = #"725011d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+pub const example_settings_admin   = #"6313a1d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+pub const example_metadata_admin   = #"7b143ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+pub const example_treasury_admin   = #"17bbd2d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
 pub const example_treasury_address = #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
-//TODO(Elaine): use example_treasury_admin, example_treasury_address everywhere
 
 pub fn mk_valid_settings_datum(
   scoopers: List<ByteArray>,
@@ -18,9 +18,9 @@ pub fn mk_valid_settings_datum(
     settings_admin: multisig.Signature(
       example_settings_admin,
     ),
-    metadata_admin: Address(VerificationKeyCredential(example_treasury_address), None),
+    metadata_admin: Address(VerificationKeyCredential(example_metadata_admin), None),
     treasury_admin: multisig.Signature(
-      example_settings_admin,
+      example_treasury_admin,
     ),
     treasury_address: Address(VerificationKeyCredential(example_treasury_address), None),
     treasury_allowance: (1, 10),
