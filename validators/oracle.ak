@@ -26,7 +26,8 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   // - it must be signed by the "owner"
   // - there must be no oracle tokens on the outputs
   // This allows reclaiming funds that were accidentally locked at the script address,
-  // while also enforcing that the oracle token is burned
+  // while also enforcing that the oracle token is burned; this is important, as people
+  // will be relying on the oracle token to authenticate the actual values
   fn spend(datum: Data, _r: Data, ctx: ScriptContext) -> Bool {
     let own_input = shared.spent_output(ctx)
     expect ScriptCredential(own_script_hash) = own_input.address.payment_credential

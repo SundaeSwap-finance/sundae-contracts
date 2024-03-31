@@ -76,7 +76,8 @@ pub type Order {
   /// Donate some value to the pool; Likely not useful for an end user, but lets other
   /// protocols create interesting options: for example, an incentive program for their liquidity providers, etc.
   Donation { assets: (SingletonValue, SingletonValue) }
-  // Create an oracle UTXO, for other protocols to read the price at a given time
+  // Record, like the verb; let some script witness a scoop, and enforce some property about the output
+  // Used, for example, to record the state of the pool for an on-chain oracle, etc.
   Record { policy: (PolicyId, AssetName) }
 }
 

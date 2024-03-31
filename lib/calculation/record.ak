@@ -7,14 +7,20 @@ pub fn check_record(
   destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
-  policy: (PolicyId, AssetName),
+  asset_id: (PolicyId, AssetName),
 ) -> Bool {
   // Make sure all of the funds from the input make it into the oracle output
   // Note that the accuracy of the oracle is handled by the mint policy, since it has easier
   // access to the final state of the order
+
+  // Theoretically, this could be satisfied if someone specified an asset_id / policy_id that
+  // came from another input, rather than one that had to be minted here; but that would be on them
+  // and maybe there's a good reason for someone to want that behavior.
+  // We know that the `oracle` token we provide is secure against this, because it must be minted into
+  // its own spending policy, and it must be burned when spent.
   let remainder = input.value
     |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-    |> value.add(policy.1st, policy.2nd, 1)
+    |> value.add(asset_id.1st, asset_id.2nd, 1)
 
   and {
     output.value == remainder,
