@@ -10,6 +10,7 @@ use aiken/transaction/value.{Value, PolicyId}
 use aiken/time.{PosixTime}
 use calculation/deposit
 use calculation/donation
+use calculation/record
 use calculation/shared.{
   PoolState, check_and_set_unique, unsafe_fast_index_skip_with_tail,
 } as calc_shared
@@ -246,6 +247,14 @@ pub fn process_order(
       } else {
         (next, outputs)
       }
+    }
+    order.Record(policy) -> {
+      // Make sure the scooper can only take up to the max fee the user has agreed to
+      expect [output, ..rest_outputs] = outputs
+      let fee = amortized_base_fee + simple_fee
+      expect max_protocol_fee >= fee
+      expect record.check_record(input, destination, fee, output, policy)
+      (initial, rest_outputs)
     }
   }
 }

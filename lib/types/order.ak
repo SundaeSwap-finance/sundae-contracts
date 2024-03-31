@@ -1,5 +1,6 @@
 use aiken/transaction.{Datum, OutputReference, ValidityRange}
 use aiken/transaction/credential.{Address, VerificationKey, Signature, Script}
+use aiken/transaction/value.{PolicyId, AssetName}
 use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
 use aiken/hash.{Hash, Blake2b_224}
@@ -75,6 +76,9 @@ pub type Order {
   /// Donate some value to the pool; Likely not useful for an end user, but lets other
   /// protocols create interesting options: for example, an incentive program for their liquidity providers, etc.
   Donation { assets: (SingletonValue, SingletonValue) }
+  // Record, like the verb; let some script witness a scoop, and enforce some property about the output
+  // Used, for example, to record the state of the pool for an on-chain oracle, etc.
+  Record { policy: (PolicyId, AssetName) }
 }
 
 /// An order can be spent either to Scoop (execute) it, or to cancel it

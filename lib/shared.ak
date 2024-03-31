@@ -267,3 +267,7 @@ test count_orders_test() {
 
   count_orders(inputs) == 10
 }
+
+pub fn oracle_sft_name() {
+  "oracle"
+}
