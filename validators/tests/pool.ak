@@ -1093,7 +1093,7 @@ test dont_evaporate_pool_test() fail {
 }
 
 
-test attempt_evaporate_pool_test() fail {
+test attempt_evaporate_pool_test() {
   let withdraw_fees_redeemer = WithdrawFees {
     amount: 18_000_000,
     treasury_output: 0,
@@ -1107,7 +1107,7 @@ test attempt_evaporate_pool_test() fail {
       (ada_policy_id, ada_asset_name),
       (constants.rberry_policy, constants.rberry_asset_name),
     ),
-    circulating_lp: 1_000_000_000,
+    circulating_lp: 0,
     bid_fees_per_10_thousand: pool_fees.1st,
     ask_fees_per_10_thousand: pool_fees.2nd,
     fee_manager: None,
@@ -1123,8 +1123,6 @@ test attempt_evaporate_pool_test() fail {
     InlineDatum(pool_datum))
     |> with_asset_of_tx_input(
       value.from_asset(constants.pool_script_hash, pool_nft_name, 1)
-      |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000)
-      |> value.add(ada_policy_id, ada_asset_name, 1_000_000_000)
     )
 
   let treasury_output = new_tx_output(
