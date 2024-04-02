@@ -41,19 +41,16 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
         )
       }
       Scoop -> {
-        // Assume that the stake_script_hash is the first withdrawal in the list
-        // Since the ledger doesn't reorder withdrawals (TODO: confirm this!!)
-        // If we ever have other withdrawals (for example, additional constraints enforced by a different order)
-        // then that script can look for the appropriate one, and we can just ensure this one is first in the list.
-        expect [head] = dict.to_list(ctx.transaction.withdrawals)
-        when head is {
-          // We match against the script hash like this to ignore the withdrawal amount
-          // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
-          // or perhaps even the whole withdrawal list to compare it all at once!
-          // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
-          (Inline(ScriptCredential(script)), _) -> script == stake_script_hash
-          _ -> False
-        }
+        dict.foldl(ctx.transaction.withdrawals, False, fn(withdrawal, _amt, acc) {
+          when withdrawal is {
+            // We match against the script hash like this to ignore the withdrawal amount
+            // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
+            // or perhaps even the whole withdrawal list to compare it all at once!
+            // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
+            Inline(ScriptCredential(script)) -> acc || script == stake_script_hash
+            _ -> False
+          }
+        })
       }
     }
   }
