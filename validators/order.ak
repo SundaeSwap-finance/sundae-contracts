@@ -27,7 +27,7 @@ use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop}
 ///   That stake_script then checks that a pool NFT is present on the UTXO, where most of the subtle and important logic is implemented. 
 validator(stake_script_hash: Hash<Blake2b_224, Script>) {
   // For the purposes of spending the order, we don't care what the datum is, so avoid deserializing it
-  fn spend(datum: Data, redeemer: OrderRedeemer, ctx: ScriptContext) -> Bool {
+  pub fn spend(datum: Data, redeemer: OrderRedeemer, ctx: ScriptContext) -> Bool {
     when redeemer is {
       Cancel -> {
         // We only expect the datum here, to avoid any related costs in the other branch, which doesn't need it
