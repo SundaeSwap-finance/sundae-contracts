@@ -47,7 +47,7 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
             // or perhaps even the whole withdrawal list to compare it all at once!
             // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
             Inline(ScriptCredential(script)) -> acc || script == stake_script_hash
-            _ -> False
+            _ -> acc
           }
         })
       }
