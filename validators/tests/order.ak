@@ -1,11 +1,11 @@
-use aiken/dict
+use aiken/dict.{Dict}
 use aiken/interval
 use aiken/transaction.{
   InlineDatum, Input, Output,
   ScriptContext, Spend, Transaction,
 }
 use aiken/transaction/credential.{
-  Inline, ScriptCredential,
+  Inline, StakeCredential, ScriptCredential,
 }
 use aiken/transaction/value
 use tests/examples/ex_shared.{
@@ -15,7 +15,41 @@ use order as order_validator
 use tests/constants
 use types/order.{Scoop}
 
-test scoop_order() {
+test scoop_order_test() {
+  scoop_order(
+    dict.from_list(
+      [(Inline(ScriptCredential(constants.stake_script_hash)), 0)],
+      compare_stake,
+    ),
+  )
+}
+
+test scoop_order_extra_withdrawals() {
+  scoop_order(
+    dict.from_list(
+      [
+        (Inline(ScriptCredential(constants.random_hash)), 100),
+        (Inline(ScriptCredential(constants.other_hash)), 500),
+        (Inline(ScriptCredential(constants.stake_script_hash)), 0),
+      ],
+      compare_stake,
+    ),
+  )
+}
+
+test scoop_order_missing_stake_script_withdrawal() fail {
+  scoop_order(
+    dict.from_list(
+      [
+        (Inline(ScriptCredential(constants.random_hash)), 100),
+        (Inline(ScriptCredential(constants.other_hash)), 500),
+      ],
+      compare_stake,
+    ),
+  )
+}
+
+fn scoop_order(withdrawals: Dict<StakeCredential, Int>) {
   let order_address = script_address(constants.order_script_hash)
   let order_datum = Void // Not needed by scoop
   let order_redeemer = Scoop
@@ -38,10 +72,7 @@ test scoop_order() {
         fee: value.from_lovelace(1_000_000),
         mint: value.to_minted_value(value.from_lovelace(0)),
         certificates: [],
-        withdrawals: dict.from_ascending_list(
-          [(Inline(ScriptCredential(constants.stake_script_hash)), 0)],
-          compare_stake,
-        ),
+        withdrawals: withdrawals,
         validity_range: interval.between(1, 2),
         extra_signatories: [],
         redeemers: dict.new(),
