@@ -43,7 +43,6 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
       Scoop -> {
         dict.foldl(ctx.transaction.withdrawals, False, fn(withdrawal, _amt, acc) {
           when withdrawal is {
-            // We match against the script hash like this to ignore the withdrawal amount
             // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
             // or perhaps even the whole withdrawal list to compare it all at once!
             // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
