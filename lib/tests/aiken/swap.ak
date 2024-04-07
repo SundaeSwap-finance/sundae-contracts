@@ -53,9 +53,9 @@ test swap_mintakes_too_high() fail {
     datum: InlineDatum(order),
     reference_script: None,
   }
-  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 5, 2_500_000, swap_offer, swap_min_received, output)
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000 + 10_000_000
-  expect final_pool_state.quantity_b.3rd == 1_000_000_000 - 9_896_088
+  let new_a, new_b <- do_swap(pool_state.quantity_a, pool_state.quantity_b, input, order.destination, 5, 5, 2_500_000, swap_offer, swap_min_received, output)
+  expect new_a.3rd == 1_000_000_000 + 10_000_000
+  expect new_b.3rd == 1_000_000_000 - 9_896_088
   True
 }
 
@@ -104,10 +104,9 @@ test swap_different_bid_ask() {
     datum: InlineDatum(order),
     reference_script: None,
   }
-  trace @"Test"
-  let final_pool_state = do_swap(pool_state, input, order.destination, 5, 100, 2_500_000, swap_offer, swap_min_received, output)
+  let new_a, new_b <- do_swap(pool_state.quantity_a, pool_state.quantity_b, input, order.destination, 5, 100, 2_500_000, swap_offer, swap_min_received, output)
   // If we charged 5%, from the bid fee, it would be `- 9_896_088`, but because we charged a higher fee, the user got less in return
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000 - 9_802_950
-  expect final_pool_state.quantity_b.3rd == 1_000_000_000 + 10_000_000
+  expect new_a.3rd == 1_000_000_000 - 9_802_950
+  expect new_b.3rd == 1_000_000_000 + 10_000_000
   True
 }

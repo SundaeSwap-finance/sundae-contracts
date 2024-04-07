@@ -1,6 +1,5 @@
 use aiken/transaction.{Output}
 use aiken/transaction/value.{ada_policy_id, ada_asset_name}
-use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
@@ -13,7 +12,8 @@ use types/order.{Destination, Fixed, Self}
 // Calculates the new pool state, and whether to consume this output or not
 pub fn do_donation(
   /// The pool state as a result of processing all orders before this one
-  pool_state: PoolState,
+  pool_quantity_a: SingletonValue,
+  pool_quantity_b: SingletonValue,
   /// The total quantity of tokens on this particular input
   input_utxo: Output,
   /// The amounts of each asset being donated
@@ -26,15 +26,17 @@ pub fn do_donation(
   /// The next output in the list; If there is any change left over from the donation, we would expect this to be that change
   /// If there is no change leftover, this output is ignored and used for the next order
   output: Output,
-) -> (PoolState, Bool) {
+  // A continuation to call with the new pool balances, and whether to skip an output; more efficient than constructing an object each time
+  continuation: fn(SingletonValue, SingletonValue, Bool) -> Bool
+) -> Bool {
   let Output { value: input_value, .. } = input_utxo
   let ((asset_a_policy_id, asset_a_asset_name, asset_a_qty), (asset_b_policy_id, asset_b_asset_name, asset_b_qty)) = assets
   // Make sure we're actually donating the pool assets; this is to prevent setting
   // poolIdent to None, and then filling the pool UTXO with garbage tokens and eventually locking it
-  expect asset_a_policy_id == pool_state.quantity_a.1st
-  expect asset_a_asset_name == pool_state.quantity_a.2nd
-  expect asset_b_policy_id == pool_state.quantity_b.1st
-  expect asset_b_asset_name == pool_state.quantity_b.2nd
+  expect asset_a_policy_id == pool_quantity_a.1st
+  expect asset_a_asset_name == pool_quantity_a.2nd
+  expect asset_b_policy_id == pool_quantity_b.1st
+  expect asset_b_asset_name == pool_quantity_b.2nd
   // Compute however much of the UTXO value is *left over* after deducting the donation amount from it; If nonzero, this will need to be returned to the user
   let remainder =
     input_value
@@ -70,24 +72,21 @@ pub fn do_donation(
     }
   }
   
-  // Compute the new pool state, which is exactly the old pool state, plus the 
+  // Continue with the new pool state, which is exactly the old pool state, plus the 
   // quantities of assets donated, plus the protocol fee!
   // We also returned whether we had a remainder or not, so the calling function knows
   // whether to consume the output they gave us or not.
-  (
-    PoolState {
-      quantity_a: (
-        pool_state.quantity_a.1st,
-        pool_state.quantity_a.2nd,
-        pool_state.quantity_a.3rd + assets.1st.3rd,
-      ),
-      quantity_b: (
-        pool_state.quantity_b.1st,
-        pool_state.quantity_b.2nd,
-        pool_state.quantity_b.3rd + assets.2nd.3rd,
-      ),
-      quantity_lp: pool_state.quantity_lp,
-    },
+  continuation(
+    (
+      pool_quantity_a.1st,
+      pool_quantity_a.2nd,
+      pool_quantity_a.3rd + assets.1st.3rd,
+    ),
+    (
+      pool_quantity_b.1st,
+      pool_quantity_b.2nd,
+      pool_quantity_b.3rd + assets.2nd.3rd,
+    ),
     has_remainder,
   )
 }

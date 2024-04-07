@@ -69,8 +69,10 @@ fn deposit_test_schema(qa: Int, qb: Int, has_a: Int, has_b: Int, gives_a: Int, g
     datum: InlineDatum(order),
     reference_script: None,
   }
-  let PoolState{..} = do_deposit(
-    pool_state,
+  let _, _, _ <- do_deposit(
+    pool_state.quantity_a,
+    pool_state.quantity_b,
+    pool_state.quantity_lp,
     input,
     assets,
     order.destination,

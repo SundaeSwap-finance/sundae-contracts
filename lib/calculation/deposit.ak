@@ -13,22 +13,25 @@ use types/order.{Destination, Fixed, Self, OrderDatum}
 /// LP tokens are distributed to the destination.
 ///
 pub fn do_deposit(
-  pool_state: PoolState,
+  pool_quantity_a: SingletonValue,
+  pool_quantity_b: SingletonValue,
+  pool_quantity_lp: SingletonValue,
   input_utxo: Output,
   assets: (SingletonValue, SingletonValue),
   destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
-) -> PoolState {
+  continuation: fn(SingletonValue, SingletonValue, SingletonValue) -> Bool,
+) -> Bool {
   let (asset_a, asset_b) = assets
   let Output { value: input_value, .. } = input_utxo
 
   // Policy ID and token name of the assets must match the pool, otherwise someone
   // could load the pool with junk tokens and freeze the pool.
-  expect asset_a.1st == pool_state.quantity_a.1st
-  expect asset_a.2nd == pool_state.quantity_a.2nd
-  expect asset_b.1st == pool_state.quantity_b.1st
-  expect asset_b.2nd == pool_state.quantity_b.2nd
+  expect asset_a.1st == pool_quantity_a.1st
+  expect asset_a.2nd == pool_quantity_a.2nd
+  expect asset_b.1st == pool_quantity_b.1st
+  expect asset_b.2nd == pool_quantity_b.2nd
 
   // A deposit is permitted to have lower funds than the datum claims, so that
   // we can compose it as a step in a chain where the exact amount will be unknown.
@@ -65,7 +68,7 @@ pub fn do_deposit(
   // So some small amount of a or b might be returned to the user
   // So, calculate how much "b" do we have, in units of asset A, so we can check which is greater
   let b_in_units_of_a =
-    user_gives_b * pool_state.quantity_a.3rd / pool_state.quantity_b.3rd
+    user_gives_b * pool_quantity_a.3rd / pool_quantity_b.3rd
 
   // Amount that user actually deposits in the pool, after giving back change.
   let (deposited_a, deposited_b) =
@@ -73,9 +76,9 @@ pub fn do_deposit(
     // otherwise if we have more a than b, we can return some amount of `a` to the user instead
     if b_in_units_of_a > user_gives_a {
       let change =
-        pool_state.quantity_b.3rd
+        pool_quantity_b.3rd
           * (b_in_units_of_a - user_gives_a) // the "surplus" value in units of a
-          / pool_state.quantity_a.3rd
+          / pool_quantity_a.3rd
       (user_gives_a, user_gives_b - change)
     } else {
       let change = user_gives_a - b_in_units_of_a
@@ -91,7 +94,7 @@ pub fn do_deposit(
   // 
   // Solving for `issued_lp_tokens` gives:
   let issued_lp_tokens =
-    deposited_a * pool_state.quantity_lp.3rd / pool_state.quantity_a.3rd
+    deposited_a * pool_quantity_lp.3rd / pool_quantity_a.3rd
 
   // Calculate what assets we expect on at the destination;
   // i.e. it should be whatever assets were on the inputs, minus the amount that was deposited, minus the fee,
@@ -102,8 +105,8 @@ pub fn do_deposit(
       |> value.add(asset_b.1st, asset_b.2nd, -deposited_b)
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
       |> value.add(
-          pool_state.quantity_lp.1st,
-          pool_state.quantity_lp.2nd,
+          pool_quantity_lp.1st,
+          pool_quantity_lp.2nd,
           issued_lp_tokens,
         )
 
@@ -128,23 +131,23 @@ pub fn do_deposit(
   }
 
   // And construct the final pool state
-  PoolState {
-    quantity_a: (
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd + deposited_a,
+  continuation(
+    (
+      pool_quantity_a.1st,
+      pool_quantity_a.2nd,
+      pool_quantity_a.3rd + deposited_a,
     ),
-    quantity_b: (
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd + deposited_b,
+    (
+      pool_quantity_b.1st,
+      pool_quantity_b.2nd,
+      pool_quantity_b.3rd + deposited_b,
     ),
-    quantity_lp: (
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd,
-      pool_state.quantity_lp.3rd + issued_lp_tokens,
+    (
+      pool_quantity_lp.1st,
+      pool_quantity_lp.2nd,
+      pool_quantity_lp.3rd + issued_lp_tokens,
     ),
-  }
+  )
 }
 
 test deposit_test() {
@@ -195,8 +198,9 @@ test deposit_test() {
     datum: InlineDatum(order),
     reference_script: None,
   }
-  let final_pool_state = do_deposit(pool_state, input, assets, order.destination, 2_500_000, output)
-  expect final_pool_state.quantity_a.3rd == 1_010_000_000
-  expect final_pool_state.quantity_b.3rd == 1_010_000_000
+  let new_a, new_b, new_lp <- do_deposit(pool_state.quantity_a, pool_state.quantity_b, pool_state.quantity_lp, input, assets, order.destination, 2_500_000, output)
+  expect new_a.3rd == 1_010_000_000
+  expect new_b.3rd == 1_010_000_000
+  expect new_lp.3rd == 1_000_000_000 + 10_000_000
   True
 }

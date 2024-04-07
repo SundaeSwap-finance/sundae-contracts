@@ -17,7 +17,7 @@ use calculation/shared.{
 use calculation/swap
 use calculation/withdrawal
 use calculation/strategy
-use shared.{Ident, datum_of, pool_lp_name, is_script}
+use shared.{Ident, SingletonValue, datum_of, pool_lp_name, is_script}
 use sundae/multisig
 use types/order.{Order, Destination, Fixed, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
@@ -123,7 +123,9 @@ fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool 
 /// Most of the parameters here are for performance reasons, to avoid destructuring objects, since thats very expensive
 pub fn process_order(
   // The pool state as of the time the order is executed; If we process multiple orders, this gets passed through each time
-  initial: PoolState,
+  pool_quantity_a: SingletonValue,
+  pool_quantity_b: SingletonValue,
+  pool_quantity_lp: SingletonValue,
   // The signed strategy execution (or none, if this is a simple order); this lets us just recurse once to reuse all the same handling logic
   signed_execution: Option<SignedStrategyExecution>,
   // The output reference of the **order we're processing**; Used to check that the signed execution we get for a strategy is actually for this order
@@ -153,7 +155,9 @@ pub fn process_order(
   // A list of outputs, so we can destructure the next output
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
-) -> (PoolState, List<Output>) { // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
+  // A continuation to call with the next pool state and the list of outputs; this is more efficient than constructing an object and tuples
+  continuation: fn(SingletonValue, SingletonValue, SingletonValue, List<Output>) -> Bool,
+) -> Bool { // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
     order.Strategy(signer) -> {
       // For a strategy, we can basically "unpack" (and validate) the signed execution, and then recurse to process the deferred order
@@ -166,7 +170,9 @@ pub fn process_order(
         execution,
       )
       process_order(
-        initial,
+        pool_quantity_a,
+        pool_quantity_b,
+        pool_quantity_lp,
         None, // No need to pass a signed execution through again; it doesn't make sense to have multiple nested strategies
         output_reference,
         tx_valid_range,
@@ -184,6 +190,7 @@ pub fn process_order(
         strategy_fee,
         strategy_fee,
         outputs,
+        continuation,
       )
     }
     order.Swap(offer, min_received) -> {
@@ -192,9 +199,10 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate the result of the swap itself, according to the AMM formula, and validate it against the output
-      let next =
+      let new_pool_a, new_pool_b <-
         swap.do_swap(
-          initial,
+          pool_quantity_a,
+          pool_quantity_b,
           input,
           destination,
           bid_fees_per_10_thousand,
@@ -204,7 +212,7 @@ pub fn process_order(
           min_received,
           output,
         )
-      (next, rest_outputs)
+      continuation(new_pool_a, new_pool_b, pool_quantity_lp, rest_outputs)
     }
     order.Deposit(assets) -> {
       expect [output, ..rest_outputs] = outputs
@@ -213,8 +221,8 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a deposit
-      let next = deposit.do_deposit(initial, input, assets, destination, fee, output)
-      (next, rest_outputs)
+      let new_a, new_b, new_lp <- deposit.do_deposit(pool_quantity_a, pool_quantity_b, pool_quantity_lp, input, assets, destination, fee, output)
+      continuation(new_a, new_b, new_lp, rest_outputs)
     }
     order.Withdrawal(amount) -> {
       expect [output, ..rest_outputs] = outputs
@@ -223,9 +231,9 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a withdrawal
-      let next =
-        withdrawal.do_withdrawal(initial, input, amount, destination, fee, output)
-      (next, rest_outputs)
+      let new_a, new_b, new_lp <-
+        withdrawal.do_withdrawal(pool_quantity_a, pool_quantity_b, pool_quantity_lp, input, amount, destination, fee, output)
+      continuation(new_a, new_b, new_lp, rest_outputs)
     }
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
     // The cheaper fees the DAO voted on should make this acceptable
@@ -237,15 +245,15 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       // Calculate and validate the result of a donation
-      let (next, used_output) =
-        donation.do_donation(initial, input, assets, destination, fee, output)
+      let new_a, new_b, used_output <-
+        donation.do_donation(pool_quantity_a, pool_quantity_b, input, assets, destination, fee, output)
       // If a donation has no change (ex it has exactly the donation + the fee) then we don't have an output dedicated to the order
       // so we can skip over it
       // TODO: can we just return used_output here instead of passing around the lists of outputs?
       if used_output {
-        (next, rest_outputs)
+        continuation(new_a, new_b, pool_quantity_lp, rest_outputs)
       } else {
-        (next, outputs)
+        continuation(new_a, new_b, pool_quantity_lp, outputs)
       }
     }
     order.Record(policy) -> {
@@ -254,7 +262,7 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       expect record.check_record(input, destination, fee, output, policy)
-      (initial, rest_outputs)
+      continuation(pool_quantity_a, pool_quantity_b, pool_quantity_lp, rest_outputs)
     }
   }
 }
@@ -271,7 +279,9 @@ pub fn process_orders(
   // The datums in the witness set, in case we need to lookup a non-inline datum
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   // The initial / current pool state, passed recursively as we process each order
-  initial: PoolState,
+  pool_quantity_a: SingletonValue,
+  pool_quantity_b: SingletonValue,
+  pool_quantity_lp: SingletonValue,
   // The list of remaining indices into the inputs, specifying which orders to process
   input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders, expressed as parts per 10,000
@@ -295,12 +305,14 @@ pub fn process_orders(
   // A recursive aggregator for the number of "simple" and "strategy" orders we see; used for computing the fee without traversing the list independently, since we're already walking this list
   simple_count: Int,
   strategy_count: Int,
-) -> (PoolState, Int, Int) { // Returns the final pool state, and the count of each order type
+  // A continuation to call with the final pool state; more efficient than constructing tuples / objects
+  continuation: fn(SingletonValue, SingletonValue, SingletonValue, Int, Int) -> Bool,
+) -> Bool { // Returns the final pool state, and the count of each order type
   // The main "pump" of the recursive loop is the input_order, which is a set of indices into the inputs list
   // specified by the scooper for the order to process each order in.
   // Once we've reached the end of the list, we can return, but otherwise
   when input_order is {
-    [] -> (initial, simple_count, strategy_count)
+    [] -> continuation(pool_quantity_a, pool_quantity_b, pool_quantity_lp, simple_count, strategy_count)
     [(idx, sse, _), ..rest] -> {
       // First, it's important to check that each order is processed only once;
       // This is quite subtle, so check InputSorting.md for a full explanation
@@ -348,8 +360,10 @@ pub fn process_orders(
 
       // And finally, process this one individual order and compute the next state
       // Note that we get back next_orders here, which is needed if we process a donation that has no change UTXO
-      let (next_state, next_orders) = process_order(
-        initial,
+      let new_a, new_b, new_lp, next_orders <- process_order(
+        pool_quantity_a,
+        pool_quantity_b,
+        pool_quantity_lp,
         sse,
         output_reference,
         tx_valid_range,
@@ -373,7 +387,9 @@ pub fn process_orders(
         tx_valid_range,
         withdrawals,
         datums,
-        next_state,
+        new_a,
+        new_b,
+        new_lp,
         rest,                  // This advances to the next element from input_order
         bid_fees_per_10_thousand,
         ask_fees_per_10_thousand,
@@ -387,6 +403,7 @@ pub fn process_orders(
         next_uniqueness_flag,
         next_simple_count,
         next_strategy_count,
+        continuation,
       )
     }
   }
@@ -464,10 +481,11 @@ test process_orders_test() {
   let inputs = [input]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let new_a, new_b, new_lp, simple, strategies <- process_orders(#"", valid_range, dict.new(), datums, pool_state.quantity_a, pool_state.quantity_b, pool_state.quantity_lp, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
-  expect final_pool_state.quantity_a.3rd == 1_001_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect new_a.3rd == 1_001_000_000
+  expect new_b.3rd == 1_001_000_000
+  expect new_lp.3rd == 1_000_000_000
   expect simple == 1
   expect strategies == 0
   True
@@ -577,10 +595,11 @@ test process_30_shuffled_orders_test() {
   ]
   let outputs = [output]
 
-  let (final_pool_state, simple, strategies) = process_orders(#"", valid_range, dict.new(), datums, pool_state, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
+  let new_a, new_b, new_lp, simple, strategies <- process_orders(#"", valid_range, dict.new(), datums, pool_state.quantity_a, pool_state.quantity_b, pool_state.quantity_lp, input_order, 5, 5, 2_500_000, 0, 0, 0, inputs, inputs, outputs, 0, 0, 0)
 
-  final_pool_state.quantity_a.3rd == 1_030_000_000 &&
-  final_pool_state.quantity_b.3rd == 1_030_000_000 &&
+  new_a.3rd == 1_030_000_000 &&
+  new_b.3rd == 1_030_000_000 &&
+  new_lp.3rd == 1_000_000_000 &&
   simple == 30 &&
   strategies == 0
 }

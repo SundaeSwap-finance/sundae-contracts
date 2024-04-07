@@ -135,13 +135,15 @@ validator(settings_policy_id: PolicyId) {
         // Process the orders in order, and decide the final pool state we should see
         // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
         // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
-        let (outcome, simple_count, strategy_count) =
+        let final_a, final_b, final_lp, simple_count, strategy_count <-
           process_orders(
             actual_identifier,        // The pool identifier, so we can check that each order is for this pool
             validity_range,           // The validity range of the transaction, so we can check strategies haven't expired
             withdrawals,              // Include the withdrawals, in case a strategy has some kind of attached script condition
             datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
-            initial_state,            // The initial pool state, such as the reserves and circulating LP
+            initial_state.quantity_a, // The initial pool state, such as the reserves and circulating LP
+            initial_state.quantity_b,
+            initial_state.quantity_lp,
             input_order,              // The input ordering specified by the scooper
             bid_fees,                 // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
             ask_fees,                 // ... for Ask (swap B -> A)
@@ -156,12 +158,7 @@ validator(settings_policy_id: PolicyId) {
             0,                        // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,                        // The accumulated count of "strategy" orders, see line above.
           )
-
-        let PoolState {
-          quantity_lp: expected_circulating_lp,
-          ..
-        } = outcome
-
+        let outcome = PoolState { quantity_a: final_a, quantity_b: final_b, quantity_lp: final_lp }
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
         expect simple_count + strategy_count == real_order_count
@@ -204,10 +201,6 @@ validator(settings_policy_id: PolicyId) {
         // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
-        // Make sure we correctly track the circulating LP tokens; If this gets out of sync with what we've actually minted,
-        // then users will be able to either redeem assets they aren't entitled to, or be unable to access funds they are entitled to.
-        expect actual_circulating_lp == outcome.quantity_lp.3rd
-
         // We also check that the pool output has the right value (as mentioned above)
         // In particular, the pool must have:
         // - the pool NFT
@@ -225,7 +218,9 @@ validator(settings_policy_id: PolicyId) {
         // Now, we check various things about the output datum to ensure they're each correct.
         // Check that the datum correctly records the final circulating LP, accounting for any deposits and withdrawals
         // In particular, this is important because that circulating supply is exaclty what determines the users ownership of assets in the pool
-        expect actual_circulating_lp == expected_circulating_lp.3rd
+        // If this gets out of sync with what we've actually minted, then users will be able to either redeem assets they aren't entitled to,
+        // or be unable to access funds they are entitled to.
+        expect actual_circulating_lp == final_lp.3rd
 
         // Make sure the protocol fees have been correctly updated
         expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected

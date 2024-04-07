@@ -2,7 +2,6 @@ use aiken/transaction.{Output}
 use aiken/transaction/value.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
 }
-use calculation/shared.{PoolState} as calc_shared
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
@@ -32,7 +31,9 @@ pub fn swap_takes(
   order_give: Int,
   // The input value on the order UTXO, to calculate change
   input_value: Value,
-) -> (Int, Value) {
+  // A continuation once we've calculated the output; this is more efficient that constructing a tuple, especially with backpassing syntax
+  continuation: fn(Int, Value) -> Bool,
+) -> Bool {
   // We compute the AMM formula, but 
   // algebraically rearranged to minimize rounding error
   let difference = 10000 - fees_per_10_thousand
@@ -52,12 +53,14 @@ pub fn swap_takes(
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
       |> value.add(take_policy_id, take_asset_name, takes)
 
-  (takes, out_value)
+  continuation(takes, out_value)
 }
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
 pub fn do_swap(
-  pool_state: PoolState,
+  // The pool quantities
+  pool_quantity_a: SingletonValue,
+  pool_quantity_b: SingletonValue,
   /// The full UTXO for this swap
   input_utxo: Output,
   /// Where the results of the swap need to be paid
@@ -72,18 +75,16 @@ pub fn do_swap(
   min_received: SingletonValue,
   /// The output to compare against
   output: Output,
-) -> PoolState {
+  // A continuation to call with the updated pool state
+  continuation: fn(SingletonValue, SingletonValue) -> Bool,
+) -> Bool {
   let Output { value: input_value, .. } = input_utxo
   // Destructure the pool state
   // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
-  let PoolState {
-    quantity_a,
-    quantity_b,
-    quantity_lp,
-  } = pool_state
-  let (a_policy_id, a_asset_name, a_amt) = quantity_a
-  let (b_policy_id, b_asset_name, b_amt) = quantity_b
+
+  let (a_policy_id, a_asset_name, a_amt) = pool_quantity_a
+  let (b_policy_id, b_asset_name, b_amt) = pool_quantity_b
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
@@ -112,7 +113,7 @@ pub fn do_swap(
     expect min_received.1st == b_policy_id
     expect min_received.2nd == b_asset_name
     // Compute the actual takes / change
-    let (takes, out_value) =
+    let takes, out_value <-
       swap_takes(
         offer_policy_id,
         offer_asset_name,
@@ -132,17 +133,16 @@ pub fn do_swap(
     // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
     // is satisfied
     expect takes >= min_received.3rd
-    PoolState {
-      quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
-      quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
-      quantity_lp,
-    }
+    continuation(
+      (a_policy_id, a_asset_name, a_amt + offer_amt),
+      (b_policy_id, b_asset_name, b_amt - takes),
+    )
   } else if offer_policy_id == b_policy_id && offer_asset_name == b_asset_name {
     // This code is a mirror of the above, so should be scrutinized extra carefully during audit;
     // it's easy to make a mistake when copy-pasting. If there's an easier way to express this symmetry that would be good too
     expect min_received.1st == a_policy_id
     expect min_received.2nd == a_asset_name
-    let (takes, out_value) =
+    let takes, out_value <-
       swap_takes(
         offer_policy_id,
         offer_asset_name,
@@ -161,11 +161,10 @@ pub fn do_swap(
     
     // Check that mintakes is satisfied
     expect takes >= min_received.3rd
-    PoolState {
-      quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
-      quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
-      quantity_lp,
-    }
+    continuation(
+      (a_policy_id, a_asset_name, a_amt - takes),
+      (b_policy_id, b_asset_name, b_amt + offer_amt),
+    )
   } else {
     // If neither of the assets match what's being offered, fail the transaction, the scooper has incorrectly chosen an order that can't be satisfied
     fail
