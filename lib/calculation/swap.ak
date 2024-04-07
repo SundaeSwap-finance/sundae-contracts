@@ -29,19 +29,79 @@ pub fn swap_takes(
   // The ADA fee to deduct as part of the protocol fee
   actual_protocol_fee: Int,
   // The amount of the given token that the user has offered to swap
-  order_give: Int,
+  order_offer: Int,
   // The input value on the order UTXO, to calculate change
   input_value: Value,
-) -> (Int, Value) {
+  // The output value on the order UTXO, to calculate the real order give amount
+  output_value: Value,
+) -> (Int, Int, Value) {
   // We compute the AMM formula, but 
   // algebraically rearranged to minimize rounding error
+  // Also, we want to ensure that:
+  //  - The full order is filled (the user gets the most `takes` for the tokens they've offered)
+  //  - The user couldnot have gotten those `takes` any cheaper
+  //
+  // For example, consider a pool with 50 XDIAMOND and 20,000 ADA
+  // If a user offers 799 ADA for the swap, the AMM formula calculates roughly 1.9 XDIAMOND
+  // We have to round that down, because we can't give out fractional units, and rounding up would allow the pool to be drained
+  // But, 799 is dramatically overpaying for 1 XDIAMOND, as they could have gotten 1 XDIAMOND with as little as 409.391440 ADA.
+  //
+  // To ensure this, we let the scooper calculate the right amount off-chain, then verify it on-chain
+
   let difference = 10000 - fees_per_10_thousand
 
-  // Compute the amount of token received
-  let takes =
-    pool_take * order_give * difference / (
-      pool_give * 10000 + order_give * difference
+  // Check how much the user is actually giving up, by comparing the difference between the input and output values
+  let order_give = value.quantity_of(input_value, give_policy_id, give_asset_name) - value.quantity_of(output_value, give_policy_id, give_asset_name)
+  let order_give = if give_policy_id == ada_policy_id { order_give - actual_protocol_fee } else { order_give }
+  // TODO: is this neccesary? or will one of the checks below *always* fail?
+  expect order_give > 0
+
+  // The AMM formula would be
+  // let takes =
+  //  pool_take * difference * order_give / (
+  //    pool_give * 10000 + order_give * difference
+  //  )
+  // Since we're going to calculate it a few times, we pull out some common terms for reuse
+  let pool_take_times_difference = pool_take * difference
+  let pool_give_10k = pool_give * 10000
+
+  // Now, we calculate the amount of token the user receives based on the amount they actually gave
+  let give_takes_numerator = pool_take_times_difference * order_give
+  let give_takes_denominator = pool_give_10k + order_give * difference
+  let give_takes = give_takes_numerator / give_takes_denominator
+  // Make sure they're getting at least one token!
+  expect give_takes > 0
+
+  // If the amount actually given by the user is less than the amount offered by the user,
+  // then we need to make sure they would have received the same amount, and this amount is just
+  // more efficient.
+  // Otherwise, they have to be equal (i.e. the scooper can not force the user to give up more than they offered)
+  expect if order_give < order_offer {
+    let offer_takes_numerator = pool_take_times_difference * order_offer
+    let offer_takes_denominator = pool_give_10k + order_offer * difference
+    let offer_takes = offer_takes_numerator / offer_takes_denominator
+    offer_takes == give_takes
+  } else {
+    order_give == order_offer
+  }
+
+  // We need to make sure that the user is getting the most efficient swap
+  // So we check what they would receive with one less unit of the token they're giving
+  // This would be
+  // 
+  // let takes =
+  //   pool_take * difference * (order_give - 1) / (
+  //     pool_give * 10000 + (order_give - 1) * difference
+  //   )
+  //
+  //  We can expand this out, algebraically, and simplify to reuse things we've already calculated
+  // 
+  let one_less =
+    (give_takes_numerator - pool_take_times_difference) / (
+      give_takes_denominator - difference
     )
+  // And that *must* give strictly less takes; this means that the user is getting the most efficient order possible
+  expect one_less < give_takes
   
   // And then compute the desired output
   // which is the input value, minus the tokens being swapped, minus the protocol fee
@@ -50,9 +110,9 @@ pub fn swap_takes(
     input_value
       |> value.add(give_policy_id, give_asset_name, -order_give)
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(take_policy_id, take_asset_name, takes)
+      |> value.add(take_policy_id, take_asset_name, give_takes)
 
-  (takes, out_value)
+  (give_takes, order_give, out_value)
 }
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
@@ -74,6 +134,7 @@ pub fn do_swap(
   output: Output,
 ) -> PoolState {
   let Output { value: input_value, .. } = input_utxo
+  let Output { value: output_value, address: output_address, datum: output_datum, .. } = output
   // Destructure the pool state
   // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
@@ -91,15 +152,15 @@ pub fn do_swap(
   expect when destination is {
     Fixed { address, datum } -> {
       and {
-        output.address == address,
-        output.datum == datum
+        output_address == address,
+        output_datum == datum
       }
     }
     Self -> {
       let Output { address: input_address, datum: input_datum, .. } = input_utxo
       and {
-        output.address == input_address,
-        output.datum == input_datum
+        output_address == input_address,
+        output_datum == input_datum
       }
     }
   }
@@ -112,7 +173,7 @@ pub fn do_swap(
     expect min_received.1st == b_policy_id
     expect min_received.2nd == b_asset_name
     // Compute the actual takes / change
-    let (takes, out_value) =
+    let (takes, gives, out_value) =
       swap_takes(
         offer_policy_id,
         offer_asset_name,
@@ -124,16 +185,17 @@ pub fn do_swap(
         actual_protocol_fee,
         offer_amt,
         input_value,
+        output_value,
       )
 
     // Make sure the correct value (including change) carries through to the output
-    expect output.value == out_value
+    expect output_value == out_value
 
     // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
     // is satisfied
     expect takes >= min_received.3rd
     PoolState {
-      quantity_a: (a_policy_id, a_asset_name, a_amt + offer_amt),
+      quantity_a: (a_policy_id, a_asset_name, a_amt + gives),
       quantity_b: (b_policy_id, b_asset_name, b_amt - takes),
       quantity_lp,
     }
@@ -142,7 +204,7 @@ pub fn do_swap(
     // it's easy to make a mistake when copy-pasting. If there's an easier way to express this symmetry that would be good too
     expect min_received.1st == a_policy_id
     expect min_received.2nd == a_asset_name
-    let (takes, out_value) =
+    let (takes, gives, out_value) =
       swap_takes(
         offer_policy_id,
         offer_asset_name,
@@ -154,16 +216,17 @@ pub fn do_swap(
         actual_protocol_fee,
         offer_amt,
         input_value,
+        output_value
       )
 
     // Make sure the correct value (including change) carries through to the output
-    expect output.value == out_value
+    expect output_value == out_value
     
     // Check that mintakes is satisfied
     expect takes >= min_received.3rd
     PoolState {
       quantity_a: (a_policy_id, a_asset_name, a_amt - takes),
-      quantity_b: (b_policy_id, b_asset_name, b_amt + offer_amt),
+      quantity_b: (b_policy_id, b_asset_name, b_amt + gives),
       quantity_lp,
     }
   } else {
