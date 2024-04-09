@@ -22,7 +22,8 @@ use tests/examples/ex_shared.{
 }
 use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
-  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop, WithdrawFees, UpdatePoolFees,
+  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop, WithdrawFees,
+  UpdatePoolFees, BurnPool,
 }
 use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum, settings_nft_name}
@@ -1079,7 +1080,7 @@ test dont_evaporate_pool_test() fail {
 }
 
 
-test attempt_evaporate_pool_test() fail {
+test attempt_evaporate_pool_test() {
   let withdraw_fees_redeemer = WithdrawFees {
     amount: 18_000_000,
     treasury_output: 0,
@@ -1093,7 +1094,7 @@ test attempt_evaporate_pool_test() fail {
       (ada_policy_id, ada_asset_name),
       (constants.rberry_policy, constants.rberry_asset_name),
     ),
-    circulating_lp: 1_000_000_000,
+    circulating_lp: 0,
     bid_fees_per_10_thousand: pool_fees.1st,
     ask_fees_per_10_thousand: pool_fees.2nd,
     fee_manager: None,
@@ -1109,8 +1110,6 @@ test attempt_evaporate_pool_test() fail {
     InlineDatum(pool_datum))
     |> with_asset_of_tx_input(
       value.from_asset(constants.pool_script_hash, pool_nft_name, 1)
-      |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000)
-      |> value.add(ada_policy_id, ada_asset_name, 1_000_000_000)
     )
 
   let treasury_output = new_tx_output(
@@ -1135,4 +1134,61 @@ test attempt_evaporate_pool_test() fail {
     |> builder.add_signatory(example_treasury_admin)
     |> builder.spend(pool_input.output_reference)
   pool_validator.spend(constants.settings_policy_id, pool_datum, withdraw_fees_redeemer, ctx)
+}
+
+test burn_pool() {
+  let user_addr = wallet_address(constants.payment_key)
+  let fees = ((5,5),(5,5))
+  let pool_datum =
+    PoolDatum {
+      identifier: constants.pool_ident,
+      assets: ((ada_policy_id, ada_asset_name), (constants.rberry_policy, constants.rberry_asset_name)),
+      circulating_lp: 0,
+      bid_fees_per_10_thousand: fees.1st,
+      ask_fees_per_10_thousand: fees.2nd,
+      fee_manager: None,
+      market_open: 0,
+      fee_finalized: 0,
+      protocol_fees: 2_000_000,
+    }
+  let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
+  let pool_address = script_address(constants.pool_script_hash)
+  let pool_input =
+    Input {
+      output_reference: mk_output_reference(0),
+      output: Output {
+        address: pool_address,
+        value: value.from_lovelace(2_000_000)
+          |> value.add(constants.pool_script_hash, pool_nft_name, 1),
+        datum: InlineDatum(pool_datum),
+        reference_script: None,
+      },
+    }
+  let settings_input = {
+    let Input { output_reference, output } =
+      mk_valid_settings_input([constants.scooper], 1)
+    Input { output_reference, output }
+  }
+  let change_output =
+    Output {
+      address: user_addr,
+      value: value.from_lovelace(2_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let (_, pool_nft_token, _) = shared.pool_token_names(constants.pool_ident)
+  let ctx = interval.between(1,2)
+    |> build_txn_context()
+    |> mint_assets(constants.pool_script_hash, value.to_minted_value(
+        value.from_lovelace(0)
+          |> value.add(constants.pool_script_hash, pool_nft_token, -1)
+      ))
+    |> add_tx_input(pool_input)
+    |> add_tx_ref_input(settings_input)
+    |> add_tx_output(change_output)
+
+  let pool_mint_redeemer = BurnPool(constants.pool_ident)
+  let result = pool_validator.mint(constants.settings_policy_id, pool_mint_redeemer, ctx)
+  result
 }
