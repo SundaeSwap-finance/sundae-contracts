@@ -18,7 +18,7 @@ use shared.{
 use sundae/multisig
 use tests/examples/ex_settings.{mk_valid_settings_input, mk_valid_settings_datum, example_treasury_admin, example_metadata_admin, example_treasury_address, example_settings_admin}
 use tests/examples/ex_shared.{
-  mk_output_reference, mk_tx_hash, script_address, wallet_address,
+  mk_output_reference, mk_tx_hash, script_address, wallet_address, compare_stake,
 }
 use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
@@ -766,20 +766,6 @@ test cannot_update_pool_fees_transaction_test() fail {
     edit_fee_admin: Some(None),
   }
   update_pool_fees_transaction(settings)
-}
-
-pub fn compare_stake(left: StakeCredential, right: StakeCredential) -> Ordering {
-    let left = when left is {
-        Inline(ScriptCredential(x)) -> x
-        Inline(VerificationKeyCredential(x)) -> x
-        _ -> fail
-    }
-    let right = when right is {
-        Inline(ScriptCredential(x)) -> x
-        Inline(VerificationKeyCredential(x)) -> x
-        _ -> fail
-    }
-    bytearray.compare(left, right)
 }
 
 test update_pool_fees_transaction_with_script_test() {
