@@ -1161,7 +1161,7 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
 
 const { listedHash, utxos: orders } =
-  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 40n);
+  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 60n);
 
 const scoopPoolChange = await findChange(emulator, userAddress);
 
@@ -1172,7 +1172,7 @@ console.log("ok");
 
 const runs = new Map();
 
-for (let i = 1; i <= 40; i++) {
+for (let i = 37; i <= 45; i++) {
   emulator.ledger = structuredClone(savedLedger);
   try {
     const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));

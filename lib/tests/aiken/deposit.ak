@@ -70,9 +70,9 @@ fn deposit_test_schema(qa: Int, qb: Int, has_a: Int, has_b: Int, gives_a: Int, g
     reference_script: None,
   }
   let _, _, _ <- do_deposit(
-    pool_state.quantity_a,
-    pool_state.quantity_b,
-    pool_state.quantity_lp,
+    pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
+    pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+    pool_state.quantity_lp.1st, pool_state.quantity_lp.2nd, pool_state.quantity_lp.3rd,
     input,
     assets,
     order.destination,

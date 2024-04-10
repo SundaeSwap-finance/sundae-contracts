@@ -1002,7 +1002,8 @@ test has_expected_pool_value_test() {
     constants.pool_script_hash,
     constants.pool_ident,
     pool_value,
-    outcome,
+    outcome.quantity_a.1st, outcome.quantity_a.2nd, outcome.quantity_a.3rd,
+    outcome.quantity_b.1st, outcome.quantity_b.2nd, outcome.quantity_b.3rd,
     protocol_fees,
   )
 }
@@ -1024,7 +1025,8 @@ test has_expected_pool_value_test2() {
     constants.pool_script_hash,
     constants.pool_ident,
     pool_value,
-    outcome,
+    outcome.quantity_a.1st, outcome.quantity_a.2nd, outcome.quantity_a.3rd,
+    outcome.quantity_b.1st, outcome.quantity_b.2nd, outcome.quantity_b.3rd,
     protocol_fees,
   )
 }

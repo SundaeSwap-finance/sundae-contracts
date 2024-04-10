@@ -97,9 +97,16 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
     datum: InlineDatum(order),
     reference_script: None,
   }
-  let new_a, new_b, new_lp <- do_withdrawal(pool_state.quantity_a, pool_state.quantity_b, pool_state.quantity_lp, input, amount, order.destination, 2_500_000, output)
-  expect new_a.3rd == 1_000_000_000
-  expect new_b.3rd == 1_000_000_000
-  expect new_lp.3rd == 1000000000
+  let new_a, new_b, new_lp <- do_withdrawal(
+    pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
+    pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+    pool_state.quantity_lp.1st, pool_state.quantity_lp.2nd, pool_state.quantity_lp.3rd,
+    input, amount,
+    order.destination, 2_500_000,
+    output
+  )
+  expect new_a == 1_000_000_000
+  expect new_b == 1_000_000_000
+  expect new_lp == 1000000000
   True
 }
