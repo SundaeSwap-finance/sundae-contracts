@@ -201,10 +201,7 @@ export const PoolSpendRedeemerSchema = Data.Enum([
     }),
   }),
   Data.Object({
-    WithdrawFees: Data.Object({
-      amount: Data.Integer(),
-      treasuryOutput: Data.Integer(),
-    }),
+    Manage: Data.Tuple([]),
   }),
 ]);
 
