@@ -22,8 +22,8 @@ use tests/examples/ex_shared.{
 }
 use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
 use types/pool.{
-  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop, WithdrawFees,
-  UpdatePoolFees, BurnPool,
+  PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
+  BurnPool, ManageRedeemer, WithdrawFees, UpdatePoolFees,
 }
 use calculation/shared.{PoolState} as calc_shared
 use types/settings.{SettingsDatum, settings_nft_name}
@@ -381,7 +381,7 @@ fn scoop(options: ScoopTestOptions) {
       (2, None, 0),
     ]
   )
-  let result = pool_validator.spend(constants.settings_policy_id, pool_datum, pool_redeemer, ctx)
+  let result = pool_validator.spend(constants.manage_stake_script_hash, constants.settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
 
@@ -552,7 +552,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       (2, None, 0),
     ]
   )
-  let result = pool_validator.spend(constants.settings_policy_id, pool_datum, pool_redeemer, ctx)
+  let result = pool_validator.spend(constants.manage_stake_script_hash, constants.settings_policy_id, pool_datum, pool_redeemer, ctx)
   result
 }
 
@@ -621,7 +621,7 @@ fn withdraw_fees_transaction (options: ScoopTestOptions, withdraw_amount: Int) {
     |> add_tx_output(pool_output)
     |> builder.add_signatory(example_treasury_admin)
     |> builder.spend(pool_input.output_reference)
-  let result = pool_validator.spend(constants.settings_policy_id, pool_datum, withdraw_fees_redeemer, ctx)
+  let result = pool_validator.manage(withdraw_fees_redeemer, ctx)
   result
 }
 
@@ -755,7 +755,7 @@ fn update_pool_fees_transaction (options: ScoopTestOptions) {
     },
     ctx.purpose,
   )
-  let result = pool_validator.spend(constants.settings_policy_id, pool_datum, update_fees_redeemer, ctx)
+  let result = pool_validator.manage(update_fees_redeemer, ctx)
   result
 }
 
@@ -904,7 +904,7 @@ fn mint_test_modify(
     |> add_tx_output(lp_output)
     |> add_tx_output(pool_output)
 
-  let result = pool_validator.mint(constants.settings_policy_id, pool_mint_redeemer, ctx)
+  let result = pool_validator.mint(constants.manage_stake_script_hash, constants.settings_policy_id, pool_mint_redeemer, ctx)
   result
 }
 
@@ -1078,7 +1078,7 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
     |> mint_assets(constants.pool_script_hash, value.to_minted_value(value.from_asset(constants.pool_script_hash, pool_nft_name, -1)))
     |> builder.add_signatory(example_treasury_admin)
     |> builder.spend(pool_input.output_reference)
-  let result = pool_validator.spend(constants.settings_policy_id, pool_datum, withdraw_fees_redeemer, ctx)
+  let result = pool_validator.manage(withdraw_fees_redeemer, ctx)
   result
 }
 
@@ -1144,7 +1144,7 @@ test attempt_evaporate_pool_test() {
     |> mint_assets(constants.pool_script_hash, value.to_minted_value(value.from_asset(constants.pool_script_hash, pool_nft_name, -1)))
     |> builder.add_signatory(example_treasury_admin)
     |> builder.spend(pool_input.output_reference)
-  pool_validator.spend(constants.settings_policy_id, pool_datum, withdraw_fees_redeemer, ctx)
+  pool_validator.manage(withdraw_fees_redeemer, ctx)
 }
 
 test burn_pool() {
@@ -1200,6 +1200,6 @@ test burn_pool() {
     |> add_tx_output(change_output)
 
   let pool_mint_redeemer = BurnPool(constants.pool_ident)
-  let result = pool_validator.mint(constants.settings_policy_id, pool_mint_redeemer, ctx)
+  let result = pool_validator.mint(constants.manage_stake_script_hash, constants.settings_policy_id, pool_mint_redeemer, ctx)
   result
 }
