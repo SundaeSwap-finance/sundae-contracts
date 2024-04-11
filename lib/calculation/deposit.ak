@@ -93,6 +93,9 @@ pub fn do_deposit(
   let issued_lp_tokens =
     deposited_a * pool_state.quantity_lp.3rd / pool_state.quantity_a.3rd
 
+  // Make sure we don't ever allow this to round to zero, which would just eat some of the users assets
+  expect issued_lp_tokens > 0
+
   // Calculate what assets we expect on at the destination;
   // i.e. it should be whatever assets were on the inputs, minus the amount that was deposited, minus the fee,
   // plus the relevant LP tokens
