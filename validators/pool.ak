@@ -331,6 +331,9 @@ validator(settings_policy_id: PolicyId) {
           ..
         } = pool_output_datum
 
+        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
+        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
+
         let expected_datum = PoolDatum {
           ..datum,
           bid_fees_per_10_thousand,
@@ -496,14 +499,8 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.assets == (asset_a, asset_b),
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
-          pool_output_datum.bid_fees_per_10_thousand.1st >= 0,
-          pool_output_datum.bid_fees_per_10_thousand.2nd >= 0,
-          pool_output_datum.bid_fees_per_10_thousand.1st <= 10000,
-          pool_output_datum.bid_fees_per_10_thousand.2nd <= 10000,
-          pool_output_datum.ask_fees_per_10_thousand.1st >= 0,
-          pool_output_datum.ask_fees_per_10_thousand.2nd >= 0,
-          pool_output_datum.ask_fees_per_10_thousand.1st <= 10000,
-          pool_output_datum.ask_fees_per_10_thousand.2nd <= 10000,
+          shared.fees_in_legal_range(pool_output_datum.bid_fees_per_10_thousand),
+          shared.fees_in_legal_range(pool_output_datum.ask_fees_per_10_thousand),
         }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)

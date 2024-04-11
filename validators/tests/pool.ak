@@ -39,6 +39,7 @@ type ScoopTestOptions {
   edit_order_actual_destination: Option<Destination>,
   edit_fee: Option<Value>,
   edit_swap_fees: Option<((Int,Int), (Int, Int))>,
+  edit_new_swap_fees: Option<((Int,Int), (Int, Int))>,
   edit_fee_admin: Option<Option<multisig.MultisigScript>>,
   edit_withdrawals: Option<Dict<StakeCredential, Int>>,
   edit_pool_input_address: Option<Address>,
@@ -56,6 +57,7 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_order_actual_destination: None,
     edit_fee: None,
     edit_swap_fees: None,
+    edit_new_swap_fees: None,
     edit_fee_admin: None,
     edit_withdrawals: None,
     edit_pool_input_address: None,
@@ -719,10 +721,11 @@ fn update_pool_fees_transaction (options: ScoopTestOptions) {
     |> with_asset_of_tx_input(value.from_asset(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000))
     |> with_asset_of_tx_input(value.from_asset(constants.pool_script_hash, pool_nft_name, 1))
 
+  let new_pool_fees = option.or_else(options.edit_new_swap_fees, ((10,10),(310,150)))
   let pool_out_datum = PoolDatum {
     ..pool_datum,
-    bid_fees_per_10_thousand: (10,10),
-    ask_fees_per_10_thousand: (310,150),
+    bid_fees_per_10_thousand: new_pool_fees.1st,
+    ask_fees_per_10_thousand: new_pool_fees.2nd,
   }
 
   let pool_output = new_tx_output(pool_output_address, 0, InlineDatum(pool_out_datum))
@@ -758,6 +761,14 @@ fn update_pool_fees_transaction (options: ScoopTestOptions) {
 
 test update_pool_fees_transaction_test() {
   update_pool_fees_transaction(default_scoop_test_options())
+}
+
+test illegal_new_pool_fees_test() fail {
+  let settings = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_new_swap_fees: Some(((10001,10001),(10001,10001))),
+  }
+  update_pool_fees_transaction(settings)
 }
 
 test cannot_update_pool_fees_transaction_test() fail {
