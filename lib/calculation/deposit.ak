@@ -72,10 +72,12 @@ pub fn do_deposit(
     // If we have more b than a, then we can only take up to an quivalent amount of b, and return the rest
     // otherwise if we have more a than b, we can return some amount of `a` to the user instead
     if b_in_units_of_a > user_gives_a {
-      let give_b =
-        pool_state.quantity_b.3rd
-          * user_gives_a
-          / pool_state.quantity_a.3rd
+      let num = pool_state.quantity_b.3rd * user_gives_a
+      let denom = pool_state.quantity_a.3rd
+      // Make sure to do ceiling division here, to round in favor fo the protocol
+      // That is, when in doubt, take up to one more token from the user than the
+      // LP tokens we issue would entail
+      let give_b = ((num - 1) / denom) + 1
       (user_gives_a, give_b)
     } else {
       (b_in_units_of_a, user_gives_b)

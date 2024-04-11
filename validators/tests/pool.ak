@@ -507,7 +507,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     address: order2_out_addr,
     value: value.from_lovelace(2_000_000)
       |> value.add(constants.pool_script_hash, pool_lp_name(constants.pool_ident), 9_900_990)
-      |> value.add(constants.rberry_policy, constants.rberry_asset_name, 196_991),
+      |> value.add(constants.rberry_policy, constants.rberry_asset_name, 196_990),
     datum: order2_out_datum,
     reference_script: None,
   }
@@ -515,7 +515,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     address: pool_address,
     value: option.or_else(options.edit_pool_output_value,
       value.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
-        |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000 - 9_896_088 + 10_000_000 - 196_991)
+        |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000 - 9_896_088 + 10_000_000 - 196_990)
         |> value.add(constants.pool_script_hash, pool_nft_name, 1)),
     datum: InlineDatum(pool_out_datum),
     reference_script: None,
