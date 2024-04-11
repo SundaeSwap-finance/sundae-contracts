@@ -17,7 +17,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
-  WithdrawFees, UpdatePoolFees,
+  WithdrawFees, UpdatePoolFees, BurnPool,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
@@ -331,6 +331,9 @@ validator(settings_policy_id: PolicyId) {
           ..
         } = pool_output_datum
 
+        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
+        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
+
         let expected_datum = PoolDatum {
           ..datum,
           bid_fees_per_10_thousand,
@@ -496,14 +499,8 @@ validator(settings_policy_id: PolicyId) {
           pool_output_datum.assets == (asset_a, asset_b),
           pool_output_datum.circulating_lp == initial_lq,
           pool_output_datum.market_open <= pool_output_datum.fee_finalized,
-          pool_output_datum.bid_fees_per_10_thousand.1st >= 0,
-          pool_output_datum.bid_fees_per_10_thousand.2nd >= 0,
-          pool_output_datum.bid_fees_per_10_thousand.1st <= 10000,
-          pool_output_datum.bid_fees_per_10_thousand.2nd <= 10000,
-          pool_output_datum.ask_fees_per_10_thousand.1st >= 0,
-          pool_output_datum.ask_fees_per_10_thousand.2nd >= 0,
-          pool_output_datum.ask_fees_per_10_thousand.1st <= 10000,
-          pool_output_datum.ask_fees_per_10_thousand.2nd <= 10000,
+          shared.fees_in_legal_range(pool_output_datum.bid_fees_per_10_thousand),
+          shared.fees_in_legal_range(pool_output_datum.ask_fees_per_10_thousand),
         }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
@@ -544,6 +541,15 @@ validator(settings_policy_id: PolicyId) {
           (pool_output.value |> value.quantity_of(own_policy_id, pool_nft_name)) == 1,
           (ctx.transaction.mint |> value.from_minted_value |> value.quantity_of(own_policy_id, pool_nft_name)) == 0,
         }
+      }
+      BurnPool(pool_ident) -> {
+        // Burning an asset is only possible when spending it, so if we enforce
+        // that the mints consist of exactly 1 burn for the specified pool NFT
+        // then we can defer to the pool spending validator
+        expect Mint(own_policy_id) = ctx.purpose
+        let pool_nft_name = shared.pool_nft_name(pool_ident)
+        let expected_mint = shared.to_value((own_policy_id, pool_nft_name, -1))
+        value.from_minted_value(ctx.transaction.mint) == expected_mint
       }
     }
   }

@@ -1,7 +1,7 @@
 use aiken/bytearray
 use aiken/cbor
 use aiken/transaction.{OutputReference, TransactionId}
-use aiken/transaction/credential.{Address, ScriptCredential, VerificationKeyCredential}
+use aiken/transaction/credential.{Address, Inline, StakeCredential, ScriptCredential, VerificationKeyCredential}
 
 pub const examples_enabled: Int = 1
 pub fn print_example(d: Data) -> Bool {
@@ -33,4 +33,18 @@ pub fn script_address(hash: ByteArray) -> Address {
 
 pub fn wallet_address(hash: ByteArray) -> Address {
   Address(VerificationKeyCredential(hash), None)
+}
+
+pub fn compare_stake(left: StakeCredential, right: StakeCredential) -> Ordering {
+    let left = when left is {
+        Inline(ScriptCredential(x)) -> x
+        Inline(VerificationKeyCredential(x)) -> x
+        _ -> fail
+    }
+    let right = when right is {
+        Inline(ScriptCredential(x)) -> x
+        Inline(VerificationKeyCredential(x)) -> x
+        _ -> fail
+    }
+    bytearray.compare(left, right)
 }
