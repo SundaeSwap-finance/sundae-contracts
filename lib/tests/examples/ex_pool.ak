@@ -34,7 +34,7 @@ test example_pool_scoop_redeemer() {
 }
 
 pub fn mk_withdraw_fees_redeemer() -> ManageRedeemer {
-  WithdrawFees { amount: 100, treasury_output: 1 }
+  WithdrawFees { amount: 100, treasury_output: 1, pool_input: 0 }
 }
 
 test example_pool_withdraw_fees_redeemer() {

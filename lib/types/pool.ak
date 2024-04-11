@@ -60,7 +60,7 @@ pub type PoolRedeemer {
   }
   /// Withdraw the earned protocol fees into the treasury, or update the pool
   /// fees
-  Manage  
+  Manage
 }
 
 /// We use the pool mint script for two different purposes
@@ -94,6 +94,7 @@ pub type ManageRedeemer {
   WithdrawFees {
     amount: Int,
     treasury_output: Int,
+    pool_input: Int,
   }
-  UpdatePoolFees
+  UpdatePoolFees { pool_input: Int, }
 }
