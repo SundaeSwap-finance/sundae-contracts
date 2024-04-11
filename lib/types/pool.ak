@@ -94,4 +94,6 @@ pub type PoolMintRedeemer {
     /// This is safe because we validate that the token is paid to the metadata admin 
     metadata_output: Int
   }
+  /// to burn the pool NFT (when permitted by the spending validator)
+  BurnPool { identifier: Ident }
 }

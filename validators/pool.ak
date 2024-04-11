@@ -17,7 +17,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
-  WithdrawFees, UpdatePoolFees,
+  WithdrawFees, UpdatePoolFees, BurnPool,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
@@ -541,6 +541,15 @@ validator(settings_policy_id: PolicyId) {
           (pool_output.value |> value.quantity_of(own_policy_id, pool_nft_name)) == 1,
           (ctx.transaction.mint |> value.from_minted_value |> value.quantity_of(own_policy_id, pool_nft_name)) == 0,
         }
+      }
+      BurnPool(pool_ident) -> {
+        // Burning an asset is only possible when spending it, so if we enforce
+        // that the mints consist of exactly 1 burn for the specified pool NFT
+        // then we can defer to the pool spending validator
+        expect Mint(own_policy_id) = ctx.purpose
+        let pool_nft_name = shared.pool_nft_name(pool_ident)
+        let expected_mint = shared.to_value((own_policy_id, pool_nft_name, -1))
+        value.from_minted_value(ctx.transaction.mint) == expected_mint
       }
     }
   }
