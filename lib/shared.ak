@@ -271,3 +271,12 @@ test count_orders_test() {
 pub fn oracle_sft_name() {
   "oracle"
 }
+
+pub fn fees_in_legal_range(fees: (Int, Int)) {
+  and {
+    fees.1st >= 0,
+    fees.2nd >= 0,
+    fees.1st <= 10000,
+    fees.2nd <= 10000,
+  }
+}

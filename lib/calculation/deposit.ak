@@ -78,17 +78,16 @@ pub fn do_deposit(
 
   // Amount that user actually deposits in the pool, after giving back change.
   let (deposited_a, deposited_b) =
-    // If we have more b than a, then we can only take up to an quivalent amount of b, and return the rest
+    // If we have more b than a, then we can only take up to an equivalent amount of b, and return the rest
     // otherwise if we have more a than b, we can return some amount of `a` to the user instead
     if b_in_units_of_a > user_gives_a {
-      let change =
-        pool_quantity_b
-          * (b_in_units_of_a - user_gives_a) // the "surplus" value in units of a
-          / pool_quantity_a
-      (user_gives_a, user_gives_b - change)
+      // Make sure to do ceiling division here, to round in favor fo the protocol
+      // That is, when in doubt, take up to one more token from the user than the
+      // LP tokens we issue would entail
+      let give_b = ((pool_quantity_b * user_gives_a - 1) / pool_quantity_a) + 1
+      (user_gives_a, give_b)
     } else {
-      let change = user_gives_a - b_in_units_of_a
-      (user_gives_a - change, user_gives_b)
+      (b_in_units_of_a, user_gives_b)
     }
 
   // We can then calculate how much LP tokens this user should get;
@@ -101,6 +100,9 @@ pub fn do_deposit(
   // Solving for `issued_lp_tokens` gives:
   let issued_lp_tokens =
     deposited_a * pool_quantity_lp / pool_quantity_a
+
+  // Make sure we don't ever allow this to round to zero, which would just eat some of the users assets
+  expect issued_lp_tokens > 0
 
   // Calculate what assets we expect on at the destination;
   // i.e. it should be whatever assets were on the inputs, minus the amount that was deposited, minus the fee,

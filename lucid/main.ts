@@ -1161,7 +1161,7 @@ emulator.ledger["000000000000000000000000000000000000000000000000000000000000000
 const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
 
 const { listedHash, utxos: orders } =
-  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 60n);
+  await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 40n);
 
 const scoopPoolChange = await findChange(emulator, userAddress);
 

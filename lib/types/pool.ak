@@ -58,17 +58,9 @@ pub type PoolRedeemer {
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
     input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   }
-  /// Withdraw the earned protocol fees into the treasury
-  WithdrawFees {
-    /// The amount of earned protocol fees to withdraw
-    /// Note that we *don't* have to withdraw everything, to allow the minUTXO amount to be left behind on exotic pools.
-    amount: Int,
-    /// The index in the transaction outputs that corresponds to the treasury address
-    /// We do this to efficiently skip to that output,
-    /// and it is safe to do so because that output must be to the treasury address from the settings datum
-    treasury_output: Int,
-  }
-  UpdatePoolFees
+  /// Withdraw the earned protocol fees into the treasury, or update the pool
+  /// fees
+  Manage
 }
 
 /// We use the pool mint script for two different purposes
@@ -94,4 +86,15 @@ pub type PoolMintRedeemer {
     /// This is safe because we validate that the token is paid to the metadata admin 
     metadata_output: Int
   }
+  /// to burn the pool NFT (when permitted by the spending validator)
+  BurnPool { identifier: Ident }
+}
+
+pub type ManageRedeemer {
+  WithdrawFees {
+    amount: Int,
+    treasury_output: Int,
+    pool_input: Int,
+  }
+  UpdatePoolFees { pool_input: Int, }
 }
