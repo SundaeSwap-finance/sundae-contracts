@@ -1,14 +1,14 @@
 use aiken/bytearray
 use aiken/dict
-use aiken/hash
+use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference,
-  ScriptContext, Transaction, TransactionId,
+  ScriptContext, Transaction, TransactionId, WithdrawFrom, Spend,
 }
 use aiken/transaction/credential.{
-  Address, Inline, ScriptCredential,
+  Address, Inline, Script, ScriptCredential,
 }
 use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id, ada_asset_name}
 use calculation/process.{pool_input_to_state, process_orders}
@@ -17,7 +17,7 @@ use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_
 use sundae/multisig
 use types/pool.{
   CreatePool, MintLP, PoolDatum, PoolMintRedeemer, PoolRedeemer, PoolScoop,
-  WithdrawFees, UpdatePoolFees, BurnPool,
+  BurnPool, Manage, ManageRedeemer, WithdrawFees, UpdatePoolFees,
 }
 use types/settings.{SettingsDatum, find_settings_datum}
 /// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
@@ -46,7 +46,7 @@ use types/settings.{SettingsDatum, find_settings_datum}
 /// It is likely, then, that protocols converge on the per-order cost of batching being lower than un-batched variants, i.e.
 ///
 /// A + B*n + C < (A + B) * n
-validator(settings_policy_id: PolicyId) {
+validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_id: PolicyId) {
   pub fn spend(datum: PoolDatum, redeemer: PoolRedeemer, ctx: ScriptContext) {
 
     // First, we destructure the transaction right upfront, because field access is O(n),
@@ -241,118 +241,30 @@ validator(settings_policy_id: PolicyId) {
           pool_input.address.stake_credential == pool_output_address.stake_credential,
         }
       }
-      WithdrawFees { amount, treasury_output } -> {
-        let PoolDatum { circulating_lp: initial_circulating_lp, protocol_fees: initial_protocol_fees, .. } = datum
-        // Make sure we withdraw *only* up to what we've earned
-        // We allow less than, so that you can leave some behind for the minUTXO cost, or continuing to earn staking rewards, etc.
-        expect amount <= initial_protocol_fees
-
-        // Only the treasury administrator is allowed to withdraw the fees, to prevent DDOS, and because of the allowance below
-        expect multisig.satisfied(
-          settings_datum.treasury_admin,
-          extra_signatories,
-          validity_range,
-          withdrawals,
-        )
-
-        // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
-        // Instead, the DAO can set an "allowance", which is a percentage of each withdrawal that is entrusted to the
-        // treasury administrator to pay those basic fees, such as paying the scoopers, or running incentive programs, etc.
-        //
-        // In particular, it's a percentage, to ensure that splitting up the withdrawals into multiple transactions doesn't
-        // allow them to game that withdrawal.
-        let allowance = amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
-        let to_treasury = amount - allowance
-
-        // And, we must pay everything except the allowance amount to the treasury address
-        // We use the `treasury_output` index to skip to it quickly, rather than scanning for the output
-        // TODO: should we instead sum all the values at the treasury output, to allow
-        // paying out in multiple UTXOs for some reason?
-        expect Some(treasury_output) = list.at(outputs, treasury_output)
-        expect treasury_output.address == settings_datum.treasury_address
-        // We ensure that it's sent with the Void datum. This is because the treasury is likely to be a script address
-        // and scripts are unspendable without a datum; We also don't have any notion of what the "correct" datum would be
-        // so we just enforce it to void. If the output datum ever needed a specific datum, we would have to use a proxy address
-        // that worked with the void datum, and paid to the real treasury with the correct datum.
-        // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
-        expect treasury_output.datum == InlineDatum(Void)
-        // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
-        expect value.lovelace_of(treasury_output.value) >= to_treasury
-
-        if initial_circulating_lp == 0 {
-          // If there is no liquidity, just require the treasury admin to withdraw everything
-          expect amount == initial_protocol_fees
-          // If circulating_lp is 0, all of the assets have been withdrawn, and so the UTXO will be
-          // ADA (for the treasury fees) and the pool NFT; so we can very cleverly check that the pool
-          // NFT is burned by negating the input, and stripping off the lovelace
-          expect value.from_minted_value(mint) == value.negate(value.without_lovelace(pool_input.value))
-          True
-        } else {
-          let (
-              Output {
-                address: pool_output_address,
-                value: pool_output_value,
-                ..
-              },
-              output_datum
-            ) = find_pool_output(outputs)
-          expect pool_output_address.payment_credential == ScriptCredential(pool_script_hash)
-
-          // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
-          // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
-          let expected_datum = PoolDatum {
-            ..datum,
-            protocol_fees: initial_protocol_fees - amount,
+      Manage -> {
+        // There must be a redeemer for a withdrawal against the manage stake script,
+        // and the redeemer must be valid
+        dict.foldl(ctx.transaction.redeemers, False, fn(script_purpose, redeemer, acc) {
+          when script_purpose is {
+            WithdrawFrom(Inline(ScriptCredential(script))) -> {
+              let is_valid_manage_script_invoke =
+                if script == manage_stake_script_hash {
+                  expect redeemer: ManageRedeemer = redeemer
+                  let redeemer_pool_input = when redeemer is {
+                    UpdatePoolFees { pool_input } -> pool_input
+                    WithdrawFees { pool_input, .. } -> pool_input
+                  }
+                  expect Spend(OutputReference { output_index, .. }) = ctx.purpose
+                  // Manage redeemer must have the correct index of this pool input
+                  output_index == redeemer_pool_input
+                } else {
+                  False
+                }
+                acc || is_valid_manage_script_invoke
+            }
+            _ -> acc
           }
-          expect output_datum == expected_datum
-
-          // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
-          let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
-          expect pool_output_value == expected_output_value
-          expect list.any(settings_datum.authorized_staking_keys, fn(a) {
-            pool_output_address.stake_credential == Some(Inline(a))
-          })
-          True
-        }
-      }
-      UpdatePoolFees -> {
-        let (
-          Output {
-            address: pool_output_address,
-            value: pool_output_value,
-            ..
-          },
-          pool_output_datum,
-        ) = find_pool_output(outputs)
-        let PoolDatum {
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
-          fee_manager: output_fee_manager,
-          ..
-        } = pool_output_datum
-
-        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
-        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
-
-        let expected_datum = PoolDatum {
-          ..datum,
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
-          fee_manager: output_fee_manager,
-        }
-        expect pool_output_datum == expected_datum
-
-        expect Some(fee_manager) = datum.fee_manager
-        expect multisig.satisfied(
-          fee_manager,
-          extra_signatories,
-          validity_range,
-          withdrawals,
-        )
-
-        expect pool_output_address == pool_input.address
-        expect pool_output_value == pool_input.value
-        True
+        })
       }
     }
   }
@@ -670,4 +582,146 @@ fn compare_asset_class(a: AssetClass, b: AssetClass) {
 pub fn int_to_ident(n: Int) -> Ident {
   expect n < 256
   bytearray.push(#"", n)
+}
+
+validator(settings_policy_id: PolicyId) {
+  pub fn manage(redeemer: ManageRedeemer, ctx: ScriptContext) {
+    let transaction = ctx.transaction
+    let Transaction {
+      inputs,
+      outputs,
+      reference_inputs,
+      mint,
+      extra_signatories,
+      validity_range,
+      withdrawals,
+      ..
+    } = transaction
+    let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
+    when redeemer is {
+      WithdrawFees { amount, treasury_output, pool_input } -> {
+        expect Some(pool_input) = list.at(inputs, pool_input)
+        let pool_input = pool_input.output
+        expect InlineDatum(datum) = pool_input.datum
+        expect datum: PoolDatum = datum
+        expect ScriptCredential(pool_script_hash) = pool_input.address.payment_credential
+        let PoolDatum { circulating_lp: initial_circulating_lp, protocol_fees: initial_protocol_fees, .. } = datum
+        // Make sure we withdraw *only* up to what we've earned
+        // We allow less than, so that you can leave some behind for the minUTXO cost, or continuing to earn staking rewards, etc.
+        expect amount <= initial_protocol_fees
+
+        // Only the treasury administrator is allowed to withdraw the fees, to prevent DDOS, and because of the allowance below
+        expect multisig.satisfied(
+          settings_datum.treasury_admin,
+          extra_signatories,
+          validity_range,
+          withdrawals,
+        )
+
+        // Asking the DAO to approve every single cost individually would be a small cognitive DDOS on the community
+        // Instead, the DAO can set an "allowance", which is a percentage of each withdrawal that is entrusted to the
+        // treasury administrator to pay those basic fees, such as paying the scoopers, or running incentive programs, etc.
+        //
+        // In particular, it's a percentage, to ensure that splitting up the withdrawals into multiple transactions doesn't
+        // allow them to game that withdrawal.
+        let allowance = amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let to_treasury = amount - allowance
+
+        // And, we must pay everything except the allowance amount to the treasury address
+        // We use the `treasury_output` index to skip to it quickly, rather than scanning for the output
+        // TODO: should we instead sum all the values at the treasury output, to allow
+        // paying out in multiple UTXOs for some reason?
+        expect Some(treasury_output) = list.at(outputs, treasury_output)
+        expect treasury_output.address == settings_datum.treasury_address
+        // We ensure that it's sent with the Void datum. This is because the treasury is likely to be a script address
+        // and scripts are unspendable without a datum; We also don't have any notion of what the "correct" datum would be
+        // so we just enforce it to void. If the output datum ever needed a specific datum, we would have to use a proxy address
+        // that worked with the void datum, and paid to the real treasury with the correct datum.
+        // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
+        expect treasury_output.datum == InlineDatum(Void)
+        // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
+        expect value.lovelace_of(treasury_output.value) >= to_treasury
+
+        if initial_circulating_lp == 0 {
+          // If there is no liquidity, just require the treasury admin to withdraw everything
+          expect amount == initial_protocol_fees
+          // If circulating_lp is 0, all of the assets have been withdrawn, and so the UTXO will be
+          // ADA (for the treasury fees) and the pool NFT; so we can very cleverly check that the pool
+          // NFT is burned by negating the input, and stripping off the lovelace
+          expect value.from_minted_value(mint) == value.negate(value.without_lovelace(pool_input.value))
+          True
+        } else {
+          let (
+              Output {
+                address: pool_output_address,
+                value: pool_output_value,
+                ..
+              },
+              output_datum
+            ) = find_pool_output(outputs)
+          expect pool_output_address.payment_credential == ScriptCredential(pool_script_hash)
+
+          // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
+          // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
+          let expected_datum = PoolDatum {
+            ..datum,
+            protocol_fees: initial_protocol_fees - amount,
+          }
+          expect output_datum == expected_datum
+
+          // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
+          let expected_output_value = value.merge(pool_input.value, value.from_lovelace(-amount))
+          expect pool_output_value == expected_output_value
+          expect list.any(settings_datum.authorized_staking_keys, fn(a) {
+            pool_output_address.stake_credential == Some(Inline(a))
+          })
+          True
+        }
+      }
+      UpdatePoolFees { pool_input } -> {
+        expect Some(pool_input) = list.at(inputs, pool_input)
+        let pool_input = pool_input.output
+        expect InlineDatum(datum) = pool_input.datum
+        expect datum: PoolDatum = datum
+
+        let (
+          Output {
+            address: pool_output_address,
+            value: pool_output_value,
+            ..
+          },
+          pool_output_datum,
+        ) = find_pool_output(outputs)
+        let PoolDatum {
+          bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand,
+          fee_manager: output_fee_manager,
+          ..
+        } = pool_output_datum
+
+        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
+        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
+
+        let expected_datum = PoolDatum {
+          ..datum,
+          bid_fees_per_10_thousand,
+          ask_fees_per_10_thousand,
+          fee_manager: output_fee_manager,
+        }
+        expect pool_output_datum == expected_datum
+
+        expect Some(fee_manager) = datum.fee_manager
+        expect multisig.satisfied(
+          fee_manager,
+          extra_signatories,
+          validity_range,
+          withdrawals,
+        )
+
+        expect pool_output_address == pool_input.address
+        expect pool_output_value == pool_input.value
+        True
+      }
+    }
+  }
 }

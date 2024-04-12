@@ -110,10 +110,17 @@ export const DatumSchema = Data.Enum([
   //Data.Object({ InlineDatum: Data.Any() }),
 ]);
 
-export const DestinationSchema = Data.Object({
-  address: AddressSchema,
-  datum: DatumSchema,
-});
+export const DestinationSchema = Data.Enum([
+  Data.Object({
+    Fixed: Data.Object({
+      address: AddressSchema,
+      datum: DatumSchema,
+    }),
+  }),
+  Data.Object({
+    Self: Data.Tuple([]),
+  }),
+]);
 
 export const ExtensionSchema = Data.Enum([
   Data.Literal("NoExtension"),
@@ -139,7 +146,9 @@ export const PoolDatumSchema = Data.Object({
   identifier: IdentSchema,
   assets: Data.Tuple([AssetClassSchema, AssetClassSchema]),
   circulatingLp: Data.Integer(),
-  feesPer10Thousand: Data.Tuple([Data.Integer(), Data.Integer()]),
+  bidFeesPer10Thousand: Data.Tuple([Data.Integer(), Data.Integer()]),
+  askFeesPer10Thousand: Data.Tuple([Data.Integer(), Data.Integer()]),
+  feeManager: Data.Nullable(MultiSigScriptSchema),
   marketOpen: Data.Integer(),
   feeFinalized: Data.Integer(),
   protocolFees: Data.Integer(),
@@ -201,10 +210,7 @@ export const PoolSpendRedeemerSchema = Data.Enum([
     }),
   }),
   Data.Object({
-    WithdrawFees: Data.Object({
-      amount: Data.Integer(),
-      treasuryOutput: Data.Integer(),
-    }),
+    Manage: Data.Tuple([]),
   }),
 ]);
 

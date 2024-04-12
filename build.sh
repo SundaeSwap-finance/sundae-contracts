@@ -14,9 +14,17 @@ aiken blueprint apply -v settings.mint $PROTOCOL_BOOT_UTXO > tmp
 mv tmp plutus.json
 
 SETTINGS_SCRIPT_HASH="581c$(aiken blueprint policy -v settings.mint)"
+aiken blueprint apply -v pool.manage $SETTINGS_SCRIPT_HASH > tmp
+mv tmp plutus.json
+
+MANAGE_STAKE_SCRIPT_HASH="581c$(aiken blueprint policy -v pool.manage)"
+aiken blueprint apply -v pool.spend $MANAGE_STAKE_SCRIPT_HASH > tmp
+mv tmp plutus.json
 aiken blueprint apply -v pool.spend $SETTINGS_SCRIPT_HASH > tmp
 mv tmp plutus.json
 
+aiken blueprint apply -v pool.mint $MANAGE_STAKE_SCRIPT_HASH > tmp
+mv tmp plutus.json
 aiken blueprint apply -v pool.mint $SETTINGS_SCRIPT_HASH > tmp
 mv tmp plutus.json
 
