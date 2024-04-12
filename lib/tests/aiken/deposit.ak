@@ -21,6 +21,18 @@ test deposit_test() {
   )
 }
 
+test deposit_test_minimum() fail {
+  deposit_test_schema(
+    661_278_808_416,
+    188_253_559_159_646,
+    153_000_000,
+    150,
+    151_171_875,
+    150,
+    value.from_lovelace(152_000_000)
+  )
+}
+
 fn deposit_test_schema(qa: Int, qb: Int, has_a: Int, has_b: Int, gives_a: Int, gives_b: Int, out_value: value.Value) {
   let addr =
     Address(
@@ -80,4 +92,3 @@ fn deposit_test_schema(qa: Int, qb: Int, has_a: Int, has_b: Int, gives_a: Int, g
   // Test should pass as long as do_deposit didn't throw
   True
 }
-
