@@ -1172,7 +1172,7 @@ console.log("ok");
 
 const runs = new Map();
 
-for (let i = 1; i <= 40; i++) {
+for (let i = 37; i <= 45; i++) {
   emulator.ledger = structuredClone(savedLedger);
   try {
     const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));

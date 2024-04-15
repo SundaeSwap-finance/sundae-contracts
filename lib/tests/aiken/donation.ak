@@ -58,11 +58,17 @@ test donation() {
       datum: NoDatum,
       reference_script: None,
     }
-  let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input, assets, order.destination, 2_500_000, output)
+  let new_a, new_b, has_remainder <-
+    do_donation(
+      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      input,
+      assets, order.destination,
+      2_500_000, output
+    )
   expect !has_remainder
-  expect final_pool_state.quantity_a.3rd == 1_001_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect new_a == 1_001_000_000
+  expect new_b == 1_001_000_000
   True
 }
 
@@ -118,11 +124,17 @@ test donation_with_remainder() {
       datum: NoDatum,
       reference_script: None,
     }
-  let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input, assets, order.destination, 2_500_000, output)
+  let new_a, new_b, has_remainder <-
+    do_donation(
+      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      input,
+      assets, order.destination,
+      2_500_000, output
+    )
   expect has_remainder
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect new_a == 1_000_000_000
+  expect new_b == 1_001_000_000
   True
 }
 
@@ -178,10 +190,16 @@ test donation_with_wrong_remainder() fail {
       datum: NoDatum,
       reference_script: None,
     }
-  let (final_pool_state, has_remainder) =
-    do_donation(pool_state, input, assets, order.destination, 2_500_000, output)
+  let new_a, new_b, has_remainder <-
+    do_donation(
+      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      input,
+      assets, order.destination,
+      2_500_000, output
+    )
   expect has_remainder
-  expect final_pool_state.quantity_a.3rd == 1_000_000_000
-  expect final_pool_state.quantity_b.3rd == 1_001_000_000
+  expect new_a == 1_000_000_000
+  expect new_b == 1_001_000_000
   True
 }

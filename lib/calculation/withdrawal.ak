@@ -1,7 +1,6 @@
 use aiken/math
 use aiken/transaction.{Output}
-use aiken/transaction/value.{ada_policy_id, ada_asset_name}
-use calculation/shared.{PoolState} as calc_shared
+use aiken/transaction/value.{ada_policy_id, ada_asset_name, PolicyId, AssetName}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
@@ -10,20 +9,31 @@ use types/order.{Destination, Fixed, Self}
 /// This burns LP tokens, and pays out a portion of the pool in proportion to the percentage
 /// of the circulating supply of LP tokens that was burned.
 pub fn do_withdrawal(
-  pool_state: PoolState,     // The interim pool state against which we should calculate the withdrawal
+  // The interim pool state against which we should calculate the withdrawal
+  pool_policy_a: PolicyId,
+  pool_asset_name_a: AssetName,
+  pool_quantity_a: Int,
+  pool_policy_b: PolicyId,
+  pool_asset_name_b: AssetName,
+  pool_quantity_b: Int,
+  pool_policy_lp: PolicyId,
+  pool_asset_name_lp: AssetName,
+  pool_quantity_lp: Int,
   input_utxo: Output,        // The incoming UTXO, useful for returning surplus and handling Self destinations
   amount: SingletonValue,    // The amount to actually withdraw
   destination: Destination,  // The destination that the LP tokens (and change) should be sent to
   actual_protocol_fee: Int,  // The protocol fee to deduct
   output: Output,            // The output to compare the order execution against, to ensure the right quantity was paid out
-) -> PoolState {
+  // A continuation; a method to call with the new pool state; more efficient than constructing a new object
+  continuation: fn(Int, Int, Int) -> Bool
+) -> Bool {
   let (lp_policy, lp_asset_name, amount) = amount
   let Output { value: input_value, .. } = input_utxo
 
   // Make sure we're withdrawing from the right pool;
   // if we were to provide LP tokens for a different pool, you could withdraw funds that weren't yours
-  expect lp_policy == pool_state.quantity_lp.1st
-  expect lp_asset_name == pool_state.quantity_lp.2nd
+  expect lp_policy == pool_policy_lp
+  expect lp_asset_name == pool_asset_name_lp
   // Calculate the amount of LP tokens to burn; because the outcome of a previous order in the chain
   // may be uncertain, we allow some flexibility here, and the amount in the order just specifies a
   // maximum to take. Also note, we specify an amount at all so that you can have things like
@@ -36,9 +46,9 @@ pub fn do_withdrawal(
   // OPTIMIZATION: we can probably destructure the SingletonValues once and reuse, but optimizing
   // deposits/withdrawals isn't as critical as optimizing swaps.
   let withdrawn_a =
-    withdrawn * pool_state.quantity_a.3rd / pool_state.quantity_lp.3rd
+    withdrawn * pool_quantity_a / pool_quantity_lp
   let withdrawn_b =
-    withdrawn * pool_state.quantity_b.3rd / pool_state.quantity_lp.3rd
+    withdrawn * pool_quantity_b / pool_quantity_lp
 
   // Calculate the remainder that should be directed to the destination:
   // We start with whatever we got in on the input, deduct the LP tokens we're burning
@@ -49,13 +59,13 @@ pub fn do_withdrawal(
       |> value.add(lp_policy, lp_asset_name, -withdrawn)
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
       |> value.add(
-          pool_state.quantity_a.1st,
-          pool_state.quantity_a.2nd,
+          pool_policy_a,
+          pool_asset_name_a,
           withdrawn_a,
         )
       |> value.add(
-          pool_state.quantity_b.1st,
-          pool_state.quantity_b.2nd,
+          pool_policy_b,
+          pool_asset_name_b,
           withdrawn_b,
         )
 
@@ -81,22 +91,10 @@ pub fn do_withdrawal(
   }
 
   // Return the final pool state
-  PoolState {
-    quantity_a: (
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd - withdrawn_a,
-    ),
-    quantity_b: (
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd - withdrawn_b,
-    ),
-    quantity_lp: (
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd,
-      pool_state.quantity_lp.3rd - withdrawn,
-    ),
-  }
+  continuation(
+    pool_quantity_a - withdrawn_a,
+    pool_quantity_b - withdrawn_b,
+    pool_quantity_lp - withdrawn,
+  )
 }
 

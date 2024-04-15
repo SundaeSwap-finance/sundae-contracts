@@ -10,9 +10,8 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, Inline, Script, ScriptCredential,
 }
-use aiken/transaction/value.{MintedValue, PolicyId, Value, ada_policy_id, ada_asset_name}
+use aiken/transaction/value.{MintedValue, PolicyId, AssetName, Value, ada_policy_id}
 use calculation/process.{pool_input_to_state, process_orders}
-use calculation/shared.{PoolState} as calc_shared
 use shared.{AssetClass, Ident, spent_output, pool_nft_name, pool_lp_name, count_orders}
 use sundae/multisig
 use types/pool.{
@@ -130,18 +129,27 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
         // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
         // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
         // (excluding protocol fees, which shouldn't factor into the price)
-        let (initial_state, bid_fees, ask_fees, initial_protocol_fees) = pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
+        // Note: this abomination is brought to you by the fact that constructing and destructuring structs
+        // is expensive, so it's cheaper to have **massive** lambdas / continuations
+        let pool_policy_a, pool_asset_name_a, pool_quantity_a,
+            pool_policy_b, pool_asset_name_b, pool_quantity_b,
+            pool_policy_lp, pool_asset_name_lp, pool_quantity_lp,
+            bid_fees, ask_fees, initial_protocol_fees
+          <- pool_input_to_state(pool_script_hash, datum, pool_input, validity_range.lower_bound)
 
         // Process the orders in order, and decide the final pool state we should see
         // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
         // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
-        let (outcome, simple_count, strategy_count) =
+        let final_a, final_b, final_lp, simple_count, strategy_count <-
           process_orders(
             actual_identifier,        // The pool identifier, so we can check that each order is for this pool
             validity_range,           // The validity range of the transaction, so we can check strategies haven't expired
             withdrawals,              // Include the withdrawals, in case a strategy has some kind of attached script condition
             datums,                   // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
-            initial_state,            // The initial pool state, such as the reserves and circulating LP
+            // The initial pool state, such as the reserves and circulating LP
+            pool_policy_a, pool_asset_name_a, pool_quantity_a,
+            pool_policy_b, pool_asset_name_b, pool_quantity_b,
+            pool_policy_lp, pool_asset_name_lp, pool_quantity_lp,
             input_order,              // The input ordering specified by the scooper
             bid_fees,                 // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
             ask_fees,                 // ... for Ask (swap B -> A)
@@ -156,12 +164,6 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
             0,                        // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,                        // The accumulated count of "strategy" orders, see line above.
           )
-
-        let PoolState {
-          quantity_lp: expected_circulating_lp,
-          ..
-        } = outcome
-
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
         expect simple_count + strategy_count == real_order_count
@@ -180,7 +182,10 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
         // TODO: do we need to account for this? it seems to have gotten lost in some changes.
-        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, outcome)
+        expect minted_correct_pool_tokens(
+          pool_script_hash, mint, datum,
+          final_lp,
+        )
 
         // Check that the scooper is authorized; the protocol can allow *any* scoopers, or limit it to a set of actors
         // It's safe to use values provided in the redeemer to efficiently skip to the expected scooper / expected signature
@@ -204,10 +209,6 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
         // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
         expect interval.is_entirely_after(validity_range, datum.market_open)
 
-        // Make sure we correctly track the circulating LP tokens; If this gets out of sync with what we've actually minted,
-        // then users will be able to either redeem assets they aren't entitled to, or be unable to access funds they are entitled to.
-        expect actual_circulating_lp == outcome.quantity_lp.3rd
-
         // We also check that the pool output has the right value (as mentioned above)
         // In particular, the pool must have:
         // - the pool NFT
@@ -219,13 +220,16 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
             pool_script_hash,
             actual_identifier,
             pool_output_value,
-            outcome,
+            pool_policy_a, pool_asset_name_a, final_a,
+            pool_policy_b, pool_asset_name_b, final_b,
             actual_protocol_fees,
           )
         // Now, we check various things about the output datum to ensure they're each correct.
         // Check that the datum correctly records the final circulating LP, accounting for any deposits and withdrawals
         // In particular, this is important because that circulating supply is exaclty what determines the users ownership of assets in the pool
-        expect actual_circulating_lp == expected_circulating_lp.3rd
+        // If this gets out of sync with what we've actually minted, then users will be able to either redeem assets they aren't entitled to,
+        // or be unable to access funds they are entitled to.
+        expect actual_circulating_lp == final_lp
 
         // Make sure the protocol fees have been correctly updated
         expect actual_protocol_fees == initial_protocol_fees + expected_fees_collected
@@ -375,11 +379,11 @@ validator(manage_stake_script_hash: Hash<Blake2b_224, Script>, settings_policy_i
           value.from_minted_value(ctx.transaction.mint) == expected_mint
 
         // Confirm that the correct funds (asset A, asset B, the correct amount of ADA, and the pool NFT) get paid to the pool output
-        let funds_spent_to_pool = has_expected_pool_value(own_policy_id, new_pool_id, pool_output.value, PoolState {
-          quantity_a: (asset_a.1st, asset_a.2nd, coin_a_amt_sans_protocol_fees),
-          quantity_b: (asset_b.1st, asset_b.2nd, coin_b_amt),
-          quantity_lp: (own_policy_id, new_pool_lp_token, initial_lq),
-        }, pool_output_datum.protocol_fees)
+        let funds_spent_to_pool = has_expected_pool_value(own_policy_id, new_pool_id, pool_output.value,
+          asset_a.1st, asset_a.2nd, coin_a_amt_sans_protocol_fees,
+          asset_b.1st, asset_b.2nd, coin_b_amt,
+          pool_output_datum.protocol_fees
+        )
 
         // Make sure we send the pool metadata token to the metadata admin
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
@@ -485,9 +489,11 @@ fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
   mint: MintedValue,
   datum: PoolDatum,
-  outcome: PoolState,
+  quantity_lp: Int,
 ) -> Bool {
   // Unwrap the silly MintedValue special type
+  // Note also we only look at the tokens with this policyID
+  // so that we can still mint other tokens
   let minted_tokens =
     value.tokens(value.from_minted_value(mint), pool_policy_id)
 
@@ -495,13 +501,13 @@ fn minted_correct_pool_tokens(
   // Otherwise, the minted tokens should be exactly the pool LP tokens and nothing else
   // TODO: confirm that the "minting 0 ada" problem doesn't apply here; we have real-world transactions, so I doubt it does, but I want to confirm.
   // TODO: This should allow minting of other tokens, from other policy IDs, perhaps, for composibility?
-  if datum.circulating_lp == outcome.quantity_lp.3rd {
+  if datum.circulating_lp == quantity_lp {
     dict.is_empty(minted_tokens)
   } else {
     dict.to_list(minted_tokens) == [
       (
         pool_lp_name(datum.identifier),
-        outcome.quantity_lp.3rd - datum.circulating_lp,
+        quantity_lp - datum.circulating_lp,
       ),
     ]
   }
@@ -513,24 +519,26 @@ pub fn has_expected_pool_value(
   pool_script_hash: PolicyId,
   identifier: Ident,
   output_value: Value,
-  outcome: PoolState,
+  pool_policy_a: PolicyId,
+  pool_asset_name_a: AssetName,
+  pool_quantity_a: Int,
+  pool_policy_b: PolicyId,
+  pool_asset_name_b: AssetName,
+  pool_quantity_b: Int,
   final_protocol_fees: Int,
 ) -> Bool {
-  let PoolState { quantity_a, quantity_b, .. } = outcome
-  let (quantity_a_policy_id, quantity_a_name, quantity_a_amt) = quantity_a
-  let (quantity_b_policy_id, quantity_b_name, quantity_b_amt) = quantity_b
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
   // (ADA, Asset B, and the NFT)
-  if quantity_a_policy_id == ada_policy_id {
+  if pool_policy_a == ada_policy_id {
     let actual = list.foldl(
         value.flatten(output_value),
         // (token count, lovelace amount, token b amount, pool nft amount)
         (0, 0, 0, 0),
         fn (asset, acc) {
           let token_count = acc.1st + 1
-          if asset.1st == quantity_a_policy_id {
+          if asset.1st == pool_policy_a {
             (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th)
-          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
             (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th)
           } else {
             expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
@@ -538,25 +546,25 @@ pub fn has_expected_pool_value(
           }
         }
       )
-    let expected = (3, final_protocol_fees + quantity_a_amt, quantity_b_amt, 1)
+    let expected = (3, final_protocol_fees + pool_quantity_a, pool_quantity_b, 1)
     // Rather than constructing a value directly (which can be expensive)
     // we can just compare the expected token count and amounts with a single pass over the value
     expected == actual
   } else {
     // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
     // ADA, the Pool NFT, Asset A, and Asset B
-    (4, final_protocol_fees, quantity_a_amt, quantity_b_amt, 1) ==
+    (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1) ==
       list.foldl(
         value.flatten(output_value),
         // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
         (0, 0, 0, 0, 0),
         fn (asset, acc) {
           let token_count = acc.1st + 1
-          if asset.1st == ada_policy_id && asset.2nd == ada_asset_name {
+          if asset.1st == ada_policy_id {
             (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th, acc.5th)
-          } else if asset.1st == quantity_a_policy_id && asset.2nd == quantity_a_name {
+          } else if asset.1st == pool_policy_a && asset.2nd == pool_asset_name_a {
             (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th, acc.5th)
-          } else if asset.1st == quantity_b_policy_id && asset.2nd == quantity_b_name {
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
             (token_count, acc.2nd, acc.3rd, acc.4th + asset.3rd, acc.5th)
           } else {
             expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
