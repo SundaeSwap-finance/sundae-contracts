@@ -20,7 +20,7 @@ use tests/examples/ex_settings.{mk_valid_settings_input, mk_valid_settings_datum
 use tests/examples/ex_shared.{
   mk_output_reference, mk_tx_hash, script_address, wallet_address, compare_stake,
 }
-use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Swap}
+use types/order.{Deposit, Destination, Fixed, Self, OrderDatum, Order, Swap}
 use types/pool.{
   PoolMintRedeemer, CreatePool, PoolDatum, PoolScoop,
   BurnPool, WithdrawFees, UpdatePoolFees,
@@ -33,8 +33,12 @@ use tests/constants
 
 
 type ScoopTestOptions {
-  edit_order_1_value: Option<Value>,
-  edit_order_2_value: Option<Value>,
+  edit_order_1_in_value: Option<Value>,
+  edit_order_2_in_value: Option<Value>,
+  edit_order_1_out_value: Option<Value>,
+  edit_order_2_out_value: Option<Value>,
+  edit_order_1_details: Option<Order>,
+  edit_order_2_details: Option<Order>,
   edit_order_intended_destination: Option<Destination>,
   edit_order_actual_destination: Option<Destination>,
   edit_fee: Option<Value>,
@@ -43,6 +47,7 @@ type ScoopTestOptions {
   edit_fee_admin: Option<Option<multisig.MultisigScript>>,
   edit_withdrawals: Option<Dict<StakeCredential, Int>>,
   edit_pool_input_address: Option<Address>,
+  edit_pool_input_value: Option<Value>,
   edit_pool_output_address: Option<Address>,
   edit_pool_output_value: Option<Value>,
   edit_pool_output_datum: Option<PoolDatum>,
@@ -51,8 +56,12 @@ type ScoopTestOptions {
 
 fn default_scoop_test_options() -> ScoopTestOptions {
   ScoopTestOptions {
-    edit_order_1_value: None,
-    edit_order_2_value: None,
+    edit_order_1_in_value: None,
+    edit_order_2_in_value: None,
+    edit_order_1_out_value: None,
+    edit_order_2_out_value: None,
+    edit_order_1_details: None,
+    edit_order_2_details: None,
     edit_order_intended_destination: None,
     edit_order_actual_destination: None,
     edit_fee: None,
@@ -61,6 +70,7 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_fee_admin: None,
     edit_withdrawals: None,
     edit_pool_input_address: None,
+    edit_pool_input_value: None,
     edit_pool_output_address: None,
     edit_pool_output_value: None,
     edit_pool_output_datum: None,
@@ -78,6 +88,59 @@ test ok_scoop_swap_deposit() {
   scoop_swap_deposit(options)
 }
 
+test ok_scoop_swap_with_surplus() {
+  let options = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_order_1_in_value: Some(
+      value.from_lovelace(4_500_000 + 20_000_000)
+    ),
+    edit_order_1_out_value: Some(
+      value.from_lovelace(2_000_000 + 10_000_000)
+        |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_896_088),
+    )
+  }
+  scoop(options)
+}
+test ok_scoop_swap_with_over_rounding() {
+  let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
+  let amt_1 = 408_367_450
+  let amt_2 = 425_387_016
+  let options = ScoopTestOptions {
+    ..default_scoop_test_options(),
+    edit_pool_input_value: Some(
+      value.from_lovelace(20_000_000_000 + 2_000_000)
+            |> value.add(constants.rberry_policy, constants.rberry_asset_name, 50)
+            |> value.add(constants.pool_script_hash, pool_nft_name, 1)
+    ),
+    edit_pool_output_value: Some(
+      value.from_lovelace(amt_1 + amt_2 + 20_000_000_000 + 2_000_000 + 2_500_000 + 2_500_000)
+            |> value.add(constants.rberry_policy, constants.rberry_asset_name, 48)
+            |> value.add(constants.pool_script_hash, pool_nft_name, 1)
+    ),
+    edit_order_1_details: Some(
+      Swap((ada_policy_id, ada_asset_name, 799_000_000), (constants.rberry_policy, constants.rberry_asset_name, 0)),
+    ),
+    edit_order_1_in_value: Some(
+      value.from_lovelace(4_500_000 + 799_000_000)
+    ),
+    edit_order_1_out_value: Some(
+      value.from_lovelace(2_000_000 + 799_000_000 - amt_1)
+        |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1),
+    ),
+    edit_order_2_details: Some(
+      Swap((ada_policy_id, ada_asset_name, 799_000_000), (constants.rberry_policy, constants.rberry_asset_name, 0)),
+    ),
+    edit_order_2_in_value: Some(
+      value.from_lovelace(4_500_000 + 799_000_000)
+    ),
+    edit_order_2_out_value: Some(
+      value.from_lovelace(2_000_000 + 799_000_000 - amt_2)
+        |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1),
+    ),
+  }
+  scoop(options)
+}
+
 test scoop_bad_destination() fail {
   let burn_addr =
     wallet_address(#"12000000000000000000000000000000000000000000000000000000")
@@ -93,11 +156,11 @@ test scoop_payouts_swapped() fail {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_order_1_value: Some(
+      edit_order_1_out_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_702_095),
       ),
-      edit_order_2_value: Some(
+      edit_order_2_out_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_896_088),
       ),
@@ -121,11 +184,11 @@ test scoop_high_swap_fees() {
     ScoopTestOptions {
       ..default_scoop_test_options(),
       edit_swap_fees: Some(((swap_fee, swap_fee), (swap_fee, swap_fee))),
-      edit_order_1_value: Some(
+      edit_order_1_out_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_802_950),
       ),
-      edit_order_2_value: Some(
+      edit_order_2_out_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_611_678),
       ),
@@ -256,23 +319,28 @@ fn scoop(options: ScoopTestOptions) {
       output_reference: mk_output_reference(0),
       output: Output {
         address: option.or_else(options.edit_pool_input_address, pool_address),
-        value: value.from_lovelace(1_000_000_000 + 2_000_000)
-          |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000)
-          |> value.add(constants.pool_script_hash, pool_nft_name, 1),
+        value: option.or_else(
+            options.edit_pool_input_value,
+            value.from_lovelace(1_000_000_000 + 2_000_000)
+            |> value.add(constants.rberry_policy, constants.rberry_asset_name, 1_000_000_000)
+            |> value.add(constants.pool_script_hash, pool_nft_name, 1),
+        ),
         datum: InlineDatum(pool_datum),
         reference_script: None,
       },
     }
   let dest = option.or_else(options.edit_order_intended_destination, Fixed { address: user_addr, datum: NoDatum })
-  let swap =
-    Swap((ada_policy_id, ada_asset_name, 10_000_000), (constants.rberry_policy, constants.rberry_asset_name, 0))
-  let order_datum =
+  let swap_1 = option.or_else(
+    options.edit_order_1_details,
+    Swap((ada_policy_id, ada_asset_name, 10_000_000), (constants.rberry_policy, constants.rberry_asset_name, 0)),
+  )
+  let order_1_datum =
     OrderDatum {
       pool_ident: None,
       owner,
       max_protocol_fee: 2_500_000,
       destination: dest,
-      details: swap,
+      details: swap_1,
       extension: builtin.i_data(0),
     }
   let order_address = script_address(constants.order_script_hash)
@@ -281,18 +349,37 @@ fn scoop(options: ScoopTestOptions) {
       output_reference: mk_output_reference(2),
       output: Output {
         address: order_address,
-        value: value.from_lovelace(4_500_000 + 10_000_000),
-        datum: InlineDatum(order_datum),
+        value: option.or_else(
+          options.edit_order_1_in_value,
+          value.from_lovelace(4_500_000 + 10_000_000)
+        ),
+        datum: InlineDatum(order_1_datum),
         reference_script: None,
       },
+    }
+  let swap_2 = option.or_else(
+    options.edit_order_2_details,
+    Swap((ada_policy_id, ada_asset_name, 10_000_000), (constants.rberry_policy, constants.rberry_asset_name, 0)),
+  )
+  let order_2_datum =
+    OrderDatum {
+      pool_ident: None,
+      owner,
+      max_protocol_fee: 2_500_000,
+      destination: dest,
+      details: swap_2,
+      extension: builtin.i_data(0),
     }
   let order2_in =
     Input {
       output_reference: mk_output_reference(3),
       output: Output {
         address: order_address,
-        value: value.from_lovelace(4_500_000 + 10_000_000),
-        datum: InlineDatum(order_datum),
+        value: option.or_else(
+          options.edit_order_2_in_value,
+          value.from_lovelace(4_500_000 + 10_000_000)
+        ),
+        datum: InlineDatum(order_2_datum),
         reference_script: None,
       },
     }
@@ -308,14 +395,14 @@ fn scoop(options: ScoopTestOptions) {
   }
   let (order1_out_addr, order1_out_datum) = when options.edit_order_actual_destination is {
     Some(Fixed(dest, datum)) -> (dest, datum)
-    Some(Self) -> (order_address, InlineDatum(order_datum))
+    Some(Self) -> (order_address, InlineDatum(order_1_datum))
     None -> (user_addr, NoDatum)
   }
   let order1_out =
     Output {
       address: order1_out_addr,
       value: option.or_else(
-        options.edit_order_1_value,
+        options.edit_order_1_out_value,
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_896_088),
       ),
@@ -325,14 +412,14 @@ fn scoop(options: ScoopTestOptions) {
   // TODO: manage separately?
   let (order2_out_addr, order2_out_datum) = when options.edit_order_actual_destination is {
     Some(Fixed(dest, datum)) -> (dest, datum)
-    Some(Self) -> (order_address, InlineDatum(order_datum))
+    Some(Self) -> (order_address, InlineDatum(order_2_datum))
     None -> (user_addr, NoDatum)
   }
   let order2_out =
     Output {
       address: order2_out_addr,
       value: option.or_else(
-        options.edit_order_2_value,
+        options.edit_order_2_out_value,
         value.from_lovelace(2_000_000)
           |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_702_095),
       ),
@@ -495,7 +582,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   }
   let order1_out = Output {
     address: order1_out_addr,
-    value: option.or_else(options.edit_order_1_value,
+    value: option.or_else(options.edit_order_1_out_value,
       value.from_lovelace(2_000_000)
         |> value.add(constants.rberry_policy, constants.rberry_asset_name, 9_896_088)),
     datum: order1_out_datum,
