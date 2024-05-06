@@ -36,7 +36,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
             kvp: (ByteArray, Int),
           ) {
             // we use the 2nd byte here, because the first byte is zero as a "parenthesis"
-            builtin.index_bytearray(kvp.1st, 1) == 0xd
+            builtin.index_bytearray(kvp.1st, 1) == 0x0d
           }
         // If any of the tokens are the pool NFT (needed because there are likely other tradable assets on the pool)
         // then we can be sure the pool validator itself will run, and that will enforce all of the important security constraints
