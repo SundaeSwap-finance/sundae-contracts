@@ -6,7 +6,7 @@ use aiken/interval
 use aiken/option
 use aiken/transaction.{
   Datum, InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext,
-  Spend, Transaction, TransactionId,
+  Spend, Transaction, TransactionId, WithdrawFrom,
 }
 use aiken/transaction/credential.{
   Address, Inline, ScriptCredential, StakeCredential, VerificationKeyCredential,
@@ -23,17 +23,18 @@ use tests/examples/ex_settings.{
   example_treasury_admin, mk_valid_settings_datum, mk_valid_settings_input,
 }
 use tests/examples/ex_shared.{
-  compare_stake, mk_output_reference, mk_tx_hash, script_address, wallet_address,
+  compare_redeemer, compare_stake, mk_output_reference, mk_tx_hash,
+  script_address, wallet_address,
 }
 use tx_util/builder.{
   add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input,
-  build_txn_context, mint_assets, new_tx_input, new_tx_output,
-  with_asset_of_tx_input,
+  build_txn_context, insert_redeemer, insert_withdrawal, mint_assets,
+  new_tx_input, new_tx_output, with_asset_of_tx_input,
 }
 use types/order.{Deposit, Destination, Fixed, Order, OrderDatum, Self, Swap}
 use types/pool.{
-  BurnPool, CreatePool, PoolDatum, PoolMintRedeemer, PoolScoop, UpdatePoolFees,
-  WithdrawFees,
+  BurnPool, CreatePool, Manage, PoolDatum, PoolMintRedeemer, PoolScoop,
+  UpdatePoolFees, WithdrawFees,
 }
 use types/settings.{SettingsDatum, settings_nft_name}
 
@@ -761,7 +762,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
 
 fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
   let withdraw_fees_redeemer =
-    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 0 }
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+  // Note: check that we're looking at the right input by making it not the first input
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let default_pool_output_address =
     Address {
@@ -792,10 +794,18 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
       fee_finalized: 0,
       protocol_fees,
     }
+  let normal_input =
+    new_tx_input(
+      mk_tx_hash(0).hash,
+      // make a normal input that will sort before the pool input
+      wallet_address(constants.payment_key),
+      1_000_000,
+      NoDatum,
+    )
   // pool_test_tx_input deduplicate?
   let pool_input =
     new_tx_input(
-      mk_tx_hash(0).hash,
+      mk_tx_hash(1).hash,
       script_address(constants.pool_script_hash),
       1_000_000_000 + protocol_fees,
       InlineDatum(pool_datum),
@@ -810,7 +820,7 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
       |> with_asset_of_tx_input(
           value.from_asset(constants.pool_script_hash, pool_nft_name, 1),
         )
-
+  let pool_redeemer = Manage
   let pool_out_datum =
     PoolDatum {
       ..pool_datum,
@@ -862,17 +872,45 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
       |> build_txn_context()
       |> add_tx_ref_input(settings_input)
       |> add_tx_input(pool_input)
+      |> add_tx_input(normal_input)
       |> add_tx_output(treasury_output)
       |> add_tx_output(pool_output)
+      |> insert_withdrawal(
+          Inline(ScriptCredential(constants.manage_stake_script_hash)),
+          0,
+          compare_stake,
+        )
+      |> insert_redeemer(
+          Spend(
+            OutputReference { transaction_id: mk_tx_hash(1), output_index: 0 },
+          ),
+          pool_redeemer,
+          compare_redeemer,
+        )
+      |> insert_redeemer(
+          WithdrawFrom(
+            Inline(ScriptCredential(constants.manage_stake_script_hash)),
+          ),
+          withdraw_fees_redeemer,
+          compare_redeemer,
+        )
       |> builder.add_signatory(example_treasury_admin)
       |> builder.spend(pool_input.output_reference)
-  let result =
+  let result_spend =
+    pool_validator.spend(
+      constants.manage_stake_script_hash,
+      constants.settings_policy_id,
+      pool_datum,
+      pool_redeemer,
+      ctx,
+    )
+  let result_manage =
     pool_validator.manage(
       constants.settings_policy_id,
       withdraw_fees_redeemer,
       ctx,
     )
-  result
+  result_spend && result_manage
 }
 
 test withdraw_fees_transaction_test() {

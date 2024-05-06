@@ -4,8 +4,8 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/list
 use aiken/transaction.{
-  DatumHash, InlineDatum, Input, NoDatum, Output, ScriptContext, Spend,
-  find_input,
+  DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext,
+  Spend, find_input,
 }
 use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
@@ -57,6 +57,25 @@ pub fn spent_output(ctx: ScriptContext) -> Output {
   expect Spend(out_ref) = ctx.purpose
   expect Some(input) = find_input(ctx.transaction.inputs, out_ref)
   input.output
+}
+
+/// Find the index of the given "out_ref"; confusingly, this is the  the inputs, not the outputs
+pub fn own_input_index(ctx: ScriptContext) -> Int {
+  expect Spend(out_ref) = ctx.purpose
+  do_own_input_index(ctx.transaction.inputs, out_ref, 0)
+}
+
+pub fn do_own_input_index(
+  inputs: List<Input>,
+  output_reference: OutputReference,
+  i: Int,
+) -> Int {
+  expect [input, ..rest] = inputs
+  if input.output_reference == output_reference {
+    i
+  } else {
+    do_own_input_index(rest, output_reference, i + 1)
+  }
 }
 
 /// Find a specific input index, and validate that it has at least one of the specified token

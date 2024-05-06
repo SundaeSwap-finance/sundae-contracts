@@ -4,8 +4,8 @@ use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Spend,
-  Transaction, TransactionId, WithdrawFrom,
+  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
+  TransactionId, WithdrawFrom,
 }
 use aiken/transaction/credential.{Address, Inline, Script, ScriptCredential}
 use aiken/transaction/value.{
@@ -13,7 +13,8 @@ use aiken/transaction/value.{
 }
 use calculation/process.{pool_input_to_state, process_orders}
 use shared.{
-  AssetClass, Ident, count_orders, pool_lp_name, pool_nft_name, spent_output,
+  AssetClass, Ident, count_orders, own_input_index, pool_lp_name, pool_nft_name,
+  spent_output,
 }
 use sundae/multisig
 use types/pool.{
@@ -306,8 +307,8 @@ validator(
         }
       }
       Manage ->
-        // There must be a redeemer for a withdrawal against the manage stake script,
-        // and the redeemer must be valid
+        // There must be a redeemer for a (stake-script) withdrawal against the manage stake script,
+        // and the redeemer must correctly point at the pool UTXO
         dict.foldl(
           ctx.transaction.redeemers,
           False,
@@ -322,10 +323,9 @@ validator(
                         UpdatePoolFees { pool_input } -> pool_input
                         WithdrawFees { pool_input, .. } -> pool_input
                       }
-                    expect Spend(OutputReference { output_index, .. }) =
-                      ctx.purpose
+                    let input_index = own_input_index(ctx)
                     // Manage redeemer must have the correct index of this pool input
-                    output_index == redeemer_pool_input
+                    input_index == redeemer_pool_input
                   } else {
                     False
                   }
@@ -688,6 +688,9 @@ pub fn int_to_ident(n: Int) -> Ident {
   bytearray.push(#"", n)
 }
 
+// In order to keep the script size small for the pool script, we defer some functions to a separate stake script;
+// when the treasury administrator attempts to withdraw fees, or the fee manager attempts to update the pool fee,
+// it only checks for this particular script hash. This script, using the withdraw 0 trick, then checks the correct invariants
 validator(settings_policy_id: PolicyId) {
   pub fn manage(redeemer: ManageRedeemer, ctx: ScriptContext) {
     let transaction = ctx.transaction
@@ -701,10 +704,18 @@ validator(settings_policy_id: PolicyId) {
       withdrawals,
       ..
     } = transaction
+
     let settings_datum =
       find_settings_datum(reference_inputs, settings_policy_id)
+
     when redeemer is {
+      // In order to withdraw `amount` fees into `treasury_output` utxo, looking at `pool_input`
       WithdrawFees { amount, treasury_output, pool_input } -> {
+        // Find the pool input; note that we don't look for the pool NFT here, because if someone
+        // spends with an unauthenticated UTXO, it will fail the spend script; and if someone
+        // spends with a different script address, this script can't do anything fishy,
+        // just enforces some things about the outputs
+        // We also can't pull this out of the when, because we don't have the pool_input index yet
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
@@ -797,16 +808,23 @@ validator(settings_policy_id: PolicyId) {
           True
         }
       }
+      // To update the pool fees for the pool at `pool_input`...
       UpdatePoolFees { pool_input } -> {
+        // Find the pool input; note that we don't look for the pool NFT here, because if someone
+        // spends with an unauthenticated UTXO, it will fail the spend script; and if someone
+        // spends with a different script address, this script can't do anything fishy,
+        // just enforces some things about the outputs
+        // This is duplicated code with the other branch, but only because we don't have pool_input yet
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
         expect datum: PoolDatum = datum
-
+        // We need the pool output to check that only the fees or fee manager are updated
         let (
           Output { address: pool_output_address, value: pool_output_value, .. },
           pool_output_datum,
         ) = find_pool_output(outputs)
+
         let PoolDatum {
           bid_fees_per_10_thousand,
           ask_fees_per_10_thousand,
@@ -814,6 +832,7 @@ validator(settings_policy_id: PolicyId) {
           ..
         } = pool_output_datum
 
+        // Make sure we don't update the fees to negative or above 100%
         expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
         expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
 
@@ -826,6 +845,7 @@ validator(settings_policy_id: PolicyId) {
           }
         expect pool_output_datum == expected_datum
 
+        // Check that the *current* fee manager approves the update
         expect Some(fee_manager) = datum.fee_manager
         expect
           multisig.satisfied(
@@ -835,9 +855,11 @@ validator(settings_policy_id: PolicyId) {
             withdrawals,
           )
 
-        expect pool_output_address == pool_input.address
-        expect pool_output_value == pool_input.value
-        True
+        // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
+        and {
+          pool_output_address == pool_input.address,
+          pool_output_value == pool_input.value,
+        }
       }
     }
   }
