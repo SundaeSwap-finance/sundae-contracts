@@ -1,5 +1,5 @@
-use aiken/bytearray
 use aiken/builtin
+use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/list
@@ -9,22 +9,25 @@ use aiken/transaction.{
 }
 use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
-
 use tests/examples/ex_shared.{
-  script_address, wallet_address, mk_output_reference
+  mk_output_reference, script_address, wallet_address,
 }
 
 /// An alias type for the pool identifier, to make it slightly easier to reason about
-pub type Ident = ByteArray
+pub type Ident =
+  ByteArray
 
 /// An asset class is a combination of a policy ID and asset name; uniquely identifies one type of token, useful to make the code more readable
-pub type AssetClass = (PolicyId, AssetName)
+pub type AssetClass =
+  (PolicyId, AssetName)
 
 /// A rational number, represented as the numerator and denominator
-pub type Rational = (Int, Int)
+pub type Rational =
+  (Int, Int)
 
 /// A "value" for which we know there is only one value; convenient for performance reasons, and to make the code more readable
-pub type SingletonValue = (PolicyId, AssetName, Int)
+pub type SingletonValue =
+  (PolicyId, AssetName, Int)
 
 /// Convert a singleton value to an actual value; convenient for comparing or adding together values
 pub fn to_value(sv: SingletonValue) -> value.Value {
@@ -168,17 +171,20 @@ pub fn has_exact_token_count(val: value.Value, count: Int) {
 }
 
 test test_has_exact_token_count() {
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
-    |> value.add("xyz", "www", 200)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
+      |> value.add("xyz", "www", 200)
   expect has_exact_token_count(val, 3)
 
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
   expect has_exact_token_count(val, 2)
 
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
   expect !has_exact_token_count(val, 3)
   True
 }
@@ -230,40 +236,58 @@ test count_orders_test() {
   let hash_of_escrow_script =
     #"00000000000000000000000000000000000000000000000000000000"
   let escrow_address = script_address(hash_of_escrow_script)
-  let escrow1_in = Input {
-    output_reference: mk_output_reference(2),
-    output: Output {
-      address: escrow_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
-  let escrow2_in = Input {
-    output_reference: mk_output_reference(3),
-    output: Output {
-      address: escrow_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
-  let other_address = wallet_address(#"fede0000000000000000000000000000000000000000000000000000")
-  let other_in = Input {
-    output_reference: mk_output_reference(4),
-    output: Output {
-      address: other_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
+  let escrow1_in =
+    Input {
+      output_reference: mk_output_reference(2),
+      output: Output {
+        address: escrow_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+  let escrow2_in =
+    Input {
+      output_reference: mk_output_reference(3),
+      output: Output {
+        address: escrow_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+  let other_address =
+    wallet_address(#"fede0000000000000000000000000000000000000000000000000000")
+  let other_in =
+    Input {
+      output_reference: mk_output_reference(4),
+      output: Output {
+        address: other_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
 
-  let inputs = [
-    pool_input, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
-    escrow2_in, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
-    escrow2_in, other_in, escrow1_in, escrow2_in
-  ]
+  let inputs =
+    [
+      pool_input,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+    ]
 
   count_orders(inputs) == 10
 }

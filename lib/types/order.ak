@@ -1,9 +1,9 @@
+use aiken/hash.{Blake2b_224, Hash}
 use aiken/transaction.{Datum, OutputReference, ValidityRange}
-use aiken/transaction/credential.{Address, VerificationKey, Signature, Script}
-use aiken/transaction/value.{PolicyId, AssetName}
+use aiken/transaction/credential.{Address, Script, Signature, VerificationKey}
+use aiken/transaction/value.{AssetName, PolicyId}
 use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
-use aiken/hash.{Hash, Blake2b_224}
 
 /// An order to execute within the SundaeSwap ecosystem
 pub type OrderDatum {
@@ -14,12 +14,12 @@ pub type OrderDatum {
   /// An canonical "owner" of this order, with the possibility of multisig
   /// schemes and script restrictions. Allows updates or cancellations of the order
   owner: MultisigScript,
+  // TODO: consider: does this undercut the usefulness of strategies? i.e.
+  // might the strategy executor need to adjust the max_protocol_fee? or would that be too dangerous?
   /// The maximum amount of ADA that can be taken as a protocol fee
   /// For example, a user would typically set this to baseFee + incrementalFee
   /// which allows their order to execute as the only order in a batch; if it
   /// executes as a larger batch, the user may receive some of this ADA back as a rebate.
-  // TODO: consider: does this undercut the usefulness of strategies? i.e.
-  // might the strategy executor need to adjust the max_protocol_fee? or would that be too dangerous?
   max_protocol_fee: Int,
   /// Where the output of executing an order should be sent
   destination: Destination,
@@ -69,10 +69,10 @@ pub type Order {
   /// We use an at-most amount semantics to aide in composibility; perhaps the withdrawal is part of a longer chain,
   /// and you only want to withdraw a portion of your full LP tokens
   Withdrawal { amount: SingletonValue }
-  /// Deposit these assets into the pool, and mint the appropriate number of LP tokens
   // Note: we decided not to implement native ZapIn / ZapOut for the purposes of time; they can be implemented via chained orders or strategies.
   // ZapIn { assets: (SingletonValue, SingletonValue) }
   // ZapOut { assets: (Int, Int) }
+  /// Deposit these assets into the pool, and mint the appropriate number of LP tokens
   /// Donate some value to the pool; Likely not useful for an end user, but lets other
   /// protocols create interesting options: for example, an incentive program for their liquidity providers, etc.
   Donation { assets: (SingletonValue, SingletonValue) }

@@ -1,9 +1,11 @@
 use aiken/dict
 use aiken/list
-use aiken/transaction.{Transaction, ScriptContext, WithdrawFrom, Publish, InlineDatum}
+use aiken/transaction.{
+  InlineDatum, Publish, ScriptContext, Transaction, WithdrawFrom,
+}
 use aiken/transaction/value.{PolicyId}
-use types/settings.{find_settings_datum}
 use sundae/multisig
+use types/settings.{find_settings_datum}
 
 /// The pool stake validator is one example script staking validator that could be attached to each pool, to delegate to a stake pool operator
 ///
@@ -32,34 +34,40 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
     } = transaction
 
     // And find the settings datum; this ensures it exists, and lets us look at the settings datum
-    let settings_datum = find_settings_datum(reference_inputs, settings_policy_id)
-    
+    let settings_datum =
+      find_settings_datum(reference_inputs, settings_policy_id)
     // Regardless of what we're doing, the treasury administrator conditions must be satisfied (ex: multisig, DAO script, etc)
-    expect multisig.satisfied(
-      settings_datum.treasury_admin,
-      extra_signatories,
-      validity_range,
-      withdrawals,
-    )
+    expect
+      multisig.satisfied(
+        settings_datum.treasury_admin,
+        extra_signatories,
+        validity_range,
+        withdrawals,
+      )
 
     when purpose is {
       // To withdraw any amount of earned staking rewards,
       WithdrawFrom(_) -> {
-        
         // We calculate the amount withdrawn by summing up *all* withdrawals
         // This is to avoid a double satisfaction problem, where withdrawing 100 ADA of rewards from
         // two different scripts each believe that 100 ADA has been paid to the treasury
-        let amount_withdrawn = dict.foldl(withdrawals, 0, fn(_k, v, s) { v + s })
+        let amount_withdrawn =
+          dict.foldl(withdrawals, 0, fn(_k, v, s) { v + s })
         // Allow the treasury administrator to keep some portion of the withdrawn rewards, for administrative costs like paying the scoopers
         // We multiply first, then divide, for maximal precision
-        let allowance = amount_withdrawn * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let allowance =
+          amount_withdrawn * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
         // The amount that must be sent to the treasury is the total amount withdrawn, minus the allowance that the adminsitrator can keep
         let to_treasury = amount_withdrawn - allowance
         // Find the first output to the treasury address; We assume there's only one output that receives the whole amount,
         // as there's not much benefit to splitting it up. TODO: is this true? could the treasury administrator want to earmark them separately or something?
         // If we find no treasury output, the transaction fails here.
         // We compare the *whole* address here, instead of the payment credential, because the treasury should also be earning staking rewards!
-        expect Some(treasury_output) = list.find(outputs, fn(o) { o.address == settings_datum.treasury_address })
+        expect Some(treasury_output) =
+          list.find(
+            outputs,
+            fn(o) { o.address == settings_datum.treasury_address },
+          )
         // Make sure *at least* the amount we calculated is sent to the treasury; it can be larger,
         // if someone is feeling generous, or to deal with rounding for example, but it cannot be less
         expect value.lovelace_of(treasury_output.value) >= to_treasury

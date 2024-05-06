@@ -1,6 +1,6 @@
-use sundae/multisig
 use aiken/transaction.{ValidityRange}
-use shared.{SingletonValue, Ident}
+use shared.{Ident, SingletonValue}
+use sundae/multisig
 
 pub type OracleDatum {
   // The owner who is allowed to reclaim this datum at the end

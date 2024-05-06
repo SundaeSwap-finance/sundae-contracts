@@ -1,7 +1,7 @@
 use aiken/time.{PosixTime}
 use shared.{AssetClass, Ident}
-use types/order.{SignedStrategyExecution}
 use sundae/multisig
+use types/order.{SignedStrategyExecution}
 
 /// The current state of a AMM liquidity pool at a UTXO.
 pub type PoolDatum {
@@ -84,17 +84,13 @@ pub type PoolMintRedeemer {
     /// That token is given to a "metadata administrator" who can set the appropriate metadata, and update it if needed.
     /// This is done so we can efficiently skip to the correct metadata output
     /// This is safe because we validate that the token is paid to the metadata admin 
-    metadata_output: Int
+    metadata_output: Int,
   }
   /// to burn the pool NFT (when permitted by the spending validator)
   BurnPool { identifier: Ident }
 }
 
 pub type ManageRedeemer {
-  WithdrawFees {
-    amount: Int,
-    treasury_output: Int,
-    pool_input: Int,
-  }
-  UpdatePoolFees { pool_input: Int, }
+  WithdrawFees { amount: Int, treasury_output: Int, pool_input: Int }
+  UpdatePoolFees { pool_input: Int }
 }

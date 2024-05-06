@@ -1,11 +1,11 @@
 use aiken/math
-use aiken/transaction.{NoDatum, Output, InlineDatum}
+use aiken/transaction.{InlineDatum, NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{ada_policy_id, ada_asset_name, PolicyId, AssetName}
+use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use calculation/shared.{PoolState} as calc_shared
-use sundae/multisig
 use shared.{SingletonValue}
-use types/order.{Destination, Fixed, Self, OrderDatum}
+use sundae/multisig
+use types/order.{Destination, Fixed, OrderDatum, Self}
 
 /// Calculate the result of depositing some amount of tokens into the pool
 ///
@@ -73,8 +73,7 @@ pub fn do_deposit(
   // The ratio of a to b might have shifted since the user created their order amount
   // So some small amount of a or b might be returned to the user
   // So, calculate how much "b" do we have, in units of asset A, so we can check which is greater
-  let b_in_units_of_a =
-    user_gives_b * pool_quantity_a / pool_quantity_b
+  let b_in_units_of_a = user_gives_b * pool_quantity_a / pool_quantity_b
 
   // Amount that user actually deposits in the pool, after giving back change.
   let (deposited_a, deposited_b) =
@@ -84,7 +83,7 @@ pub fn do_deposit(
       // Make sure to do ceiling division here, to round in favor fo the protocol
       // That is, when in doubt, take up to one more token from the user than the
       // LP tokens we issue would entail
-      let give_b = ((pool_quantity_b * user_gives_a - 1) / pool_quantity_a) + 1
+      let give_b = ( pool_quantity_b * user_gives_a - 1 ) / pool_quantity_a + 1
       (user_gives_a, give_b)
     } else {
       (b_in_units_of_a, user_gives_b)
@@ -98,8 +97,7 @@ pub fn do_deposit(
   // issued_lp_tokens / (pool_state.quantity_lp.3rd + issued_lp_tokens) = deposited_a / (pool_state.quantity_a.3rd + deposited_a)
   // 
   // Solving for `issued_lp_tokens` gives:
-  let issued_lp_tokens =
-    deposited_a * pool_quantity_lp / pool_quantity_a
+  let issued_lp_tokens = deposited_a * pool_quantity_lp / pool_quantity_a
 
   // Make sure we don't ever allow this to round to zero, which would just eat some of the users assets
   expect issued_lp_tokens > 0
@@ -112,31 +110,27 @@ pub fn do_deposit(
       |> value.add(asset_a.1st, asset_a.2nd, -deposited_a)
       |> value.add(asset_b.1st, asset_b.2nd, -deposited_b)
       |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(
-          pool_policy_lp,
-          pool_asset_name_lp,
-          issued_lp_tokens,
-        )
+      |> value.add(pool_policy_lp, pool_asset_name_lp, issued_lp_tokens)
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
   // use the input datum for validation
   expect output.value == out_value
-  expect when destination is {
-    Fixed { address, datum } -> {
-      and {
-        output.address == address,
-        output.datum == datum
+  expect
+    when destination is {
+      Fixed { address, datum } -> and {
+          output.address == address,
+          output.datum == datum,
+        }
+      Self -> {
+        let Output { address: input_address, datum: input_datum, .. } =
+          input_utxo
+        and {
+          output.address == input_address,
+          output.datum == input_datum,
+        }
       }
     }
-    Self -> {
-      let Output { address: input_address, datum: input_datum, .. } = input_utxo
-      and {
-        output.address == input_address,
-        output.datum == input_datum
-      }
-    }
-  }
 
   // And construct the final pool state
   continuation(
@@ -155,53 +149,67 @@ test deposit_test() {
       None,
     )
   let ada = (#"", #"")
-  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let rberry =
+    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_000_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-  }
+  let pool_state =
+    PoolState {
+      quantity_a: (#"", #"", 1_000_000_000),
+      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
+      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
+    }
   let input_value =
     value.from_lovelace(14_500_000)
       |> value.add(rberry.1st, rberry.2nd, 10_000_000)
-  let assets = ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000))
-  let order = OrderDatum {
-    pool_ident: None,
-    owner: multisig.Signature(
-      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-    ),
-    max_protocol_fee: 2_500_000,
-    destination: Fixed {
+  let assets =
+    ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000))
+  let order =
+    OrderDatum {
+      pool_ident: None,
+      owner: multisig.Signature(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      max_protocol_fee: 2_500_000,
+      destination: Fixed { address: addr, datum: NoDatum },
+      details: order.Deposit { assets },
+      extension: Void,
+    }
+  let output =
+    Output {
       address: addr,
+      value: value.from_lovelace(2_000_000)
+        |> value.add(lp.1st, lp.2nd, 10_000_000),
       datum: NoDatum,
-    },
-    details: order.Deposit {
-      assets: assets,
-    },
-    extension: Void,
-  }
-  let output = Output {
-    address: addr,
-    value: value.from_lovelace(2_000_000)
-      |> value.add(lp.1st, lp.2nd, 10_000_000),
-    datum: NoDatum,
-    reference_script: None,
-  }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
-  let new_a, new_b, new_lp <- do_deposit(
-    pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
-    pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
-    pool_state.quantity_lp.1st, pool_state.quantity_lp.2nd, pool_state.quantity_lp.3rd,
-    input, assets,
-    order.destination, 2_500_000,
-    output
-  )
+      reference_script: None,
+    }
+  let input =
+    Output {
+      address: addr,
+      value: input_value,
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
+  let
+    new_a,
+    new_b,
+    new_lp,
+  <-
+    do_deposit(
+      pool_state.quantity_a.1st,
+      pool_state.quantity_a.2nd,
+      pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st,
+      pool_state.quantity_b.2nd,
+      pool_state.quantity_b.3rd,
+      pool_state.quantity_lp.1st,
+      pool_state.quantity_lp.2nd,
+      pool_state.quantity_lp.3rd,
+      input,
+      assets,
+      order.destination,
+      2_500_000,
+      output,
+    )
   expect new_a == 1_010_000_000
   expect new_b == 1_010_000_000
   expect new_lp == 1_000_000_000 + 10_000_000

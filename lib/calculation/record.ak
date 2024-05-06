@@ -1,5 +1,5 @@
 use aiken/transaction.{Output}
-use aiken/transaction/value.{ada_policy_id, ada_asset_name, PolicyId, AssetName}
+use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use types/order.{Destination, Fixed, Self}
 
 pub fn check_record(
@@ -18,9 +18,10 @@ pub fn check_record(
   // and maybe there's a good reason for someone to want that behavior.
   // We know that the `oracle` token we provide is secure against this, because it must be minted into
   // its own spending policy, and it must be burned when spent.
-  let remainder = input.value
-    |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-    |> value.add(asset_id.1st, asset_id.2nd, 1)
+  let remainder =
+    input.value
+      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> value.add(asset_id.1st, asset_id.2nd, 1)
 
   and {
     output.value == remainder,
@@ -33,6 +34,6 @@ pub fn check_record(
       Fixed(address, _) -> output.address == address
       // It doesn't make sense for an oracle to chain into an oracle
       Self -> False
-    }
+    },
   }
 }

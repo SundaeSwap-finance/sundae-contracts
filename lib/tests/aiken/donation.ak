@@ -1,8 +1,8 @@
-use aiken/transaction.{NoDatum, InlineDatum, Output}
+use aiken/transaction.{InlineDatum, NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value
-use calculation/shared.{PoolState} as calc_shared
 use calculation/donation.{do_donation}
+use calculation/shared.{PoolState} as calc_shared
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
 
@@ -27,10 +27,8 @@ test donation() {
   let input_value =
     value.from_lovelace(3_500_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        )
+  let assets =
+    ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
     OrderDatum {
       pool_ident: None,
@@ -38,18 +36,17 @@ test donation() {
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       max_protocol_fee: 2_500_000,
-      destination: Fixed {  address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: assets,
-      },
+      destination: Fixed { address: addr, datum: NoDatum },
+      details: order.Donation { assets },
       extension: Void,
     }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
+  let input =
+    Output {
+      address: addr,
+      value: input_value,
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
   // There's no remainder so do_donation totally ignores this Output record
   let output =
     Output {
@@ -58,20 +55,29 @@ test donation() {
       datum: NoDatum,
       reference_script: None,
     }
-  let new_a, new_b, has_remainder <-
+  let
+    new_a,
+    new_b,
+    has_remainder,
+  <-
     do_donation(
-      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      pool_state.quantity_a.1st,
+      pool_state.quantity_a.2nd,
+      pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st,
+      pool_state.quantity_b.2nd,
+      pool_state.quantity_b.3rd,
       input,
-      assets, order.destination,
-      2_500_000, output
+      assets,
+      order.destination,
+      2_500_000,
+      output,
     )
   expect !has_remainder
   expect new_a == 1_001_000_000
   expect new_b == 1_001_000_000
   True
 }
-
 
 test donation_with_remainder() {
   let addr =
@@ -94,10 +100,7 @@ test donation_with_remainder() {
   let input_value =
     value.from_lovelace(3_500_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = (
-          (ada.1st, ada.2nd, 0),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        )
+  let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
     OrderDatum {
       pool_ident: None,
@@ -105,18 +108,17 @@ test donation_with_remainder() {
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       max_protocol_fee: 2_500_000,
-      destination: Fixed {  address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: assets,
-      },
+      destination: Fixed { address: addr, datum: NoDatum },
+      details: order.Donation { assets },
       extension: Void,
     }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
+  let input =
+    Output {
+      address: addr,
+      value: input_value,
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
   let output =
     Output {
       address: addr,
@@ -124,20 +126,29 @@ test donation_with_remainder() {
       datum: NoDatum,
       reference_script: None,
     }
-  let new_a, new_b, has_remainder <-
+  let
+    new_a,
+    new_b,
+    has_remainder,
+  <-
     do_donation(
-      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      pool_state.quantity_a.1st,
+      pool_state.quantity_a.2nd,
+      pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st,
+      pool_state.quantity_b.2nd,
+      pool_state.quantity_b.3rd,
       input,
-      assets, order.destination,
-      2_500_000, output
+      assets,
+      order.destination,
+      2_500_000,
+      output,
     )
   expect has_remainder
   expect new_a == 1_000_000_000
   expect new_b == 1_001_000_000
   True
 }
-
 
 test donation_with_wrong_remainder() fail {
   let addr =
@@ -160,10 +171,7 @@ test donation_with_wrong_remainder() fail {
   let input_value =
     value.from_lovelace(3_500_000)
       |> value.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = (
-          (ada.1st, ada.2nd, 0),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        )
+  let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
     OrderDatum {
       pool_ident: None,
@@ -171,18 +179,17 @@ test donation_with_wrong_remainder() fail {
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       max_protocol_fee: 2_500_000,
-      destination: Fixed {  address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: assets,
-      },
+      destination: Fixed { address: addr, datum: NoDatum },
+      details: order.Donation { assets },
       extension: Void,
     }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
+  let input =
+    Output {
+      address: addr,
+      value: input_value,
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
   let output =
     Output {
       address: addr,
@@ -190,13 +197,23 @@ test donation_with_wrong_remainder() fail {
       datum: NoDatum,
       reference_script: None,
     }
-  let new_a, new_b, has_remainder <-
+  let
+    new_a,
+    new_b,
+    has_remainder,
+  <-
     do_donation(
-      pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
+      pool_state.quantity_a.1st,
+      pool_state.quantity_a.2nd,
+      pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st,
+      pool_state.quantity_b.2nd,
+      pool_state.quantity_b.3rd,
       input,
-      assets, order.destination,
-      2_500_000, output
+      assets,
+      order.destination,
+      2_500_000,
+      output,
     )
   expect has_remainder
   expect new_a == 1_000_000_000

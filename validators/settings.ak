@@ -1,16 +1,23 @@
 use aiken/list
-use aiken/transaction.{InlineDatum, Mint, ScriptContext, OutputReference}
+use aiken/transaction.{InlineDatum, Mint, OutputReference, ScriptContext}
 use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value
-use sundae/multisig
-use types/settings.{SettingsDatum, SettingsRedeemer, SettingsAdminUpdate, TreasuryAdminUpdate, settings_nft_name}
 use shared.{spent_output}
+use sundae/multisig
+use types/settings.{
+  SettingsAdminUpdate, SettingsDatum, SettingsRedeemer, TreasuryAdminUpdate,
+  settings_nft_name,
+}
 
 /// The settings validator lets the settings and treasury admins update global settings for the protocol
 ///
 /// It is parameterized by the protocol_boot_utxo, a constant to make it an NFT by the usual trick.
 validator(protocol_boot_utxo: OutputReference) {
-  pub fn spend(input_datum: SettingsDatum, redeemer: SettingsRedeemer, ctx: ScriptContext) {
+  pub fn spend(
+    input_datum: SettingsDatum,
+    redeemer: SettingsRedeemer,
+    ctx: ScriptContext,
+  ) {
     // Find our own input so we know the datum / our own address
     let own_input = spent_output(ctx)
     let own_address = own_input.address
@@ -32,11 +39,12 @@ validator(protocol_boot_utxo: OutputReference) {
     // Note that this can only be spent by the SettingsAdmin or TreasuryAdmin, so we won't leak a small amount of ADA to arbitrary users
     // Also, it is not expected that the ADA ever be more than the minUTXO cost, so this doesn't expose hundreds of ADA (for example) to the treasury admin
     let value_not_changed =
-      value.without_lovelace(own_output.value) == value.without_lovelace(own_input.value)
+      value.without_lovelace(own_output.value) == value.without_lovelace(
+        own_input.value,
+      )
 
     // Make sure we don't mint anything, otherwise someone might mint another settings token
-    let no_mint =
-      value.from_minted_value(ctx.transaction.mint) == value.zero()
+    let no_mint = value.from_minted_value(ctx.transaction.mint) == value.zero()
 
     // Then, depending on which admin is doing the updating, different settings are updatable
     when redeemer is {
@@ -56,17 +64,18 @@ validator(protocol_boot_utxo: OutputReference) {
           )
 
         // Settings admin can change any datum fields except for these
-        let allowed_datum = SettingsDatum {
-          // Most fields *can* be updated by the admin, so we start from the output datum
-          ..output_datum,
-          // But ensure that these fields haven't been changed
-          authorized_staking_keys: input_datum.authorized_staking_keys,
-          treasury_address: input_datum.treasury_address,
-          treasury_allowance: input_datum.treasury_allowance,
-        }
+        let allowed_datum =
+          SettingsDatum {
+            ..// Most fields *can* be updated by the admin, so we start from the output datum
+            output_datum,
+            authorized_staking_keys: // But ensure that these fields haven't been changed
+            input_datum.authorized_staking_keys,
+            treasury_address: input_datum.treasury_address,
+            treasury_allowance: input_datum.treasury_allowance,
+          }
+
         // TODO: move base_fee, simple_fee, and strategy_fee to the treasury admin instead, maybe?
         // TODO: enforce maximum scooper keys to some large N, to prevent locking the datum?
-
         and {
           signed_by_admin,
           output_datum == allowed_datum,
@@ -85,16 +94,17 @@ validator(protocol_boot_utxo: OutputReference) {
 
         // Treasury admin can change any datum fields except for these
         // i.e. can change the treasury address, treasury allowance, and the authorized staking keys
-        let allowed_datum = SettingsDatum {
-          // Most of the fields can't change, so we start from the input datum
-          ..input_datum,
-          // These three can be updated, so we pull whatever is in the output datum
-          authorized_staking_keys: output_datum.authorized_staking_keys,
-          treasury_address: output_datum.treasury_address,
-          treasury_allowance: output_datum.treasury_allowance,
-        }
-        // TODO: enforce maximum staking keys to some large N, to prevent locking the Datum
+        let allowed_datum =
+          SettingsDatum {
+            ..// Most of the fields can't change, so we start from the input datum
+            input_datum,
+            authorized_staking_keys: // These three can be updated, so we pull whatever is in the output datum
+            output_datum.authorized_staking_keys,
+            treasury_address: output_datum.treasury_address,
+            treasury_allowance: output_datum.treasury_allowance,
+          }
 
+        // TODO: enforce maximum staking keys to some large N, to prevent locking the Datum
         and {
           signed_by_admin,
           output_datum == allowed_datum,
@@ -117,21 +127,26 @@ validator(protocol_boot_utxo: OutputReference) {
 
     // And, like mentioned above, ensure that this is a true NFT
     let spends_protocol_boot_utxo =
-      list.any(ctx.transaction.inputs, fn(input) {
-        input.output_reference == protocol_boot_utxo
-      })
+      list.any(
+        ctx.transaction.inputs,
+        fn(input) { input.output_reference == protocol_boot_utxo },
+      )
 
     // Make sure the output value contains no extra tokens, and is paid to the settings script itself
-    expect [settings_output] = list.filter(ctx.transaction.outputs, fn(output) {
-      value.without_lovelace(output.value) == expected_mint
-    })
-    let pays_to_settings_script = settings_output.address.payment_credential == ScriptCredential(own_policy_id)
+    expect [settings_output] =
+      list.filter(
+        ctx.transaction.outputs,
+        fn(output) { value.without_lovelace(output.value) == expected_mint },
+      )
+    let pays_to_settings_script =
+      settings_output.address.payment_credential == ScriptCredential(
+        own_policy_id,
+      )
     // Make sure the datum is an inline datum, and has a well-formed datum
     expect InlineDatum(settings_datum) = settings_output.datum
     expect _: SettingsDatum = settings_datum
 
     // TODO: require a signature from the 3 initial admins (or at least the settings admin) to prevent bricking?
-
     and {
       mints_exactly_one_settings_nft,
       spends_protocol_boot_utxo,
