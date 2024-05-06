@@ -760,9 +760,9 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   result
 }
 
-fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
+fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int, pool_input: Int) {
   let withdraw_fees_redeemer =
-    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: pool_input }
   // Note: check that we're looking at the right input by making it not the first input
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let default_pool_output_address =
@@ -914,7 +914,11 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int) {
 }
 
 test withdraw_fees_transaction_test() {
-  withdraw_fees_transaction(default_scoop_test_options(), 100)
+  withdraw_fees_transaction(default_scoop_test_options(), 100, 1)
+}
+test withdraw_fees_transaction_wrong_pool_input() fail {
+  // Make sure that if we point to a different index, it'll fail
+  withdraw_fees_transaction(default_scoop_test_options(), 100, 0)
 }
 
 test withdraw_fees_transaction_change_pool_staking_address_valid_test() {
@@ -940,7 +944,7 @@ test withdraw_fees_transaction_change_pool_staking_address_valid_test() {
         },
       ),
     }
-  withdraw_fees_transaction(options, 100)
+  withdraw_fees_transaction(options, 100, 1)
 }
 
 test withdraw_fees_transaction_change_pool_staking_address_invalid_test() fail {
@@ -968,7 +972,7 @@ test withdraw_fees_transaction_change_pool_staking_address_invalid_test() fail {
         },
       ),
     }
-  withdraw_fees_transaction(options, 100)
+  withdraw_fees_transaction(options, 100, 1)
 }
 
 test overdraw_test() fail {
@@ -996,7 +1000,7 @@ test overdraw_test() fail {
         },
       ),
     }
-  withdraw_fees_transaction(options, 5_000_000)
+  withdraw_fees_transaction(options, 5_000_000, 1)
 }
 
 fn update_pool_fees_transaction(options: ScoopTestOptions) {
