@@ -16,6 +16,9 @@ pub type OracleDatum {
 }
 
 pub type OracleRedeemer {
+  // Mint an oracle, observing a specific pool ident, for the orders at
+  // specific indices on the inputs
   Mint(Ident, List<Int>)
+  // Burn the oracle token, so it can't be used to lie about the pool
   Burn
 }

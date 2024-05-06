@@ -90,7 +90,10 @@ pub type PoolMintRedeemer {
   BurnPool { identifier: Ident }
 }
 
+/// Manage settings about a pool (used against the pool manage script)
 pub type ManageRedeemer {
+  // Withdraw some subset of the fees in the pool, paid into the treasury
   WithdrawFees { amount: Int, treasury_output: Int, pool_input: Int }
+  // Update the percentage fee the pool charges
   UpdatePoolFees { pool_input: Int }
 }
