@@ -1,6 +1,5 @@
 use aiken/bytearray
 use aiken/dict
-use aiken/cbor
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
@@ -647,7 +646,6 @@ pub fn has_expected_pool_value(
         },
       )
     // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
-    trace cbor.diagnostic(final_lp)
     let expected = if final_lp == 0 {
       expect pool_quantity_a == 0
       expect pool_quantity_b == 0
