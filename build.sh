@@ -53,8 +53,8 @@ echo "  lib/calculation/withdrawal.ak     = ${SHA256}"
 
 aiken build &> /dev/null
 
-PROTOCOL_BOOT_TX="770479c27e14d2bb378b73e7363d2cc13888d2cb33e1001038afd82b5de843fd"
-PROTOCOL_BOOT_IX="02"
+PROTOCOL_BOOT_TX="fad11baadca1e52bf34599746fb0152d9d10b31c2591b79deab34536a7998ea0"
+PROTOCOL_BOOT_IX="01"
 PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
 
 aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
