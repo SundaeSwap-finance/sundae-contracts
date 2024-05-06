@@ -1432,6 +1432,7 @@ test has_expected_pool_value_test() {
     outcome.quantity_b.1st,
     outcome.quantity_b.2nd,
     outcome.quantity_b.3rd,
+    99,
     protocol_fees,
   )
 }
@@ -1474,6 +1475,44 @@ test has_expected_pool_value_test2() {
     outcome.quantity_b.1st,
     outcome.quantity_b.2nd,
     outcome.quantity_b.3rd,
+    99,
+    protocol_fees,
+  )
+}
+
+test has_expected_pool_value_withdraw_all() {
+  let (_, pool_nft_token, pool_lp_token) =
+    shared.pool_token_names(constants.pool_ident)
+  let pool_value =
+    value.from_lovelace(3_000_000)
+      |> value.add(constants.pool_script_hash, pool_nft_token, 1)
+  let outcome =
+    PoolState {
+      quantity_lp: (constants.pool_script_hash, pool_lp_token, 0),
+      quantity_a: (
+        constants.other_policy,
+        constants.other_asset_name,
+        0,
+      ),
+      quantity_b: (
+        constants.rberry_policy,
+        constants.rberry_asset_name,
+        0,
+      ),
+    }
+  let protocol_fees = 3_000_000
+
+  pool_validator.has_expected_pool_value(
+    constants.pool_script_hash,
+    constants.pool_ident,
+    pool_value,
+    outcome.quantity_a.1st,
+    outcome.quantity_a.2nd,
+    outcome.quantity_a.3rd,
+    outcome.quantity_b.1st,
+    outcome.quantity_b.2nd,
+    outcome.quantity_b.3rd,
+    outcome.quantity_lp.3rd,
     protocol_fees,
   )
 }

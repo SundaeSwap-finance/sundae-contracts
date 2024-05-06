@@ -1,5 +1,6 @@
 use aiken/bytearray
 use aiken/dict
+use aiken/cbor
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
@@ -282,6 +283,7 @@ validator(
             pool_policy_b,
             pool_asset_name_b,
             final_b,
+            final_lp,
             actual_protocol_fees,
           )
         // Now, we check various things about the output datum to ensure they're each correct.
@@ -460,6 +462,7 @@ validator(
             asset_b.1st,
             asset_b.2nd,
             coin_b_amt,
+            initial_lq,
             pool_output_datum.protocol_fees,
           )
 
@@ -620,6 +623,7 @@ pub fn has_expected_pool_value(
   pool_policy_b: PolicyId,
   pool_asset_name_b: AssetName,
   pool_quantity_b: Int,
+  final_lp: Int,
   final_protocol_fees: Int,
 ) -> Bool {
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
@@ -642,15 +646,22 @@ pub fn has_expected_pool_value(
           }
         },
       )
-    let expected =
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    trace cbor.diagnostic(final_lp)
+    let expected = if final_lp == 0 {
+      expect pool_quantity_a == 0
+      expect pool_quantity_b == 0
+      (2, final_protocol_fees, 0, 1)
+    } else {
       (3, final_protocol_fees + pool_quantity_a, pool_quantity_b, 1)
+    }
     // Rather than constructing a value directly (which can be expensive)
     // we can just compare the expected token count and amounts with a single pass over the value
     expected == actual
   } else {
     // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
     // ADA, the Pool NFT, Asset A, and Asset B
-    (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1) == list.foldl(
+    let actual = list.foldl(
       value.flatten(output_value),
       // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
       (0, 0, 0, 0, 0),
@@ -668,6 +679,15 @@ pub fn has_expected_pool_value(
         }
       },
     )
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    let expected = if final_lp == 0 {
+      expect pool_quantity_a == 0
+      expect pool_quantity_b == 0
+      (2, final_protocol_fees, 0, 0, 1)
+    } else {
+      (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1)
+    }
+    expected == actual
   }
 }
 
