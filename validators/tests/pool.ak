@@ -48,8 +48,8 @@ type ScoopTestOptions {
   edit_order_intended_destination: Option<Destination>,
   edit_order_actual_destination: Option<Destination>,
   edit_fee: Option<Value>,
-  edit_swap_fees: Option<((Int, Int), (Int, Int))>,
-  edit_new_swap_fees: Option<((Int, Int), (Int, Int))>,
+  edit_swap_fees: Option<(Int, Int)>,
+  edit_new_swap_fees: Option<(Int, Int)>,
   edit_fee_admin: Option<Option<multisig.MultisigScript>>,
   edit_withdrawals: Option<Dict<StakeCredential, Int>>,
   edit_pool_input_address: Option<Address>,
@@ -206,7 +206,7 @@ test scoop_high_swap_fees() {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_swap_fees: Some(((swap_fee, swap_fee), (swap_fee, swap_fee))),
+      edit_swap_fees: Some((swap_fee, swap_fee)),
       edit_order_1_out_value: Some(
         value.from_lovelace(2_000_000)
           |> value.add(
@@ -328,7 +328,7 @@ test scooper_not_in_settings() fail {
 fn scoop(options: ScoopTestOptions) {
   let user_addr = wallet_address(constants.payment_key)
   let owner = multisig.Signature(constants.payment_key)
-  let fees = option.or_else(options.edit_swap_fees, ((5, 5), (5, 5)))
+  let fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
     PoolDatum {
       identifier: constants.pool_ident,
@@ -548,7 +548,7 @@ fn scoop(options: ScoopTestOptions) {
 fn scoop_swap_deposit(options: ScoopTestOptions) {
   let user_addr = wallet_address(constants.payment_key)
   let owner = multisig.Signature(constants.payment_key)
-  let pool_fees = option.or_else(options.edit_swap_fees, ((5, 5), (5, 5)))
+  let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
     PoolDatum {
       identifier: constants.pool_ident,
@@ -777,7 +777,7 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int, po
       options.edit_pool_output_address,
       default_pool_output_address,
     )
-  let pool_fees = option.or_else(options.edit_swap_fees, ((5, 5), (5, 5)))
+  let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let protocol_fees = 2_000_000
   let pool_datum =
     PoolDatum {
@@ -1019,7 +1019,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
       options.edit_pool_output_address,
       default_pool_output_address,
     )
-  let pool_fees = option.or_else(options.edit_swap_fees, ((5, 5), (5, 5)))
+  let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let fee_manager =
     option.or_else(
       options.edit_fee_admin,
@@ -1063,7 +1063,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
         )
 
   let new_pool_fees =
-    option.or_else(options.edit_new_swap_fees, ((10, 10), (310, 150)))
+    option.or_else(options.edit_new_swap_fees, (10, 10))
   let pool_out_datum =
     PoolDatum {
       ..pool_datum,
@@ -1132,7 +1132,7 @@ test illegal_new_pool_fees_test() fail {
   let settings =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_new_swap_fees: Some(((10001, 10001), (10001, 10001))),
+      edit_new_swap_fees: Some((10001, 10001)),
     }
   update_pool_fees_transaction(settings)
 }
@@ -1245,8 +1245,8 @@ fn mint_test_modify(
             (constants.rberry_policy, constants.rberry_asset_name),
           ),
           circulating_lp: 1_000_000_000,
-          bid_fees_per_10_thousand: (5, 5),
-          ask_fees_per_10_thousand: (5, 5),
+          bid_fees_per_10_thousand: 5,
+          ask_fees_per_10_thousand: 5,
           fee_manager: None,
           market_open: 0,
           fee_finalized: 0,
@@ -1525,7 +1525,7 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
   let withdraw_fees_redeemer =
     WithdrawFees { amount: withdraw_amount, treasury_output: 0, pool_input: 0 }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
-  let pool_fees = option.or_else(options.edit_swap_fees, ((5, 5), (5, 5)))
+  let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
     PoolDatum {
       identifier: constants.pool_ident,
@@ -1612,7 +1612,7 @@ test attempt_evaporate_pool_test() {
   let withdraw_fees_redeemer =
     WithdrawFees { amount: 18_000_000, treasury_output: 0, pool_input: 0 }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
-  let pool_fees = ((5, 5), (5, 5))
+  let pool_fees = (5, 5)
   let pool_datum =
     PoolDatum {
       identifier: constants.pool_ident,
@@ -1683,7 +1683,7 @@ test attempt_evaporate_pool_test() {
 
 test burn_pool() {
   let user_addr = wallet_address(constants.payment_key)
-  let fees = ((5, 5), (5, 5))
+  let fees = (5, 5)
   let pool_datum =
     PoolDatum {
       identifier: constants.pool_ident,

@@ -1,5 +1,7 @@
+AIKEN=$1
+
 aiken() {
-  /home/pi/proj/aiken/target/release/aiken $*
+  ${AIKEN} $*
 }
 
 set -e

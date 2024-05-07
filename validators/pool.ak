@@ -162,7 +162,6 @@ validator(
             pool_script_hash,
             datum,
             pool_input,
-            validity_range.lower_bound,
           )
 
         // Process the orders in order, and decide the final pool state we should see

@@ -2,9 +2,7 @@ use aiken/bytearray
 use aiken/cbor
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
-use aiken/interval.{Finite, IntervalBound, NegativeInfinity}
-use aiken/math
-use aiken/time.{PosixTime}
+use aiken/interval
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, TransactionId,
   ValidityRange,
@@ -27,38 +25,11 @@ use sundae/multisig
 use types/order.{Destination, Fixed, Order, OrderDatum, SignedStrategyExecution}
 use types/pool.{PoolDatum}
 
-pub fn calculate_fees(
-  fees: (Int, Int),
-  market_open: PosixTime,
-  fee_finalized: PosixTime,
-  valid_from: PosixTime,
-) {
-  // So, if the transaction is guaranteed to run after fee_finalized, charge the final fee rate
-  if valid_from > fee_finalized {
-    fees.2nd
-  } else {
-    // Otherwise, calculate the duration of this decay period
-    let duration = fee_finalized - market_open
-    if duration == 0 {
-      // If it's zero (market_open == fee_finalized) then just use the final fee rate
-      fees.2nd
-    } else {
-      // Otherwise, calculate how much has elapsed since the market open
-      // then the full range of the fee rate
-      // then, starting from the opening fee rate, linearly increase (or decrease) the fees by that range
-      let elapsed = valid_from - market_open
-      let range = fees.2nd - fees.1st
-      fees.1st + elapsed * range / duration
-    }
-  }
-}
-
 /// Construct the initial pool state for processing a set of orders
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
   datum: PoolDatum,
   input: Output,
-  valid_from: IntervalBound<PosixTime>,
   continuation: fn(
     PolicyId,
     AssetName,
@@ -82,8 +53,6 @@ pub fn pool_input_to_state(
     circulating_lp,
     bid_fees_per_10_thousand,
     ask_fees_per_10_thousand,
-    market_open,
-    fee_finalized,
     ..
   } = datum
   let (asset_a, asset_b) = assets
@@ -102,28 +71,10 @@ pub fn pool_input_to_state(
   // Scoopers could in theory set a wide validity range to cause users to overpay, but this should be considered malicious activity and
   // get the scooper removed from the list of valid scoopers / ignore scooper rewards
   // TODO: we could solve this by enforcing a validity range, and checking the length is within 4 hours.
-  let valid_from =
-    when valid_from.bound_type is {
-      NegativeInfinity -> market_open
-      Finite(t) -> math.max(t, market_open)
-      _ -> fail
-    }
   // Calculate the fees per 10k rate to use for this whole scoop
   // We let the creator of the pool specify a fee rate that decays (or increases) between market_open and fee_finalized
-  let bid_fees =
-    calculate_fees(
-      bid_fees_per_10_thousand,
-      market_open,
-      fee_finalized,
-      valid_from,
-    )
-  let ask_fees =
-    calculate_fees(
-      ask_fees_per_10_thousand,
-      market_open,
-      fee_finalized,
-      valid_from,
-    )
+  let bid_fees = bid_fees_per_10_thousand
+  let ask_fees = ask_fees_per_10_thousand
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order
   // TODO: we could potentially save quite a bit by not passing around this object, and passing around a lot of parameters instead...
   continuation(

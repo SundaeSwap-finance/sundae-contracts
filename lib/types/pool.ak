@@ -21,8 +21,8 @@ pub type PoolDatum {
   /// The two values represent the fees as of `market_open` and as of `fee_finalized`, respectively, with a linear
   /// decay from one to the other.
   /// The transaction uses the valid_from field to charge the largest fee the transaction *could* be obligated to pay
-  bid_fees_per_10_thousand: (Int, Int),
-  ask_fees_per_10_thousand: (Int, Int),
+  bid_fees_per_10_thousand: Int,
+  ask_fees_per_10_thousand: Int,
   // An optional multisig condition under which the protocol fees can be updated
   fee_manager: Option<multisig.MultisigScript>,
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
