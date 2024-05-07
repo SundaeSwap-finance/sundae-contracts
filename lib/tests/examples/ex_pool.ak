@@ -19,7 +19,6 @@ fn mk_pool_datum() -> PoolDatum {
     ask_fees_per_10_thousand: 2000,
     fee_manager: None,
     market_open: 100,
-    fee_finalized: 1000,
     protocol_fees: 10000000,
   }
 }

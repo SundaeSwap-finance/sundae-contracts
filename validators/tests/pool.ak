@@ -341,7 +341,6 @@ fn scoop(options: ScoopTestOptions) {
       ask_fees_per_10_thousand: fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 100,
       protocol_fees: 2_000_000,
     }
   let pool_out_datum =
@@ -356,7 +355,6 @@ fn scoop(options: ScoopTestOptions) {
       ask_fees_per_10_thousand: fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
@@ -561,7 +559,6 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 2_000_000,
     }
   let pool_out_datum =
@@ -576,7 +573,6 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 7_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
@@ -791,7 +787,6 @@ fn withdraw_fees_transaction(options: ScoopTestOptions, withdraw_amount: Int, po
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees,
     }
   let normal_input =
@@ -1037,7 +1032,6 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 2_000_000,
     }
   let pool_rider = 2_000_000
@@ -1249,7 +1243,6 @@ fn mint_test_modify(
           ask_fees_per_10_thousand: 5,
           fee_manager: None,
           market_open: 0,
-          fee_finalized: 0,
           protocol_fees: 2_000_000,
         },
       ),
@@ -1538,7 +1531,6 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 18_000_000,
     }
   // pool_test_tx_input deduplicate?
@@ -1625,7 +1617,6 @@ test attempt_evaporate_pool_test() {
       ask_fees_per_10_thousand: pool_fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 18_000_000,
     }
   // pool_test_tx_input deduplicate?
@@ -1696,7 +1687,6 @@ test burn_pool() {
       ask_fees_per_10_thousand: fees.2nd,
       fee_manager: None,
       market_open: 0,
-      fee_finalized: 0,
       protocol_fees: 2_000_000,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)

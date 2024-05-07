@@ -71,8 +71,6 @@ pub fn pool_input_to_state(
   // Scoopers could in theory set a wide validity range to cause users to overpay, but this should be considered malicious activity and
   // get the scooper removed from the list of valid scoopers / ignore scooper rewards
   // TODO: we could solve this by enforcing a validity range, and checking the length is within 4 hours.
-  // Calculate the fees per 10k rate to use for this whole scoop
-  // We let the creator of the pool specify a fee rate that decays (or increases) between market_open and fee_finalized
   let bid_fees = bid_fees_per_10_thousand
   let ask_fees = ask_fees_per_10_thousand
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order

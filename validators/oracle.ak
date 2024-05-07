@@ -238,7 +238,6 @@ fn mint_oracle(
           ask_fees_per_10_thousand: 5,
           fee_manager: None,
           market_open: 0,
-          fee_finalized: 0,
           protocol_fees: 2_000_000,
         },
       ),
