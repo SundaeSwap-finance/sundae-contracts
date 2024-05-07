@@ -109,7 +109,7 @@ pub type StrategyExecution {
 /// A specific strategy execution, plus a signature of that data
 pub type SignedStrategyExecution {
   /// The details about how to execute the strategy for a given order
-  strategy: StrategyExecution,
+  execution: StrategyExecution,
   /// An ed25519 signature of the serialized `strategy`
   signature: Option<Signature>,
 }

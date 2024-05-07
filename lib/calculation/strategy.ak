@@ -74,10 +74,10 @@ pub fn get_strategy(
   tx_valid_range: ValidityRange,
   withdrawals: Dict<StakeCredential, Int>,
   auth: StrategyAuthorization,
-  strategy: SignedStrategyExecution,
+  sse: SignedStrategyExecution,
 ) -> Order {
-  let SignedStrategyExecution { strategy, signature } = strategy
-  let StrategyExecution { tx_ref, validity_range, details, .. } = strategy
+  let SignedStrategyExecution { execution, signature } = sse
+  let StrategyExecution { tx_ref, validity_range, details, .. } = execution
   // We check that the order_tx_ref from the strategy matches the order we're actually processing,
   // to prevent replay / cross-play attacks.
   expect order_tx_ref == tx_ref
@@ -89,7 +89,9 @@ pub fn get_strategy(
     Signature { signer } -> {
       // And finally, use cbor.serialise and check that the signature is valid
       // TODO: is this at risk if cbor.serialise changes? is there a way for us to get the raw bytes of the data?
-      let strategy_bytes = cbor.serialise(details)
+      // NOTE: it's really important that the signature is for the *whole execution* here; otherwise
+      // you could replay that signature over some other strategy order with the same signing key
+      let strategy_bytes = cbor.serialise(execution)
       expect Some(signature) = signature
       expect verify_signature(signer, strategy_bytes, signature)
       details

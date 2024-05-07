@@ -146,7 +146,7 @@ test example_strategy_execution() {
 fn mk_signed_strategy_execution() {
   let sig = #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
   SignedStrategyExecution {
-    strategy: mk_strategy_execution(),
+    execution: mk_strategy_execution(),
     signature: Some(sig),
   }
 }
