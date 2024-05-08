@@ -75,7 +75,7 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
             pool_script_hash,
           )
         expect
-          value.quantity_of(pool_output.value, own_policy_id, pool_nft_name) == 1
+          value.quantity_of(pool_output.value, pool_script_hash, pool_nft_name) == 1
 
         // Then unpack the pool datum
         expect InlineDatum(pool_datum) = pool_output.datum
