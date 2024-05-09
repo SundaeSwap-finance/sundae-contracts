@@ -55,7 +55,7 @@ echo "  lib/calculation/withdrawal.ak     = ${SHA256}"
 
 aiken build &> /dev/null
 
-PROTOCOL_BOOT_TX="fad11baadca1e52bf34599746fb0152d9d10b31c2591b79deab34536a7998ea0"
+PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
 PROTOCOL_BOOT_IX="01"
 PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
 
@@ -112,7 +112,7 @@ echo -e "  Settings Script Hash / Policy     = \e[32m ${SETTINGS_SCRIPT_HASH} \e
 echo -e "  Pool Script Hash / Policy         = \e[32m ${POOL_SCRIPT_HASH} \e[0m"
 echo -e "  Pool Stake Script Hash            = \e[32m ${POOL_STAKE_SCRIPT_HASH} \e[0m"
 echo -e "  Manage Stake Script Hash          = \e[32m ${MANAGE_STAKE_SCRIPT_HASH} \e[0m"
-echo -e "  Treasury Stake Script Hash        = \e[32m ${STAKE_SCRIPT_HASH} \e[0m"
+echo -e "  Order Stake Script Hash           = \e[32m ${STAKE_SCRIPT_HASH} \e[0m"
 echo -e "  Order Script Hash                 = \e[32m ${ORDER_SCRIPT_HASH} \e[0m"
 echo -e "  Oracle Script Hash                = \e[32m ${ORACLE_SCRIPT_HASH} \e[0m"
 
