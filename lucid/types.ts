@@ -314,6 +314,11 @@ export const PoolMintRedeemerSchema = Data.Enum([
       metadataOutput: Data.Integer(),
     }),
   }),
+  Data.Object({
+    BurnPool: Data.Object({
+      poolIdent: Data.Bytes(),
+    }),
+  }),
 ]);
 export type PoolMintRedeemer = Data.Static<typeof PoolMintRedeemerSchema>;
 export const PoolMintRedeemer = PoolMintRedeemerSchema as unknown as PoolMintRedeemer;

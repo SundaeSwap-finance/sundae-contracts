@@ -7,6 +7,7 @@ use types/order.{
   Cancel, Deposit, Fixed, OrderDatum, Scoop, Signature, SignedStrategyExecution,
   Strategy, StrategyExecution, Swap, Withdrawal,
 }
+use types/oracle.{OracleDatum, Mint}
 
 fn mk_swap() -> OrderDatum {
   let addr =
@@ -161,4 +162,48 @@ test example_cancel_redeemer() {
 
 test example_scoop_redeemer() {
   print_example(cbor.serialise(Scoop))
+}
+
+fn mk_oracle() {
+  let pool_ident = #"fc2c4a6ae8048b0b5affc169dfd496a7ace7d08288c476d9d7a5804e"
+  let owner = multisig.Signature(
+    #"c279a3fb3b4e62bbc78e288783b58045d4ae82a18867d8352d02775a",
+  )
+  let valid_range = interval.between(1000, 10000)
+
+  let a = (#"", #"", 1_000_000_000_000)
+  let b =
+    (
+      #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
+      #"44554d4d59",
+      2_000_000_000_000
+    )
+  let lp =
+    (
+      #"00",
+      #"11",
+      10_000_000_000_000
+    )
+
+
+  OracleDatum {
+    pool_ident: pool_ident,
+    owner: owner,
+    valid_range: valid_range,
+    reserve_a: a,
+    reserve_b: b,
+    circulating_lp: lp,
+  }
+}
+
+test example_oracle_datum() {
+  print_example(mk_oracle())
+}
+
+fn mk_oracle_mint_redeemer() {
+  Mint(#"00", [1, 2])
+}
+
+test example_oracle_mint_redeemer() {
+  print_example(mk_oracle_mint_redeemer())
 }

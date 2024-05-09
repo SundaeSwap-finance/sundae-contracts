@@ -68,7 +68,7 @@ async function updatePoolFees() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
+  const lucid = await Lucid.new(blockfrost, "Preview");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -126,8 +126,8 @@ async function updatePoolFees() {
   console.log("treasury address: " + treasuryAddress);
 
   let newPoolDatum = Data.from(targetPool.datum, types.PoolDatum);
-  newPoolDatum.bidFeesPer10Thousand = [30n, 30n];
-  newPoolDatum.askFeesPer10Thousand = [50n, 50n];
+  newPoolDatum.bidFeesPer10Thousand = 50n;
+  newPoolDatum.askFeesPer10Thousand = 30n;
 
   const change = await findChange(blockfrost, address);
 
@@ -206,6 +206,100 @@ async function updatePoolFees() {
   console.log("txid: " + txid);
 }
 
+async function delegatePool() {
+   if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  const lucid = await Lucid.new(blockfrost, "Preview");
+  
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+  const settings = settingsUtxos[0];
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  const change = await findChange(blockfrost, address);
+
+  const refs = await Deno.readTextFile(flags.references);
+  const lines = refs.split(/\r?\n/);
+  const refUtxosOutRefs: OutRef[] = [];
+  for (let line of lines) {
+    let [hash, ix] = line.split("#");
+    let ixNum = Number(ix);
+    if (hash == "" || isNaN(ixNum)) {
+      continue;
+    }
+    refUtxosOutRefs.push({
+      txHash: hash,
+      outputIndex: Number(ix),
+    });
+  }
+  const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
+
+  const tx = lucid.newTx();
+  const currentTime = Date.now();
+  //tx.validFrom(currentTime - 1000000);
+  //tx.validTo(currentTime + 1000000);
+  tx.readFrom([...references, settings]);
+  tx.collectFrom([change]);
+  tx.delegateTo(
+    scripts.poolStakeAddress,
+    flags.stakePool,
+    "d87980"
+  );
+  tx.attachMintingPolicy(scripts.poolStakeValidator);
+  const signers = flags.signers.split(",");
+  for (s of signers) {
+    tx.addSignerKey(s);
+  }
+  const txStr = await tx.toString();
+  console.log("tentative tx: " + txStr);
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+  const txid = completed.toHash();
+  console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const signedTx = await completed.sign().complete();
+    await signedTx.submit();
+    console.log("submitted");
+  }
+}
 
 async function withdrawPoolRewards() {
   if (flags.scriptsFile == undefined) {
@@ -796,7 +890,7 @@ async function registerStakeAddress(scriptName: string) {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
+  const lucid = await Lucid.new(blockfrost, "Preview");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -1220,7 +1314,7 @@ async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: 
       console.log(`nonce=${nonce}`);
       tx = await lucid.newTx()
         .collectFrom([changeUtxo])
-        .payToAddressWithData(userAddress, {
+        .payToAddressWithData(flags.destinationAddress || userAddress, {
           scriptRef: scripts[scriptName as keyof Scripts] as Script,
         }, {
           "lovelace": 2_000_000n,
@@ -1236,6 +1330,8 @@ async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: 
       nonce += 1n;
     }
     console.log("post reference script: ", tx.toString());
+    let signed = await tx.sign().complete();
+    await signed.submit();
     return tx.toString();
   } else {
     throw new Error("script does not exist: " + scriptName);
@@ -1260,27 +1356,165 @@ async function mintRberry(scripts: Scripts, lucid: Lucid, userAddress: Address):
 }
 
 async function evaporatePool() {
-  const tx = lucid.newTx()
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  const lucid = await Lucid.new(blockfrost, "Preview");
+  
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  let settingsUtxos = await lucid.provider.getUtxos(scripts.settingsAddress);
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+  const settings = settingsUtxos[0];
+  const settingsDatum = Data.from(settings.datum, types.SettingsDatum);
+
+  const refs = await Deno.readTextFile(flags.references);
+  const lines = refs.split(/\r?\n/);
+  const refUtxosOutRefs: OutRef[] = [];
+  for (let line of lines) {
+    let [hash, ix] = line.split("#");
+    let ixNum = Number(ix);
+    if (hash == "" || isNaN(ixNum)) {
+      continue;
+    }
+    refUtxosOutRefs.push({
+      txHash: hash,
+      outputIndex: Number(ix),
+    });
+  }
+  const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
+  console.log(references);
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  const poolAddress = (new Utils(lucid)).credentialToAddress(
+    {
+      type: "Script",
+      hash: scripts.poolScriptHash,
+    },
+    {
+      type: "Script",
+      hash: scripts.poolStakeHash,
+    }
+  );
+
+  let knownPools = await lucid.provider.getUtxos(poolAddress);
+  let targetPool = null;
+  for (let knownPool of knownPools) {
+    let targetAssetName = computePoolNftName(fromHex(flags.poolIdent));
+    let targetPolicyId = scripts.poolScriptHash;
+    let targetNftUnit = targetPolicyId + targetAssetName;
+    let amountOfTargetNft = knownPool.assets[targetNftUnit];
+    if (amountOfTargetNft == 1n) {
+      targetPool = knownPool;
+    } else if (amountOfTargetNft > 1n) {
+      throw new Error("Impossible: Multiple copies of pool NFT found in UTXO: " + JSON.stringify(knownPool));
+    }
+  }
+  if (targetPool == null) {
+    throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + flags.poolIdent);
+  }
+
+  let poolDatum = Data.from(targetPool.datum, types.PoolDatum);
+
+  const change = await findChange(lucid.provider, address);
+
+  let toSpend = [];
+  toSpend.push(change);
+  toSpend.push(targetPool);
+  toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
+  let poolInputIndex = 0n;
+  for (let e of toSpend) {
+    if (e.address == targetPool.address) {
+      break;
+    }
+    poolInputIndex = poolInputIndex + 1n;
+  }
+  console.log("toSpend: ")
+  console.log(toSpend);
+
+  const poolMintRedeemer = {
+    BurnPool: {
+      poolIdent: flags.poolIdent,
+    },
+  };
+  const poolMintRedeemerBytes = Data.to(poolMintRedeemer, types.PoolMintRedeemer);
+  const poolSpendRedeemer = {
+    Manage: []
+  };
+  let poolSpendRedeemerBytes = Data.to(poolSpendRedeemer, types.PoolSpendRedeemer);
+  poolSpendRedeemerBytes = "d87a9f" + poolSpendRedeemerBytes + "ff";
+  const poolManageRedeemer = {
+    WithdrawFees: {
+      poolInput: poolInputIndex,
+      treasuryOutput: 0n,
+      amount: poolDatum.protocolFees,
+    }
+  };
+  console.log("poolDatum.protocolFees: " + poolDatum.protocolFees);
+  const treasuryAddress = await addressPlutusToLucid(lucid, settingsDatum.treasuryAddress);
+  const poolManageRedeemerBytes = Data.to(poolManageRedeemer, types.PoolManageRedeemer);
+  const poolNftNameHex = computePoolNftName(fromHex(flags.poolIdent));
+  console.log("baby1");
+  const tx = await lucid.newTx()
     .mintAssets({
-      [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
-      [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
-      [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
+      [toUnit(scripts.poolPolicyId, poolNftNameHex)]: -1n,
     }, poolMintRedeemerBytes)
     .readFrom([...references, settings])
-    .collectFrom([seed])
-    .payToContract(poolAddress, { inline: poolDatumBytes }, poolValue)
-    .payToAddress(userAddress, {
-      "lovelace": 2_000_000n,
-      [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
-    })
-    .payToAddressWithData(
-      flags.metadataAddress,
-      { inline: "d87980" },
-      {
-        "lovelace": 2_000_000n,
-        [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
-      }
-    );
+    .collectFrom([change])
+    .collectFrom([targetPool], poolSpendRedeemerBytes)
+    .attachMintingPolicy(scripts.poolManageValidator)
+    .withdraw(scripts.poolManageAddress, 0n, poolManageRedeemerBytes)
+    .payToAddressWithData(treasuryAddress, {
+      inline: "d87980" // Void
+    }, {
+      "lovelace": poolDatum.protocolFees,
+    });
+  const signers = flags.signers.split(",");
+  for (s of signers) {
+    tx.addSignerKey(s);
+  }
+  const txStr = await tx.toString();
+  console.log("txStr: " + txStr);
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  if (flags.submit) {
+    const signedTx = await completed.sign().complete();
+    return signedTx.submit();
+  } else {
+    throw new Error("florp");
+  }
 }
 
 async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], marketOpen?: bigint): Promise<TxHash> {
@@ -1290,15 +1524,14 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
     identifier: toHex(poolId),
     assets: assets,
     circulatingLp: liq,
-    bidFeesPer10Thousand: [30n, 30n],
-    askFeesPer10Thousand: [50n, 50n],
+    bidFeesPer10Thousand: 30n,
+    askFeesPer10Thousand: 50n,
     feeManager: {
       Signature: {
-        signature: "8582e6a55ccbd7af4cabe35d6da6eaa3d543083e1ce822add9917730",
+        signature: flags.feeManagerPkh, 
       }
     },
     marketOpen: marketOpen || 0n,
-    feeFinalized: marketOpen || 0n,
     protocolFees: 3_000_000n,
   };
   const poolMintRedeemer: types.PoolMintRedeemer = {
@@ -1478,7 +1711,7 @@ async function mainnetMintPool() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
+  const lucid = await Lucid.new(blockfrost, "Preview");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -1541,7 +1774,7 @@ async function mainnetMintPool() {
     });
   }
 
-  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, 20_000_000n, 1_000n, [30n, 30n]);
+  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, BigInt(flags.hasA), BigInt(flags.hasB), 30n);
   console.log("minted");
   console.log(minted);
 }
@@ -1894,7 +2127,7 @@ async function testPostReferenceScript(lucid: Lucid, emulator: Emulator, scripts
 
 async function buildSSE() {
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
+  const lucid = await Lucid.new(blockfrost, "Preview");
 
   const sk = await Deno.readTextFile(flags.privateKey);
   const skCborHex = JSON.parse(sk).cborHex;
@@ -1958,14 +2191,13 @@ async function buildSSE() {
 
   const strategyExecutionBytes = Data.to(strategyExecution, types.StrategyExecution);
 
-  // TODO: Due to a bug in the protov3 contracts we have to actually sign the
-  // order details. this will be fixed later
-  const orderDetailsBytes = Data.to(strategyExecution.details, types.Details);
+  // No longer need to do this!!!
+  // const orderDetailsBytes = Data.to(strategyExecution.details, types.Details);
 
   const { address: { hex: hexAddress } } =
     lucid.utils.getAddressDetails(userAddress);
 
-  const signature = await signAsync(orderDetailsBytes, skHex);
+  const signature = await signAsync(strategyExecutionBytes, skHex);
   
   const signedStrategyExecution: SignedStrategyExecution = {
     strategy: strategyExecution,
@@ -1986,17 +2218,33 @@ async function doPostReferenceScript(scriptName: string) {
   let s = await Deno.readTextFile(flags.scriptsFile);
   let scriptsJson = JSON.parse(s);
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
+  const lucid = await Lucid.new(blockfrost, "Preview");
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
-  const userAddress = flags.address;
+  const address = flags.address;
 
-  lucid.selectWalletFrom({
-    address: userAddress,
+if (flags.submit) {
+  const sk = await Deno.readTextFile(flags.privateKeyFile);
+  const skCborHex = JSON.parse(sk).cborHex;
+  const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+  const userPublicKey = toPublicKey(skBech32);
+  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+  const userAddress = lucid.utils.credentialToAddress({
+    type: "Key",
+    hash: userPkh.to_hex(),
   });
+  lucid.selectWalletFromPrivateKey(skBech32);
+}
 
-  const change = await findChange(lucid.provider, userAddress);
+else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
 
+  const change = await findChange(lucid.provider, address);
+
+  console.log("scripts.settingsAddress: " + scripts.settingsAddress)
   const settingsUtxos = await lucid.provider.getUtxos(scripts.settingsAddress);
 
   if (settingsUtxos.length == 0) {
@@ -2008,8 +2256,8 @@ async function doPostReferenceScript(scriptName: string) {
 
   const settings = settingsUtxos[0];
 
-  const postedHash = await postReferenceScript(scripts, lucid, userAddress, scriptName, change, settings);
-  await emulator.awaitTx(postedHash);
+  const postedHash = await postReferenceScript(scripts, lucid, address, scriptName, change, settings);
+  await lucid.provider.awaitTx(postedHash);
   console.log("Posted reference script, hash: " + postedHash);
   const postedUtxos = await emulator.getUtxosByOutRef([{
     txHash: postedHash,
@@ -2071,6 +2319,263 @@ async function findOrders(provider: Provider, orderAddress: string): Promise<UTx
     result.push(orderUtxo);
   }
   return result;
+}
+
+async function previewRecordOrderDebug() {
+  const accounts: any[] = [];
+  let emulator = new Emulator(accounts, {
+    ...PROTOCOL_PARAMETERS_DEFAULT,
+    maxTxSize: 999999999999,
+    maxTxExMem: 999999999999999n,
+  });
+  let lucid = await Lucid.new(emulator);
+
+  const userAddress = "addr_test1vqp4mmnx647vyutfwugav0yvxhl6pdkyg69x4xqzfl4vwwck92a9t";
+
+  let orderSpendScriptRefBytes = await Deno.readTextFile(flags.orderSpend);
+  let orderSpendScriptRef = {
+    type: "PlutusV2",
+    script: orderSpendScriptRefBytes
+  };
+  let poolSpendScriptRefBytes = await Deno.readTextFile(flags.poolSpend);
+  let poolSpendScriptRef = {
+    type: "PlutusV2",
+    script: poolSpendScriptRefBytes
+  };
+
+  let rberry = toUnit(
+    "99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15",
+    fromText("RBERRY")
+  );
+
+  let sberry = toUnit(
+    "99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15",
+    fromText("SBERRY")
+  );
+
+  const poolnft = toUnit(
+    "44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a110414",
+    "000de140bcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef767"
+  );
+
+  // This is not in the original tx but im adding it here to try to get lucid to
+  // stop complaining about collateral
+  emulator.ledger["c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b441"] = {
+    utxo: {
+      txHash: "c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b44",
+      outputIndex: 1n,
+      address: userAddress, 
+      assets: { lovelace: 100_000_000n },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: undefined
+    },
+    spent: false
+  };
+  emulator.ledger["c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b442"] = {
+    utxo: {
+      txHash: "c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b44",
+      outputIndex: 2n,
+      address: userAddress,
+      assets: { lovelace: 100_000_000n },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+  emulator.ledger["b251fe5510e5237736ac2093e6c6001dd2aaa883d0c03cd8c466a0b3b63e90f62"] = {
+    utxo: {
+      txHash: "b251fe5510e5237736ac2093e6c6001dd2aaa883d0c03cd8c466a0b3b63e90f6",
+      outputIndex: 2n,
+      address: userAddress,
+      assets: { lovelace: 4_542_717_456n },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+  // POOL
+  emulator.ledger["2a97101e262ae73c82f1815e96c91282b159279d7c42b298baa4023153562ace0"] = {
+    utxo: {
+      txHash: "2a97101e262ae73c82f1815e96c91282b159279d7c42b298baa4023153562ace",
+      outputIndex: 0n,
+      address: "addr_test1xpz2r6ednav2m48tryet6qzgu6segl59u0ly7v54dggsg9xvy7vq4p2hl6wm9jdvpgn80ax3xpkm7yrgnxphtrct3klq005j2r",
+      assets: {
+        lovelace: 3_500_000n,
+        [rberry]: 100_001_000n,
+        [sberry]: 99_999_006n,
+        [poolnft]: 1n,
+      },
+      datumHash: undefined,
+      datum: "d8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e1546524245525259ff9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e1546534245525259ffff1a05f5e1001832181ed8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffff001a003567e0ff",
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+
+  const originalOrderDatum = "d8799fd8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef767ffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bff1a0010c8e0d8799fd8799fd87a9f581c75b05727d2c714297863d1c251190a82812f05008fc619af2cc9369dffd87a80ffd87980ffd87e9f9f581c63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c466f7261636c65ffffd87980ff";
+  const fixedOrderDatum = 
+    "d8799fd8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef767ffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bff1a0010c8e0d8799fd8799fd87a9f581c75b05727d2c714297863d1c251190a82812f05008fc619af2cc9369dffd87a80ffd87980ffd87e9f9f581c63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c466f7261636c65ffffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffff";
+
+  // ORDER
+  emulator.ledger["70c17c4e12f2ca53c887faf887f49943f1bfcab1746916e5a6feebf4799a40d90"] = {
+    utxo: {
+      txHash: "70c17c4e12f2ca53c887faf887f49943f1bfcab1746916e5a6feebf4799a40d9",
+      outputIndex: 0n,
+      address: "addr_test1wr866xg5kkvarzll69xjh0tfvqvu9zvuhht2qve9ehmgp0qfgf3wc",
+      assets: {
+        lovelace: 3_100_000n,
+      },
+      datumHash: undefined,
+      datum: fixedOrderDatum,
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+  emulator.ledger["92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e38870"] = {
+    utxo: {
+      txHash: "92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e3887",
+      outputIndex: 0n,
+      address: "addr_test1vzkjjdguttg6lpwqwkup0ldh6hg2pvspen6tsvpcy8psn7gnv7r5n",
+      assets: {
+        lovelace: 11_546_490n, 
+      },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: orderSpendScriptRef
+    },
+    spent: false
+  };
+  emulator.ledger["8036a88a61427262aba964a42d0b9924739ffc3214de9a07c54b5a09af7f0d7d0"] = {
+    utxo: {
+      txHash: "8036a88a61427262aba964a42d0b9924739ffc3214de9a07c54b5a09af7f0d7d",
+      outputIndex: 0n,
+      address: "addr_test1vzkjjdguttg6lpwqwkup0ldh6hg2pvspen6tsvpcy8psn7gnv7r5n",
+      assets: {
+        lovelace: 68_692_780n, 
+      },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: poolSpendScriptRef
+    },
+    spent: false
+  };
+  emulator.ledger["3a2d9f8573018e62929efbefc5b975aed6a84b3a3812eb301a296a41e11ef2640"] = {
+    utxo: {
+      txHash: "3a2d9f8573018e62929efbefc5b975aed6a84b3a3812eb301a296a41e11ef264",
+      outputIndex: 0n,
+      address: "addr_test1wzz76rrsvrxdguqfylvtvrcpvz479v7rq3r0cz56eqakkasu3f7n0",
+      assets: {
+        lovelace: 2_137_760n,
+        [toUnit("85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76", fromText("settings"))]: 1n,
+      },
+      datumHash: undefined,
+      datum: "d8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd87a80ffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd87a80ff9f010affd8799f9f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffff9fd87a9f581ccc27980a8557fe9db2c9ac0a2677f4d1306dbf10689983758f0b8dbeffff1a000510e01a000290401a000290400000ff",
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+  const change =
+    emulator.ledger["b251fe5510e5237736ac2093e6c6001dd2aaa883d0c03cd8c466a0b3b63e90f62"].utxo;
+  const order = 
+    emulator.ledger["70c17c4e12f2ca53c887faf887f49943f1bfcab1746916e5a6feebf4799a40d90"].utxo;
+  const pool = 
+    emulator.ledger["2a97101e262ae73c82f1815e96c91282b159279d7c42b298baa4023153562ace0"].utxo;
+
+  const references =
+    [
+      emulator.ledger["8036a88a61427262aba964a42d0b9924739ffc3214de9a07c54b5a09af7f0d7d0"].utxo,
+      emulator.ledger["92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e38870"].utxo
+    ];
+
+  const settings =
+    emulator.ledger["3a2d9f8573018e62929efbefc5b975aed6a84b3a3812eb301a296a41e11ef2640"].utxo;
+
+  const newPoolDatum =
+    "d8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e1546524245525259ff9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e1546534245525259ffff1a05f5e1001832181ed8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffff001a003d0900ff";
+
+  const badNewOracleDatum_WrongFormat = "d8799f00d8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd8799fd8799fd87a9f1b0000018f59d7eff8ffd87980ffd8799fd87a9f1b0000018f59f67478ffd87980ffff581cbce8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465242455252591a05f5e4e8ff9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465342455252591a05f5dd1eff9f581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a11041458200014df10bcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7671a05f5e100ff00ff";
+  const badNewOracleDatum_WrongPoolIdent = "d8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd8799fd8799fd87a9f1b0000018f59d7eff8ffd87980ffd8799fd87a9f1b0000018f59f67478ffd87980ffff581cbce8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465242455252591a05f5e4e8ff9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465342455252591a05f5dd1eff9f581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a11041458200014df10bcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7671a05f5e100ffff";
+  const newOracleDatum = "d8799fd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffd8799fd8799fd87a9f1b0000018f59d7eff8ffd87980ffd8799fd87a9f1b0000018f59f67478ffd87980ffff581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465242455252591a05f5e4e8ff9f581c99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15465342455252591a05f5dd1eff9f581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a11041458200014df10bcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7671a05f5e100ffff";
+
+  const poolAddr = "addr_test1xpz2r6ednav2m48tryet6qzgu6segl59u0ly7v54dggsg9xvy7vq4p2hl6wm9jdvpgn80ax3xpkm7yrgnxphtrct3klq005j2r";
+
+  const orderDestination = "addr_test1wp3aw76ajl8qkz7yuuxtfn5gtqfankueqxc2fs6hpf5kztqz244zc";
+  const stakeAddress = "stake_test17r9rqul4mupvvpqy5826pfzpduxs9zxuax023pa9a0kp3fc28mvvx";
+
+  const stakeValidator = {
+    type: "PlutusV2",
+    script: "5901420100003323232323232322322253330053253330063370e900218039baa300130083754004264a66600e66e1d2000300837540022646600200264a66601266e1d2002300a3754002297adef6c6013756601c60166ea8004c8cc004004dd5980218059baa300e300b375400644a66601a0022980103d87a80001323232533300d3371e0166eb8c03800c4cdd2a4000660226e980052f5c026600a00a0046eacc038008c044008c03c004894ccc030004528099299980519b873371c6eb8c02cc03c00920024806852889980180180098078008b1929998050008a6103d87a800013374a9000198059806000a5eb80dd618059806180618041baa300b3008375400429408c02cc03000452613656375c002ae6955ceaab9e5573eae815d0aba24c011e581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a1104140001"
+  };
+
+  const oracleValidator = {
+    type: "PlutusV2",
+    script: "5915fe010000332323232323232232225323232323232323233300d3001300e375401226464a66601ea66601e600660206ea80304c8c8c8c8c94ccc050c020c054dd5000899191919191919299980d9807980e1baa001132533301c3375e6008603c6ea8c010c078dd5000980b998101ba901a4bd70099299980e98091998009bab300b301f375400403600c264a66603c6028603e6ea80044c8c8c8c8c8c8c8c8c8c8c8cdc42400060546ea8c0acc8ccc004004dd6180898161baa3012302c375404c97bdb1810100000103d87a8000222533302f00210011333003003303200232323232533303030240011337606ea000cccc0c0009300103d87a80004c0103d87980001533303030250011325333031302530323754002264a666064604c60666ea80044c8c8c94ccc0d4c0a4c0d8dd500089919191919299981d19baf3022303c3754604460786ea8038c0d4cc0f8dd481325eb804c94ccc0ecc0bcc0f0dd500089919299981e99baf302b303f375400460846086608660866086608660866086607e6ea8c094c0fcdd501c8a99981e99b8f375c6048607e6ea80080b454ccc0f4cdd79812981f9baa0020051533303d3375e6e9c05cc108c10cc10cc10cc0fcdd50010a99981e99baf374e02c60846086608660866086607e6ea800854ccc0f4cdd79ba70153006303f3754004266ec0dd419b8001048008ccc0f403d30103d87a80004c0103d879800016161616161632533303d3031303e37540042646464646464646464646464a666098609e00426464646464931919191919299982a982c0010a4c2c6eb4c158004c158008dd7182a000982a0031bae3052005323232323253330543057002149858dd6982a800982a8011bae30530013053007375c60a200c6464646464a6660a660ac0042930b1bad30540013054002375c60a400260a40106eb8c14001d4ccc128c0f8c12cdd50050991919192999828982a0010991924c602600460240062c60a400260a400460a000260986ea802858c0a402c58dd6182680098268011bac304b001304b0023758609200260920046eb8c11c004c11c008c114004c114008c10c004c0fcdd50010b1299981e9818981f1baa00113232323253330443047002132498c94ccc108c0d800454ccc114c110dd50020a4c2c2a666084606e00226464a66608e60940042930b1bad3048001304437540082a66608460700022a66608a60886ea80105261616304237540062c64a66608860860022a666082606c6084002294454ccc104c0d4c1080045280b0b1baa304500130450023043001303f37540022c6080607a6ea800458cc01cdd59804181e1baa3022303c375406c01c2c6032002600260746ea800c8c0f4c0f8c0f8c0f8c0f8c0f8004c94ccc0dcc0acc0e0dd500109919191919191919191919192999823182480109919191924c64a66608e607600226464a666098609e00426493192999825181f00089919299982798290010a4c2c6eb8c140004c130dd50010a999825181f80089919299982798290010a4c2c6eb8c140004c130dd50010b18251baa00116304d0013049375400e2a66608e6078002264646464a66609c60a200426464931919191919299982a182b8010a4c2c6eb4c154004c154008dd7182980098298019bae3051002323232323253330533056002149858dd6982a000982a0011bae30520013052004375c60a00062c6eb0c13c004c13c008dd6182680098249baa00715333047303d00113232533304c304f002132498c8c8c8c8c8c8c8c94ccc150c15c00852616375a60aa00260aa0046eb8c14c004c14c00cdd7182880119191919192999829982b0010a4c2c6eb4c150004c150008dd7182900098290019bae3050002375860980046eb0c12800458c94ccc130c13cc13c0044cdd81827000982718278008b1bac304d0013049375400e2a66608e608000226464a666098609e0042649319191919192999828982a0010a4c2c6eb4c148004c148008dd7182800098280011bae304e001163758609a00260926ea801c54ccc11cc0fc0044c8c94ccc130c13c0084c926323232323232323253330543057002149858dd6982a800982a8011bae30530013053003375c60a20046464646464a6660a660ac0042930b1bad30540013054002375c60a400260a40066eb8c140008dd618260011bac304a0011632533304c304f304f001133760609c002609c609e0022c6eb0c134004c124dd50038a999823981f000899192999826182780109924c646eb8c130008dd718250008b19299982618279827800899bb0304e001304e304f001163758609a00260926ea801c58c11cdd5003192999823181d000899191919299982698280010991924c64a66609860800022a66609e609c6ea800c526161533304c30410011323253330513054002149858dd7182900098271baa0031533304c30420011323253330513054002149858c148004c138dd50018b18261baa002533304a303e304b3754006264646464a6660a260a80042646493192999828182200089919299982a982c00109924c64a6660a6608e00226464a6660b060b600426493180f8008b182c800982a9baa0021533305330480011323232323232533305c305f002149858dd6982e800982e8011bad305b001305b002375a60b200260aa6ea800858c14cdd50008b182b00098291baa00315333050304500115333053305237540062930b0b18281baa002301800316305200130520023050001304c37540062c2c609c002609c004609800260906ea802054ccc118c0ec00454ccc124c120dd50040a4c2c2c608c6ea801cc090028c94ccc110c0e00044c8c94ccc124c13000852616375c6094002608c6ea803054ccc110c0e400454ccc11cc118dd50060a4c2c2c60886ea802c58c11c004c11c008c114004c114008c10c004c10c008dd698208009820801181f800981f801181e800981c9baa002162325333038302c00113232533303d3040002149858dd7181f000981d1baa00215333038302d00113232533303d3040002149858dd7181f000981d1baa00216303837540026074606e6ea800458cc004dd59801181b1baa301c303637540606044606c6ea8c0e4c0d8dd5001911919299981b98158008a6103d87a800015333037302c001132323300100100622533303d00114c0103d87a80001323232533303d3371e00c6eb8c0f800c4c0dccc1040052f5c026600a00a004607c0046082004607e0026eb8c0f0c0e4dd5001098189981d981e181c9baa0024bd70181b9baa001301c303737540024607060726072607260726072607260726072607260720022c66646002002444a66606e004298103d87a8000132325333036302a003130303303a0024bd70099980280280099b8000348004c0ec00cc0e4008dd6180c98199baa30193033375405a6eb4c0d8c0ccdd50008b19991800800911299981b0010a60103d87a800013232533303530290031302f33039375000497ae01333005005001337000069000981d0019bad303800201f00314bded8c010100000103d87980003330133756603a60626ea800c06d2201066f7261636c650033710900018179baa3030003375a605c0046062004660586ea4098cc0b0dd4809198161816981700325eb80cc0acc0a0008cc0acc0a4008cc0acdd41998059bab3015302937540186eb8c0a0008dd7181480125eb80cc0a8c09c008cc0a8c0a0008cc0a8dd41998051bab3014302837540166eb8c09c008dd7181400125eb80c8cdd81815800981598160009bac302700232337606054002605460560026eb0c094004c8cdd81814800981498150009bac3028001302830243754008a666042602a60446ea800c4c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c94ccc0d0c0dc0084c8c9263253330333027001132325333038303b002132498c05400458c0e4004c0d4dd50038a99981998140008a99981b181a9baa00714985858c0ccdd5003191919191bae3037003375c606a004646eb8c0d800cdd7181a0011919bb03038001303830390013758606801c6466ec0c0dc004c0dcc0e0004dd618190068b1bad30350013035002375a60660026066004606200260620046eb4c0bc004c0bc008dd6981680098168011bad302b001302b002325333028302b302b0011337606054002605460560022c6eb0c0a4004c0a4008dd7181380098119baa003163001001223253330223016001132325333027302a002149858dd7181400098121baa002153330223017001132325333027302a002132498cc05c0048cc01801800458dd6181400098121baa002153330223018001132325333027302a002132498cc05c0048cc01801800458dd6181400098121baa00215333022301b0011323232325333029302c002132498cc0640048cc02002000458dd6181500098150011bad3028001302437540042a666044603400226464a66604e60540042930b1bad3028001302437540042a666044603200226464a66604e60540042930b1bad3028001302437540042a66604466e1d200c001132325333027302a002149858dd7181400098121baa0021630223754002604660406ea800458c010c07cdd50010b111192999810180a98109baa0011480004dd6981298111baa0013253330203015302137540022980103d87a8000132330010013756604c60466ea8008894ccc094004530103d87a8000132323253330253371e00e6eb8c09800c4c07ccc0a4dd4000a5eb804cc014014008dd698130011814801181380099198008008021129998120008a6103d87a8000132323253330243371e00e6eb8c09400c4c078cc0a0dd3000a5eb804cc014014008dd59812801181400118130008b1810180e9baa0011632533301e00114c103d87a8000130153301f30200014bd701bac3001301c3754600460386ea80588c07cc080c0800048c078004cc009220104000de14000007330014881040014df100000622337140040026eb8c064c058dd50008b1800980a9baa00f2301830190013758602c602e0046eb8c054004c044dd50060a5114984d958c94ccc03cc00c0044c8c8c8c94ccc058c0640084c926330060012375a0022c6eb0c05c004c05c008dd7180a80098089baa00c1533300f300400115333012301137540182930b0b18079baa00b22323300100100322533301400114984c8cc00c00cc060008c00cc0580044cc8894ccc040c8c8c94ccc04cc020c050dd500089919299980a9999911119198008008029119299980e180800089919198008008041129998110008a5013253330203371e6eb8c09400801052889980180180098128009bae3021301e37540042a66603860220022660106eb0c084c078dd50011198020020008a99980e1809000899198008009bac3022301f375400644a66604200229404c94ccc07ccc018018c09000852889980180180098120008a99980e180a80089919b89375a6044002646660020026eb0c08cc09000920002225333023002100113330030033026002533302033007007302500213370000290010800980f1baa0021533301c301400113232533301e3013301f3754002264a66603e64a66604660440022a666040602a6042002294454ccc080c050c0840045280b0b1baa300f30213754601e60426ea80204cdc4800801899b88001003375a604660406ea80045281806180f9baa300d301f375400c6eb4c084c078dd50010a99980e180980089919299980f1809980f9baa001132533301f3253330233022001153330203015302100114a22a6660406028604200229405858dd5180798109baa300e30213754010266e2400c0044cdc40018009bad3023302037540022940c030c07cdd51806180f9baa006375a6042603c6ea80084c8c8cc004004018894ccc088004528099299981019baf0043021302500214a2266006006002604a002602c66040602e660406042603c6ea80092f5c097ae0301c37540026008602e6ea8048dd6180d180d980d980d980d980d980d980d980d980b9baa30043017375400c60346036603660366036603660366036602e6ea8c010c05cdd50031bab301a301b301b301b301b301b301b301737546008602e6ea80184cc004dd6180d180d980d980b9baa30043017375400c4601464a66602e601860306ea8004520001375a603860326ea8004c94ccc05cc030c060dd50008a6103d87a8000132330010013756603a60346ea8008894ccc070004530103d87a80001323232533301c3371e911066f7261636c6500375c603a0062602c660406ea00052f5c026600a00a0046eb4c074008c080008c078004c8cc004004dd59803980c9baa00222533301b00114c103d87a80001323232533301b3371e0106eb8c07000c4c054cc07cdd3000a5eb804cc014014008dd5980e001180f801180e8008a5022323300100100322533301b00114a2264a6660326008603c0042660060060022940c078004dd7180c180a9baa00116300130143754600260286ea8c94ccc04cc020c050dd5000899299980a1804180a9baa00113004301637546032602c6ea800458cc88c8cc00400400c894ccc0680045300103d87a80001323253330193375e601060366ea80080144c04ccc0740092f5c0266008008002603c00460380026eb0c008c054dd51801180a9baa0043018301537540022c600460286ea800c8c05c0048c058c05c0045261365632323232533301130053012375401c2646464646464646464646464a666040604600426464646464931919191919299981498160010a4c2c6eb4c0a8004c0a8008dd7181400098140031bae302600532323232325333028302b002149858dd6981480098148011bae30270013027007375c604a00c6464646464a66604e60540042930b1bad30280013028002375c604c002604c0106eb8c09001d4ccc078c048c07cdd5005099191919299981298140010991924c602a00460280062c604c002604c004604800260406ea802858c03402c58dd6181080098108011bac301f001301f0023758603a002603a0046eb8c06c004c06c008c064004c064008c05c004c04cdd50070b180080091192999809180300089919299980b980d0010a4c2c6eb8c060004c050dd50010a999809180380089919299980b980d00109924c6600e00246600c00c0022c6eb0c060004c050dd50010a999809180400089919299980b980d00109924c6600e00246600c00c0022c6eb0c060004c050dd50010a9998091805800899191919299980c980e00109924c660120024660100100022c6eb0c068004c068008dd6980c000980a1baa00215333012300a001132325333017301a002149858dd6980c000980a1baa002153330123009001132325333017301a002149858dd6980c000980a1baa002153330123370e900600089919299980b980d0010a4c2c6eb8c060004c050dd50010b18091baa0012533300f300330103754002264646464a66602c60320042649319299980a18040008a99980b980b1baa00414985854ccc050c0240044c8c94ccc064c07000852616375a6034002602c6ea801054ccc050c02800454ccc05cc058dd50020a4c2c2c60286ea800c58c94ccc058c05400454ccc04cc020c0500045288a9998099803980a0008a5016163754602e002602e004602a00260226ea80045888c8cc00400400c894ccc050004526132330030033018002300330160013012300f37540126e1d2000370e90011b8748010dc3a40146e1d2008370e90031ba548000dd2a40046eb80055cd2ab9d5573caae7d5d02ba157449811e581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a1104140001",
+  };
+  
+  console.log("oh baby");
+
+  lucid.selectWalletFrom({
+    address: userAddress,
+  });
+  
+  const currentTime = emulator.now();
+  console.log(`currentTime: ${currentTime}`);
+  const tx = lucid.newTx();
+
+  const goodOracleRedeemer = "d8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f01ffff";
+  const badOracleRedeemer = "d8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef7679f09ffff";
+
+  tx
+    .validFrom(currentTime + 48543275)
+    .validTo(currentTime + 48545275)
+    .readFrom([settings, ...references])
+    .attachSpendingValidator(stakeValidator)
+    .attachSpendingValidator(oracleValidator)
+    .addSignerKey("035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73b")
+    .mintAssets({
+      [toUnit("63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c", fromText("oracle"))]: 1n,
+    }, goodOracleRedeemer)
+    .attachMintingPolicy(oracleValidator)
+    .withdraw(stakeAddress, 0n, "00")
+    .collectFrom([change])
+    .collectFrom([pool], "d87a9fd8799f00009f9f01d87a8000ffffffff")
+    .collectFrom([order], "d87980")
+    .payToContract(poolAddr, { inline: newPoolDatum }, {
+      "lovelace": 4_000_000n,
+      [rberry]: 100_001_000n,
+      [sberry]: 99_999_006n,
+      [poolnft]: 1n
+    })
+    .payToContract(orderDestination, {
+      inline: badNewOracleDatum_WrongFormat,
+    },{
+      "lovelace": 2_600_000n,
+      [toUnit("63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c", fromText("oracle"))]: 1n,
+    })
+
+  const str = await tx.toString();
+  console.log("building tx: " + str);
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  console.log("completed: " + completedStr);
+  //const signedTx = await completed.sign().complete();
+  //const exUnits = completed.exUnits;
+  //const signedStr = await signedTx.toString();
+  //console.log("signed tx: " + signedStr);
+  //const scoopedHash = signedTx.submit();
+  //await emulator.awaitTx(scoopedHash);
+  //return exUnits;
+
 }
 
 async function protov3ScoopDebugStrategy() {
@@ -2707,6 +3212,12 @@ if (flags.runBenchmark) {
   await mainnetMintPool();
 } else if (flags.updatePoolFees) {
   await updatePoolFees();
+} else if (flags.evaporatePool) {
+  await evaporatePool();
+} else if (flags.delegate) {
+  await delegatePool();
+} else if (flags.debugOracle) {
+  await previewRecordOrderDebug();
 }
 
 // Corresponds to strategy_verify_signature in contracts tests

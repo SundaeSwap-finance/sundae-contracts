@@ -13,6 +13,17 @@
   },
   "validators": [
     {
+      "title": "always.mint",
+      "redeemer": {
+        "title": "_redeemer",
+        "schema": {
+          "$ref": "#/definitions/Data"
+        }
+      },
+      "compiledCode": "51010000322253330034a229309b2b2b9a01",
+      "hash": "d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4"
+    },
+    {
       "title": "documentation.spend",
       "datum": {
         "title": "_d",
