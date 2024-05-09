@@ -40,17 +40,21 @@ validator(stake_script_hash: Hash<Blake2b_224, Script>) {
           ctx.transaction.withdrawals,
         )
       }
-      Scoop -> {
-        dict.foldl(ctx.transaction.withdrawals, False, fn(withdrawal, _amt, acc) {
-          when withdrawal is {
-            // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
-            // or perhaps even the whole withdrawal list to compare it all at once!
-            // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
-            Inline(ScriptCredential(script)) -> acc || script == stake_script_hash
-            _ -> acc
-          }
-        })
-      }
+      Scoop ->
+        dict.foldl(
+          ctx.transaction.withdrawals,
+          False,
+          fn(withdrawal, _amt, acc) {
+            when withdrawal is {
+              // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
+              // or perhaps even the whole withdrawal list to compare it all at once!
+              // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
+              Inline(ScriptCredential(script)) ->
+                acc || script == stake_script_hash
+              _ -> acc
+            }
+          },
+        )
     }
   }
 }

@@ -78,7 +78,6 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
 
   // Uniqueness check is a bunch of flipped bits, and we want to blow up if we ever set a bit that is ever hit again
   // Imagine for example that uniqueness_flags is b0100_0010
-
   // Construct a number with the `index`th bit set
   // e.g. if index == 3, then construct b0000_1000
   let bit = small_pow2(index)
@@ -100,11 +99,10 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   //   b0101_0010
   // Notice there was a carry that happened!
   // We can use the fact that the carry happened to detect that we had a duplicate in the list
-
   // At this point I was stuck trying to figure out how to calculate that, and
   // @Microproofs figured out the dark incantation to make it work:
   expect flag_set % bit_shifted > uniqueness_flags % bit_shifted
-  
+
   // Lets take it piece by piece;
   // uniqueness_flags % bit_shifted
   //  - sets all of the bits at or above the `bit_shifted` to 0
@@ -119,7 +117,6 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
   // b0010 > b1010  which is **false**, because we "carried" the one away into the high bits that got masked off
   //
   // So we will have failed if we ever set the same bit twice!
-
   // We can return the flag set for the next time through the loop
   flag_set
 }
@@ -127,7 +124,7 @@ pub fn check_and_set_unique(uniqueness_flags: Int, index: Int) -> Int {
 /// This is a version of pow2 that's optimized for small batch sizes
 /// It performs a few more granular loop-unrolls, converging on the small lookup index faster
 /// This was presented by TxPipe, and squeezes out one extra escrow over math.pow2 for our typical order sizes
-pub fn small_pow2(exponent: Int)  -> Int {
+pub fn small_pow2(exponent: Int) -> Int {
   // A small bytestring, containing all the powers of two that can fit in a single byte, saves us a an expensive multiplication
   let single_byte_powers = #[1, 2, 4, 8, 16, 32, 64, 128]
   if exponent < 8 {

@@ -1,18 +1,15 @@
 use aiken/dict.{Dict}
 use aiken/interval
 use aiken/transaction.{
-  InlineDatum, Input, Output,
-  ScriptContext, Spend, Transaction,
+  InlineDatum, Input, Output, ScriptContext, Spend, Transaction,
 }
-use aiken/transaction/credential.{
-  Inline, StakeCredential, ScriptCredential,
-}
+use aiken/transaction/credential.{Inline, ScriptCredential, StakeCredential}
 use aiken/transaction/value
-use tests/examples/ex_shared.{
-  mk_output_reference, mk_tx_hash, script_address, compare_stake,
-}
 use order as order_validator
 use tests/constants
+use tests/examples/ex_shared.{
+  compare_stake, mk_output_reference, mk_tx_hash, script_address,
+}
 use types/order.{Scoop}
 
 test scoop_order_test() {
@@ -51,7 +48,8 @@ test scoop_order_missing_stake_script_withdrawal() fail {
 
 fn scoop_order(withdrawals: Dict<StakeCredential, Int>) {
   let order_address = script_address(constants.order_script_hash)
-  let order_datum = Void // Not needed by scoop
+  let order_datum = Void
+  // Not needed by scoop
   let order_redeemer = Scoop
   let order_input =
     Input {
@@ -72,7 +70,7 @@ fn scoop_order(withdrawals: Dict<StakeCredential, Int>) {
         fee: value.from_lovelace(1_000_000),
         mint: value.to_minted_value(value.from_lovelace(0)),
         certificates: [],
-        withdrawals: withdrawals,
+        withdrawals,
         validity_range: interval.between(1, 2),
         extra_signatories: [],
         redeemers: dict.new(),
@@ -81,6 +79,12 @@ fn scoop_order(withdrawals: Dict<StakeCredential, Int>) {
       },
       purpose: Spend(order_input.output_reference),
     }
-  let result = order_validator.spend(constants.stake_script_hash, order_datum, order_redeemer, ctx)
+  let result =
+    order_validator.spend(
+      constants.stake_script_hash,
+      order_datum,
+      order_redeemer,
+      ctx,
+    )
   result
 }

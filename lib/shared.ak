@@ -1,30 +1,33 @@
-use aiken/bytearray
 use aiken/builtin
+use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_256, Hash}
 use aiken/list
 use aiken/transaction.{
-  DatumHash, InlineDatum, Input, NoDatum, Output, ScriptContext, Spend,
-  find_input,
+  DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext,
+  Spend, find_input,
 }
 use aiken/transaction/credential.{Credential, ScriptCredential}
 use aiken/transaction/value.{AssetName, PolicyId}
-
 use tests/examples/ex_shared.{
-  script_address, wallet_address, mk_output_reference
+  mk_output_reference, script_address, wallet_address,
 }
 
 /// An alias type for the pool identifier, to make it slightly easier to reason about
-pub type Ident = ByteArray
+pub type Ident =
+  ByteArray
 
 /// An asset class is a combination of a policy ID and asset name; uniquely identifies one type of token, useful to make the code more readable
-pub type AssetClass = (PolicyId, AssetName)
+pub type AssetClass =
+  (PolicyId, AssetName)
 
 /// A rational number, represented as the numerator and denominator
-pub type Rational = (Int, Int)
+pub type Rational =
+  (Int, Int)
 
 /// A "value" for which we know there is only one value; convenient for performance reasons, and to make the code more readable
-pub type SingletonValue = (PolicyId, AssetName, Int)
+pub type SingletonValue =
+  (PolicyId, AssetName, Int)
 
 /// Convert a singleton value to an actual value; convenient for comparing or adding together values
 pub fn to_value(sv: SingletonValue) -> value.Value {
@@ -54,6 +57,25 @@ pub fn spent_output(ctx: ScriptContext) -> Output {
   expect Spend(out_ref) = ctx.purpose
   expect Some(input) = find_input(ctx.transaction.inputs, out_ref)
   input.output
+}
+
+/// Find the index of the given "out_ref"; confusingly, this is the  the inputs, not the outputs
+pub fn own_input_index(ctx: ScriptContext) -> Int {
+  expect Spend(out_ref) = ctx.purpose
+  do_own_input_index(ctx.transaction.inputs, out_ref, 0)
+}
+
+pub fn do_own_input_index(
+  inputs: List<Input>,
+  output_reference: OutputReference,
+  i: Int,
+) -> Int {
+  expect [input, ..rest] = inputs
+  if input.output_reference == output_reference {
+    i
+  } else {
+    do_own_input_index(rest, output_reference, i + 1)
+  }
 }
 
 /// Find a specific input index, and validate that it has at least one of the specified token
@@ -168,17 +190,20 @@ pub fn has_exact_token_count(val: value.Value, count: Int) {
 }
 
 test test_has_exact_token_count() {
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
-    |> value.add("xyz", "www", 200)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
+      |> value.add("xyz", "www", 200)
   expect has_exact_token_count(val, 3)
 
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
   expect has_exact_token_count(val, 2)
 
-  let val = value.from_lovelace(100)
-    |> value.add("abc", "def", 100)
+  let val =
+    value.from_lovelace(100)
+      |> value.add("abc", "def", 100)
   expect !has_exact_token_count(val, 3)
   True
 }
@@ -230,40 +255,58 @@ test count_orders_test() {
   let hash_of_escrow_script =
     #"00000000000000000000000000000000000000000000000000000000"
   let escrow_address = script_address(hash_of_escrow_script)
-  let escrow1_in = Input {
-    output_reference: mk_output_reference(2),
-    output: Output {
-      address: escrow_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
-  let escrow2_in = Input {
-    output_reference: mk_output_reference(3),
-    output: Output {
-      address: escrow_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
-  let other_address = wallet_address(#"fede0000000000000000000000000000000000000000000000000000")
-  let other_in = Input {
-    output_reference: mk_output_reference(4),
-    output: Output {
-      address: other_address,
-      value: value.from_lovelace(0),
-      datum: NoDatum,
-      reference_script: None,
-    },
-  }
+  let escrow1_in =
+    Input {
+      output_reference: mk_output_reference(2),
+      output: Output {
+        address: escrow_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+  let escrow2_in =
+    Input {
+      output_reference: mk_output_reference(3),
+      output: Output {
+        address: escrow_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+  let other_address =
+    wallet_address(#"fede0000000000000000000000000000000000000000000000000000")
+  let other_in =
+    Input {
+      output_reference: mk_output_reference(4),
+      output: Output {
+        address: other_address,
+        value: value.from_lovelace(0),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
 
-  let inputs = [
-    pool_input, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
-    escrow2_in, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
-    escrow2_in, other_in, escrow1_in, escrow2_in
-  ]
+  let inputs =
+    [
+      pool_input,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+      other_in,
+      escrow1_in,
+      escrow2_in,
+    ]
 
   count_orders(inputs) == 10
 }
@@ -272,11 +315,9 @@ pub fn oracle_sft_name() {
   "oracle"
 }
 
-pub fn fees_in_legal_range(fees: (Int, Int)) {
+pub fn fees_in_legal_range(fees: Int) {
   and {
-    fees.1st >= 0,
-    fees.2nd >= 0,
-    fees.1st <= 10000,
-    fees.2nd <= 10000,
+    fees >= 0,
+    fees <= 10000,
   }
 }

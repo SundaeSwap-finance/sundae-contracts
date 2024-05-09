@@ -20,5 +20,5 @@ source = "github"
 
 [[dependencies]]
 name = "aiken-extra/tx_util"
-version = "1.170.202312"
+version = "39d4bceebeba6e02ffa72d2a2411487d97d2a738"
 source = "github"

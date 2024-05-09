@@ -1,11 +1,11 @@
 use aiken/option
-use aiken/transaction.{NoDatum, InlineDatum, Output}
+use aiken/transaction.{InlineDatum, NoDatum, Output}
 use aiken/transaction/credential.{Address, VerificationKeyCredential}
 use aiken/transaction/value.{Value}
 use calculation/shared.{PoolState} as calc_shared
+use calculation/withdrawal.{do_withdrawal}
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
-use calculation/withdrawal.{do_withdrawal}
 
 type WithdrawalTestOptions {
   edit_withdrawal_value: Option<Value>,
@@ -24,15 +24,16 @@ test withdrawal_ok() {
   withdrawal_test(options)
 }
 
-!test withdrawal_wrong_output_value() {
-  let options = WithdrawalTestOptions {
-    ..default_withdrawal_test_options(),
-    edit_withdrawal_value: Some(value.from_lovelace(2_000_000))
-  }
+test withdrawal_wrong_output_value() fail {
+  let options =
+    WithdrawalTestOptions {
+      ..default_withdrawal_test_options(),
+      edit_withdrawal_value: Some(value.from_lovelace(2_000_000)),
+    }
   withdrawal_test(options)
 }
 
-!test withdrawal_wrong_payout_address() {
+test withdrawal_wrong_payout_address() fail {
   let burn_addr =
     Address(
       VerificationKeyCredential(
@@ -40,10 +41,11 @@ test withdrawal_ok() {
       ),
       None,
     )
-  let options = WithdrawalTestOptions {
-    ..default_withdrawal_test_options(),
-    edit_withdrawal_destination: Some(burn_addr),
-  }
+  let options =
+    WithdrawalTestOptions {
+      ..default_withdrawal_test_options(),
+      edit_withdrawal_destination: Some(burn_addr),
+    }
   withdrawal_test(options)
 }
 
@@ -55,56 +57,70 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       ),
       None,
     )
-  let rberry = (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
+  let rberry =
+    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
   let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state = PoolState {
-    quantity_a: (#"", #"", 1_010_000_000),
-    quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
-    quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
-  }
+  let pool_state =
+    PoolState {
+      quantity_a: (#"", #"", 1_010_000_000),
+      quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
+      quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
+    }
   let input_value =
     value.from_lovelace(4_500_000)
       |> value.add(lp.1st, lp.2nd, 10_000_000)
   let amount = (lp.1st, lp.2nd, 10_000_000)
-  let order = OrderDatum {
-    pool_ident: None,
-    owner: multisig.Signature(
-      #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-    ),
-    max_protocol_fee: 2_500_000,
-    destination: Fixed {
-      address: addr,
+  let order =
+    OrderDatum {
+      pool_ident: None,
+      owner: multisig.Signature(
+        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
+      ),
+      max_protocol_fee: 2_500_000,
+      destination: Fixed { address: addr, datum: NoDatum },
+      details: order.Withdrawal { amount },
+      extension: Void,
+    }
+  let output =
+    Output {
+      address: option.or_else(options.edit_withdrawal_destination, addr),
+      value: option.or_else(
+        options.edit_withdrawal_value,
+        value.from_lovelace(2_000_000)
+          |> value.add(#"", #"", 10_000_000)
+          |> value.add(rberry.1st, rberry.2nd, 10_000_000),
+      ),
       datum: NoDatum,
-    },
-    details: order.Withdrawal {
-      amount
-    },
-    extension: Void,
-  }
-  let output = Output {
-    address: option.or_else(options.edit_withdrawal_destination, addr),
-    value: option.or_else(
-      options.edit_withdrawal_value,
-      value.from_lovelace(2_000_000)
-        |> value.add(#"", #"", 10_000_000)
-        |> value.add(rberry.1st, rberry.2nd, 10_000_000)),
-    datum: NoDatum,
-    reference_script: None,
-  }
-  let input = Output {
-    address: addr,
-    value: input_value,
-    datum: InlineDatum(order),
-    reference_script: None,
-  }
-  let new_a, new_b, new_lp <- do_withdrawal(
-    pool_state.quantity_a.1st, pool_state.quantity_a.2nd, pool_state.quantity_a.3rd,
-    pool_state.quantity_b.1st, pool_state.quantity_b.2nd, pool_state.quantity_b.3rd,
-    pool_state.quantity_lp.1st, pool_state.quantity_lp.2nd, pool_state.quantity_lp.3rd,
-    input, amount,
-    order.destination, 2_500_000,
-    output
-  )
+      reference_script: None,
+    }
+  let input =
+    Output {
+      address: addr,
+      value: input_value,
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
+  let
+    new_a,
+    new_b,
+    new_lp,
+  <-
+    do_withdrawal(
+      pool_state.quantity_a.1st,
+      pool_state.quantity_a.2nd,
+      pool_state.quantity_a.3rd,
+      pool_state.quantity_b.1st,
+      pool_state.quantity_b.2nd,
+      pool_state.quantity_b.3rd,
+      pool_state.quantity_lp.1st,
+      pool_state.quantity_lp.2nd,
+      pool_state.quantity_lp.3rd,
+      input,
+      amount,
+      order.destination,
+      2_500_000,
+      output,
+    )
   expect new_a == 1_000_000_000
   expect new_b == 1_000_000_000
   expect new_lp == 1000000000

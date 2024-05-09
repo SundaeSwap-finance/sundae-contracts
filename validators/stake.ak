@@ -13,10 +13,6 @@ use aiken/transaction/value
 /// It's parameterized by the pool_script_hash, so it knows what pool token to look for.
 validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   fn stake(_r: Data, ctx: ScriptContext) -> Bool {
-    /// Note: we don't allow this address to be delegated to a pool, only withdrawals (which will always be zero)
-    /// because a very subtle attack vector would be to register the address, delegate to a pool,
-    /// and break any offchain code that was assuming the withdraw would be zero
-    /// because most off-chain code won't have access to the rewards calculation!
     when ctx.purpose is {
       WithdrawFrom(_) -> {
         // We can assume that the pool output is the first output, because outputs aren't reordered by the ledger,
@@ -32,7 +28,13 @@ validator(pool_script_hash: Hash<Blake2b_224, Script>) {
         let pool_tokens_list = dict.to_list(pool_tokens)
         // And then check that it's specifically the pool NFT by taking advantage of the CIP-68 label
         let is_pool_nft =
-          fn(kvp: (ByteArray, Int)) {
+          fn(
+            /// Note: we don't allow this address to be delegated to a pool, only withdrawals (which will always be zero)
+            /// because a very subtle attack vector would be to register the address, delegate to a pool,
+            /// and break any offchain code that was assuming the withdraw would be zero
+            /// because most off-chain code won't have access to the rewards calculation!
+            kvp: (ByteArray, Int),
+          ) {
             // we use the 2nd byte here, because the first byte is zero as a "parenthesis"
             builtin.index_bytearray(kvp.1st, 1) == 0x0d
           }
