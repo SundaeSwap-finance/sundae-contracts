@@ -39,7 +39,7 @@ import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
 
 const rand = new random.Random();
 
-let bootUtxoHash = "45ae0839622478c3ed2fbf5eea03c54ca3fd57607b7a2660445166ea8a42d98c";
+let bootUtxoHash = "382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef";
 let bootUtxoIx = 1;
 
 function settingsRedeemerUpdate() { return "d87a9fd8799fffff" };
@@ -815,6 +815,96 @@ async function noopSettings(): Promise<TxHash> {
   //return signedStr;
 }
 
+const v3InitScoopers = [
+  "570cd6294587645d26c690a72d40fede1e7a28cb3ddc78ff76655820",
+  "61f1baeda28f3f83413b92a7d28d2f7b545d718f2f28f971b92b3a21",
+  "251f7fb11f84f81653ee5b76a10dd29fa36ec7717aafe689490cb7e4",
+  "6510a3ec0a6f273e31acc82f9f2ffb089413549a04149ea37ef8d33b",
+  "9366b01d6baf040245ee07127fc8af4f04a75b91c6a97f69c7f6463a",
+  "c5825983bb454dd743befc1dd65ee05934666c417503060e1d4fef47",
+  "70fa8ce8dda9372aa9b7dc9f5756390e78939744c79550cc3a264b79",
+  "f7b1175ea4f7980e717e19c76731e4e6ff3a2ac560dc17a6be8ec204",
+  "a14cb1a14c4b5810a21103e389f4abdbdec010b766e2dc329a4e0e96",
+  "40282b949abda48a573fe2757971a1369d2674ac9b6d98c1c2bdbdf7",
+  "baec408a6fedd39ac0404a2f82c6e75ef06659d8596f9d0af6e01241",
+  "fe9315a8d1f638a4836e9ec396d43e1f6ba88e45a7f5a5e37a77071a",
+  "c6b0d1b88337b91507aa5c6496afc497f399ed8980c2054448eaab6c",
+  "8ca0e08cdbc30fa0dd21833d7370d666493ecc28b136df179f97fb5d",
+  "f7e1830a1f885aed62fc834c1dffcadd68a8548e88ffd0b0040b960b",
+  "ee8ed5ef92d0a51c6962aac7012906d280aeb412900a7621f782c7c9",
+  "1ddc54ce9d4d3a35a0ff4707636f8627cc491197ac435ba4fcf4d838",
+  "cba4b71bd8cecc54c526bcd71da84f6f79e568604e574149854dbb86",
+  "f52cdec15ffcc8ace593dc3e0078458ba07a8c47866ba866e4554b6d",
+  "53d6b12089d642d3bfdc61d5f0f3fddfeeb56f55dcd5bd796b5c25a1",
+  "dd8a02814820616b137e0fb4852fd8aab36875d849919ca68aa6cb70",
+  "0b23328355b40d671d1a7ded332c697e1446ae0bb7301af2a7ed9577",
+  "8be85963f17386d34bcd53b857071a01ee3c7ca543e4bd674492f78b",
+  "b3ec1a4fa75b0c9291af873d3d5365b46ab22eff2bc3f12d5064561b",
+  "6c8ecf30ba1a025dd324cb0598c8ff87522b324901299cf3f4f1d0b2",
+  "7a7a02beabb674125d734a24817aea9505b9113540cc72f4ef5c2faf",
+  "2daa1c8bb06659a89886f6b2677b8d8ccd1c2c7e9ef7ea4be88ac404",
+  "6a054c69ea18300b0fcb330e07a8b56015d15527f31a361b1b1291de",
+  "ee33744f202c96c2024b25b6cc177ad9537d46437cd48cc291f58009",
+  "37eb116b3ff8a70e4be778b5e8d30d3b40421ffe6622f6a983f67f3f",
+];
+
+const v3InitPoolStakeHash = "4399813dad91bb78a5eb17c26ff50852bc75d3fa7b6e9ae87232ccc1";
+
+function v3MakeInitSettingsDatum() {
+  const datum: types.SettingsDatum = {
+    settingsAdmin: {
+      AtLeast: {
+        required: 3n,
+        scripts: [
+          { signature: "8582e6a55ccbd7af4cabe35d6da6eaa3d543083e1ce822add9917730" },
+          { signature: "7180d7ad9aaf20658d8f88c32a2e5c287425618c32c9bb82d6b6c8f8" },
+          { signature: "bba4dff30f517f2859f8f295a97d3d85f26a818078f9294256fda2d8" },
+          { signature: "1f68495896a7ba5132198145359311e991a1463e95ccc6f56703653d" },
+          { signature: "f65e667d512b26aa98a97ac22e958e5201e7ea279d74b2e4ec5883db" },
+        ],
+      },
+    },
+    metadataAdmin: {
+      paymentCredential: {
+        SCredential: { bytes: "1854e9028a89496e9772a54882729d16554f8ed9af27ec6046c9a87c" },
+      },
+      stakeCredential: null,
+    },
+    treasuryAdmin: {
+      AtLeast: {
+        required: 3n,
+        scripts: [
+          { signature: "8582e6a55ccbd7af4cabe35d6da6eaa3d543083e1ce822add9917730" },
+          { signature: "7180d7ad9aaf20658d8f88c32a2e5c287425618c32c9bb82d6b6c8f8" },
+          { signature: "bba4dff30f517f2859f8f295a97d3d85f26a818078f9294256fda2d8" },
+          { signature: "1f68495896a7ba5132198145359311e991a1463e95ccc6f56703653d" },
+          { signature: "f65e667d512b26aa98a97ac22e958e5201e7ea279d74b2e4ec5883db" },
+        ],
+      },
+    },
+    treasuryAddress: {
+      paymentCredential: {
+        SCredential: { bytes: "c0d7aa781d14f206f1f6468f0a2d49187d1ebcb8f59c59d75d0c27a7" },
+      },
+      stakeCredential: null,
+    },
+    treasuryAllowance: [0n, 10n],
+    authorizedScoopers: v3InitScoopers,
+    authorizedStakingKeys: [
+      {
+        SCredential: { bytes: v3InitPoolStakeHash },
+      },
+    ],
+    baseFee: 332_000n,
+    simpleFee: 168_000n,
+    strategyFee: 168_000n,
+    poolCreationFee: 0n,
+    extensions: 0n,
+  };
+  console.log(datum);
+  return Data.to(datum, types.SettingsDatum);
+}
+
 function settingsDatum(poolStakeHash: string, userPkh: string, scooperSet: string[]): string {
   const datum: types.SettingsDatum = {
     settingsAdmin: {
@@ -854,8 +944,13 @@ function settingsDatum(poolStakeHash: string, userPkh: string, scooperSet: strin
 
 function settingsMintRedeemer() { return "d87980" };
 
-async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs: UTxO[], scooperSet: string[]): string {
-  const newSettingsDatum = settingsDatum(scripts.poolStakeHash, userPkh, scooperSet);
+async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs: UTxO[], scooperSet: string[], metadata: Json): string {
+  let newSettingsDatum;
+  if (flags.useV3InitSettings) {
+    newSettingsDatum = v3MakeInitSettingsDatum();
+  } else {
+    newSettingsDatum = settingsDatum(scripts.poolStakeHash, userPkh, scooperSet);
+  }
   const tx = await lucid.newTx()
     .collectFrom(inputs)
     .mintAssets({
@@ -866,10 +961,19 @@ async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inp
     .payToContract(scripts.settingsAddress, { inline: newSettingsDatum }, {
       "lovelace": 2_000_000n,
       [toUnit(scripts.settingsPolicyId, fromText("settings"))]: 1n,
-    })
-    .complete({
-      coinSelection: false,
     });
+
+  if (metadata) {
+    for (const [k, v] of Object.entries(metadata)) {
+      tx.attachMetadataWithConversion(k, v);
+    }
+  }
+  let completed = await tx.complete({
+    coinSelection: false,
+  });
+
+  let completeStr = await completed.toString();
+  console.log("completed boot tx str: " + completeStr);
   let signed = await tx.sign().complete();
   let submittedHash = await signed.submit();
   console.log(submittedHash);
@@ -1116,6 +1220,60 @@ async function testSettingsBoot(lucid: Lucid, emulator: Emulator, scripts: Scrip
   return bootedHash;
 }
 
+async function dummy() {
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  const lucid = await Lucid.new(blockfrost, "Preview");
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  let metadata;
+  if (flags.metadata) {
+    let metadataStr = await Deno.readTextFile(flags.metadata);
+    metadata = JSON.parse(metadataStr);
+    console.log("metadata");
+    console.log(metadata);
+  }
+
+  const change = await findChange(lucid.provider, address);
+
+  const tx = lucid.newTx();
+  tx.collectFrom([change]);
+  if (metadata) {
+    for (const [k, v] of Object.entries(metadata)) {
+      tx.attachMetadataWithConversion(k, v);
+    }
+  }
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  const signedTx = await completed.sign().complete();
+  console.log(completedStr);
+  const txHash = await signedTx.submit();
+  console.log("submitted: " + txHash);
+
+}
+
 async function realSettingsBoot() {
   if (flags.scriptsFile == undefined) {
     throw "no scripts file";
@@ -1130,7 +1288,7 @@ async function realSettingsBoot() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = await Lucid.new(blockfrost, "Mainnet");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -1164,7 +1322,14 @@ async function realSettingsBoot() {
     throw new Error("the boot utxo was not found in the wallet");
   }
 
-  const txBytes = await bootSettings(lucid, scripts, userPkh, [toSpend], [flags.scooperPkh]);
+  let metadata;
+  if (flags.metadata) {
+    let metadataStr = await Deno.readTextFile(flags.metadata);
+    metadata = JSON.parse(metadataStr);
+    console.log("metadata");
+    console.log(metadata);
+  }
+  const txBytes = await bootSettings(lucid, scripts, userPkh, [toSpend], [flags.scooperPkh], metadata);
   console.log("boot tx: " + txBytes);
 }
 
@@ -1324,7 +1489,7 @@ async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: 
           coinSelection: false,
         });
       const hash = tx.toHash();
-      if (hash > settings.txHash) {
+      if (hash.startsWith("f")) {
         break;
       }
       nonce += 1n;
@@ -2218,7 +2383,7 @@ async function doPostReferenceScript(scriptName: string) {
   let s = await Deno.readTextFile(flags.scriptsFile);
   let scriptsJson = JSON.parse(s);
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = await Lucid.new(blockfrost, "Mainnet");
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   const address = flags.address;
@@ -2247,15 +2412,16 @@ else {
   console.log("scripts.settingsAddress: " + scripts.settingsAddress)
   const settingsUtxos = await lucid.provider.getUtxos(scripts.settingsAddress);
 
-  if (settingsUtxos.length == 0) {
-    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
-  }
-  if (settingsUtxos.length > 1) {
-    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
-  }
-
-  const settings = settingsUtxos[0];
-
+//  if (settingsUtxos.length == 0) {
+//    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+//  }
+//  if (settingsUtxos.length > 1) {
+//    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+//  }
+//
+//  const settings = settingsUtxos[0];
+//
+  let settings = undefined;
   const postedHash = await postReferenceScript(scripts, lucid, address, scriptName, change, settings);
   await lucid.provider.awaitTx(postedHash);
   console.log("Posted reference script, hash: " + postedHash);
@@ -3218,6 +3384,8 @@ if (flags.runBenchmark) {
   await delegatePool();
 } else if (flags.debugOracle) {
   await previewRecordOrderDebug();
+} else if (flags.dummy) {
+  await dummy();
 }
 
 // Corresponds to strategy_verify_signature in contracts tests
