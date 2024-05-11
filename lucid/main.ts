@@ -220,7 +220,7 @@ async function delegatePool() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = await Lucid.new(blockfrost, "Mainnet");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -994,7 +994,7 @@ async function registerStakeAddress(scriptName: string) {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = await Lucid.new(blockfrost, "Mainnet");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -1682,23 +1682,79 @@ async function evaporatePool() {
   }
 }
 
-async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], marketOpen?: bigint): Promise<TxHash> {
+const sundaeFeeManager = {
+  AtLeast: {
+    required: 3n,
+    scripts: [
+      { signature: "8582e6a55ccbd7af4cabe35d6da6eaa3d543083e1ce822add9917730" },
+      { signature: "7180d7ad9aaf20658d8f88c32a2e5c287425618c32c9bb82d6b6c8f8" },
+      { signature: "bba4dff30f517f2859f8f295a97d3d85f26a818078f9294256fda2d8" },
+      { signature: "1f68495896a7ba5132198145359311e991a1463e95ccc6f56703653d" },
+      { signature: "f65e667d512b26aa98a97ac22e958e5201e7ea279d74b2e4ec5883db" },
+    ],
+  },
+};
+
+const nuvolaFeeManager = {
+  Signature: {
+    signature: "d331c01cc599e225894040dbd8ba5335e62c15f03f5ac5afcfd1cc19",
+  },
+};
+
+//const clarityFeeManager = {
+//  Signature: {
+//    signature: "fcc43cd5b28c5a37e1f6c7fca4af2fd16552c8ecaf6534c2359eb073",
+//  },
+//};
+
+const clarityFeeManager = {
+  AtLeast: {
+    required: 2n,
+    scripts: [
+      { signature: "5e32fc47618c8abb3cbc1146566f8fd66b5403846bdffe84e9628ef4" },
+      { signature: "789a59aada0b5890d21d25192168d766e5610783aea9000a4fec0df7" },
+      { signature: "8c70c0118c66b605979e8ec41b5d96914d41d818e6fe79a338332969" },
+    ],
+  },
+};
+
+const wmtFeeManager = {
+  Signature: {
+    signature: "",
+  },
+};
+
+const factFeeManager = {
+  Signature: {
+    signature: "5b9d72e1ad952953f9945477f5975db962076e701c3a19163bf7e875",
+  },
+};
+
+async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], extraChangeUtxos: UTxO[]): Promise<TxHash> {
   const poolId = computePoolId(seed);
   const liq = initialLiquidity(amountA, amountB);
-  const newPoolDatum: types.PoolDatum = {
+  let newPoolDatum: types.PoolDatum = {
     identifier: toHex(poolId),
     assets: assets,
     circulatingLp: liq,
     bidFeesPer10Thousand: 30n,
-    askFeesPer10Thousand: 50n,
-    feeManager: {
-      Signature: {
-        signature: flags.feeManagerPkh, 
-      }
-    },
-    marketOpen: marketOpen || 0n,
+    askFeesPer10Thousand: 30n,
+    marketOpen: 0n,
     protocolFees: 3_000_000n,
   };
+  if (flags.useSundaeFeeManager) {
+    newPoolDatum.feeManager = sundaeFeeManager;
+  } else if (flags.useNuvoleFeeManager) {
+    newPoolDatum.feeManager = nuvolaFeeManager;
+  } else if (flags.useClarityFeeManager) {
+    newPoolDatum.feeManager = clarityFeeManager;
+  } else if (flags.useWmtFeeManager) {
+    newPoolDatum.feeManager = wmtFeeManager;
+  } else if (flags.useFactFeeManager) {
+    newPoolDatum.feeManager = factFeeManager;
+  } else {
+    throw new Error("must select fee manager");
+  }
   const poolMintRedeemer: types.PoolMintRedeemer = {
     CreatePool: {
       assets: assets,
@@ -1761,7 +1817,13 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
     }, poolMintRedeemerBytes)
     .readFrom([...references, settings])
-    .collectFrom([seed])
+    .collectFrom([seed]);
+
+  for (let u of extraChangeUtxos) {
+    tx.collectFrom([u]);
+  }
+
+  tx
     .payToContract(poolAddress, { inline: poolDatumBytes }, poolValue)
     .payToAddress(userAddress, {
       "lovelace": 2_000_000n,
@@ -1781,6 +1843,8 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   const completed = await tx.complete({
     coinSelection: false,
   });
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
   const signedTx = await completed.sign().complete();
   const signedStr = await signedTx.toString()
   console.log("signed tx: " + signedStr);
@@ -1876,7 +1940,7 @@ async function mainnetMintPool() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = await Lucid.new(blockfrost, "Mainnet");
   
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
@@ -1917,6 +1981,20 @@ async function mainnetMintPool() {
   const seed = seedUtxos[0];
   console.log(seed);
 
+  let extraChangeUtxos = [];
+  if (flags.extraChange) {
+    const extraChange = flags.extraChange.split(",");
+    let extraChangeRefs = [];
+    for (let u of extraChange) {
+      const [uRefHash, uRefIx] = u.split("#");
+      extraChangeRefs.push({
+        txHash: uRefHash,
+        outputIndex: Number(uRefIx),
+      });
+    }
+    extraChangeUtxos = await blockfrost.getUtxosByOutRef(extraChangeRefs);
+  }
+
   let assets: CoinPair = [
     assetFromString(flags.coinA),
     assetFromString(flags.coinB),
@@ -1933,13 +2011,17 @@ async function mainnetMintPool() {
       hash: userPkh.to_hex(),
     });
     lucid.selectWalletFromPrivateKey(skBech32);
+  } else if (flags.collateralWallet) {
+    lucid.selectWalletFrom({
+      address: flags.collateralWallet,
+    });
   } else {
     lucid.selectWalletFrom({
       address: address,
     });
   }
 
-  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, BigInt(flags.hasA), BigInt(flags.hasB), 30n);
+  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, BigInt(flags.hasA), BigInt(flags.hasB), 30n, extraChangeUtxos);
   console.log("minted");
   console.log(minted);
 }
