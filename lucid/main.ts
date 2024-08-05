@@ -36,6 +36,7 @@ import * as types from "./types.ts";
 import { sleep } from "https://deno.land/x/sleep/mod.ts";
 import { signAsync } from "https://deno.land/x/ed25519@2.1.0/mod.ts";
 import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
+import { readline } from "https://deno.land/x/readline@v1.1.0/mod.ts";
 
 const rand = new random.Random();
 
@@ -68,8 +69,13 @@ async function updatePoolFees() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
-  
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   lucid.selectWalletFrom({
@@ -111,6 +117,7 @@ async function updatePoolFees() {
     throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + flags.poolIdent);
   }
 
+  console.log(`settings address: ${scripts.settingsAddress}`);
   const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
   if (settingsUtxos.length == 0) {
     throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
@@ -126,8 +133,8 @@ async function updatePoolFees() {
   console.log("treasury address: " + treasuryAddress);
 
   let newPoolDatum = Data.from(targetPool.datum, types.PoolDatum);
-  newPoolDatum.bidFeesPer10Thousand = 50n;
-  newPoolDatum.askFeesPer10Thousand = 30n;
+  newPoolDatum.bidFeesPer10Thousand = 100n;
+  newPoolDatum.askFeesPer10Thousand = 100n;
 
   const change = await findChange(blockfrost, address);
 
@@ -148,7 +155,7 @@ async function updatePoolFees() {
 
   let poolManageRedeemer = Data.to({
     UpdatePoolFees: {
-      poolInput: 0n, 
+      poolInput: 1n,
     }
   }, types.PoolManageRedeemer);
 
@@ -191,7 +198,7 @@ async function updatePoolFees() {
     {
       inline: Data.to(newPoolDatum, types.PoolDatum),
     },
-    targetPool.assets, 
+    targetPool.assets,
   );
   console.log("scripts.poolManageAddress: " + scripts.poolManageAddress);
   tx.withdraw(scripts.poolManageAddress, 0n, poolManageRedeemer);
@@ -221,7 +228,7 @@ async function delegatePool() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
@@ -301,6 +308,587 @@ async function delegatePool() {
   }
 }
 
+// Withdraw staking rewards from the pool stake address. Note this is not the
+// same thing as withdrawing locked protocol fees from a specific pool, although
+// the validator logic is similar; in particular, a portion of the withdrawn
+// amount must be paid to the treasury address according to the allowance.
+async function withdrawPoolStakeRewards() {
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+  const settings = settingsUtxos[0];
+  console.log(settings.datum);
+  const settingsDatum = Data.from(settings.datum, types.SettingsDatum);
+
+  const treasuryAddress = await addressPlutusToLucid(lucid, settingsDatum.treasuryAddress);
+  console.log("treasury address: " + treasuryAddress);
+
+  const withdrawnAmount = BigInt(flags.withdrawnAmount);
+
+  // Giving a flat amount since we want to effectively withdraw everything but
+  // the validator requires some amount to paid to the treasury address even if
+  // the allowance is 100%.
+  const treasuryAmount = 2_000_000n;
+
+  const withheld = withdrawnAmount - treasuryAmount;
+
+  console.log("to treasury: " + treasuryAmount);
+  console.log("withheld: " + withheld);
+
+  const change = await findChange(blockfrost, address);
+
+  const poolStakeRedeemer = "00";
+  console.log("poolStakeRedeemer: " + poolStakeRedeemer);
+
+  const tx = lucid.newTx();
+  const currentTime = Date.now();
+  tx.readFrom([settings]);
+  tx.collectFrom([change]);
+  const signers = flags.signers.split(",");
+  for (s of signers) {
+    tx.addSignerKey(s);
+  }
+  tx.attachMintingPolicy(scripts.poolStakeValidator);
+  tx.withdraw(scripts.poolStakeAddress, withdrawnAmount, poolStakeRedeemer);
+  tx.payToAddressWithData(
+    treasuryAddress,
+    {
+      inline: "d87980" // Void
+    },
+    {
+      "lovelace": treasuryAmount,
+    },
+  );
+  tx.payToAddress(
+    flags.withheldAddress,
+    {
+      "lovelace": withheld,
+    },
+  );
+  const txStr = await tx.toString();
+  console.log("tentative tx: " + txStr);
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+  const txid = completed.toHash();
+  console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    console.log("not submitted because --submit flag was not passed");
+  }
+
+}
+
+async function payoutScoopers() {
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  lucid.selectWalletFrom({
+    address: address,
+  });
+
+  let extraChangeUtxos = [];
+  if (flags.extraChange) {
+    const extraChange = flags.extraChange.split(",");
+    let extraChangeRefs = [];
+    for (let u of extraChange) {
+      const [uRefHash, uRefIx] = u.split("#");
+      extraChangeRefs.push({
+        txHash: uRefHash,
+        outputIndex: Number(uRefIx),
+      });
+    }
+    extraChangeUtxos = await blockfrost.getUtxosByOutRef(extraChangeRefs);
+  }
+
+  let scooperFeeData = await Deno.readTextFile(flags.scooperFeeData);
+  let scooperFees = JSON.parse(scooperFeeData);
+
+  let scooperAddressData = await Deno.readTextFile(flags.scooperAddressData);
+  let scooperAddresses = JSON.parse(scooperAddressData);
+
+  let scooperAdjust = {};
+  if (flags.adjust) {
+    let scooperAdjustData = await Deno.readTextFile(flags.adjust);
+    scooperAdjust = JSON.parse(scooperAdjustData);
+  }
+
+  let totalPayout = 0n;
+
+  const tx = lucid.newTx();
+  const currentTime = Date.now();
+  tx.collectFrom(extraChangeUtxos);
+  for (const [k, v] of Object.entries(scooperFees)) {
+    if (!scooperAddresses.scoopers[k]) {
+      console.log(`addresses missing ${k}`);
+      continue;
+    }
+    let adjust = 0n;
+    if (flags.adjust) {
+      adjust = BigInt(scooperAdjust[k]);
+    }
+    tx.payToAddress(
+      scooperAddresses.scoopers[k].reward,
+      {
+        "lovelace": BigInt(v) + BigInt(flags.flat) + adjust,
+      },
+    );
+    totalPayout += BigInt(v) + BigInt(flags.flat) + adjust;
+  }
+  console.log(`total payout: ${totalPayout}`);
+  const txStr = await tx.toString();
+  console.log("tentative tx: " + txStr);
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+  const txid = completed.toHash();
+  console.log("txid: " + txid);
+}
+
+interface BuildContext {
+  references: UTXO[];
+  scripts: Scripts;
+  lucid: Lucid;
+}
+
+interface BuildWithdrawPoolRewards {
+  settings: UTXO;
+  change: UTXO;
+  targetPool: UTXO;
+  signers: string;
+  withdrawnAmount: BigInt;
+  remainingAmount: BigInt;
+  treasuryAmount: BigInt;
+  allTreasury: BigInt;
+  autoTreasuryAmount: BigInt;
+  withheldAddress: string;
+}
+
+async function buildWithdrawPoolRewards(context: BuildContext, options: BuildWithdrawPoolRewards) {
+  let newPoolDatum = Data.from(options.targetPool.datum, types.PoolDatum);
+  let withdrawnAmount;
+  if (options.withdrawnAmount != undefined) {
+    withdrawnAmount = BigInt(options.withdrawnAmount);
+    newPoolDatum.protocolFees = newPoolDatum.protocolFees - withdrawnAmount;
+  } else if (options.remainingAmount != undefined) {
+    let remainingPoolFees = BigInt(options.remainingAmount);
+    withdrawnAmount = newPoolDatum.protocolFees - remainingPoolFees;
+    newPoolDatum.protocolFees = remainingPoolFees;
+  } else {
+    throw new Error("must pass either withdrawnAmount or remainingAmount");
+  }
+
+  // We need to figure out what index in the inputs the pool utxo will have
+  let toSpend = [];
+  toSpend.push(options.change);
+  toSpend.push(options.targetPool);
+  toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
+  let poolInputIndex = 0n;
+  for (let e of toSpend) {
+    if (e.address == options.targetPool.address) {
+      break;
+    }
+    poolInputIndex = poolInputIndex + 1n;
+  }
+  console.log("toSpend: ")
+  console.log(toSpend);
+
+  const poolManageRedeemer = Data.to({
+    WithdrawFees: {
+      amount: withdrawnAmount,
+      treasuryOutput: 1n,
+      poolInput: poolInputIndex,
+    }
+  }, types.PoolManageRedeemer);
+  console.log("poolManageRedeemer: " + poolManageRedeemer);
+
+  let treasuryAmount;
+  if (options.treasuryAmount != undefined) {
+    treasuryAmount = BigInt(options.treasuryAmount);
+  } else if (options.allTreasury != undefined) {
+    treasuryAmount = withdrawnAmount;
+  } else if (options.autoTreasuryAmount != undefined) {
+    // Only need to give a fraction of this, but we are free to give all of it
+    treasuryAmount = withdrawnAmount * 92n / 100n;
+  } else {
+    throw new Error("must pass either treasuryAmount or allTreasury or autoTreasuryAmount");
+  }
+
+  if (treasuryAmount < 200_000n) {
+    throw new Error(`the amount going to the treasury (${treasuryAmount} lovelace) is less than 2 ada. this might be an error since the contract requires a treasury output`);
+  }
+
+  const withheld = withdrawnAmount - treasuryAmount;
+
+  console.log("to treasury: " + treasuryAmount);
+  console.log("withheld: " + withheld);
+
+  const newPoolValue = structuredClone(options.targetPool.assets);
+  newPoolValue.lovelace -= withdrawnAmount;
+  console.log("targetPool.assets");
+  console.log(options.targetPool.assets);
+  console.log("newPoolValue");
+  console.log(newPoolValue);
+
+  let poolSpendRedeemer = Data.to({
+    Manage: [],
+  }, types.PoolSpendRedeemer);
+  poolSpendRedeemer = "d87a9f" + poolSpendRedeemer + "ff";
+  console.log("poolSpendRedeemer: " + poolSpendRedeemer);
+
+  const settingsDatum = Data.from(options.settings.datum, types.SettingsDatum);
+
+  const treasuryAddress = await addressPlutusToLucid(context.lucid, settingsDatum.treasuryAddress);
+  console.log("treasury address: " + treasuryAddress);
+
+  // to withdraw fees,
+  // invoke the pool script with the Manage redeemer
+  // with a withdrawal against the management stake script
+  // the treasury admin multisig must be satisfied,
+  // we must can withdraw up to the amount of locked protocol fees but we need
+  // to remember to leave some behind for the minUTXO cost
+  // can take 9/10 of the amount and must send 1/10 to the treasury
+  // and you gotta update the datum
+  const tx = context.lucid.newTx();
+  const currentTime = Date.now();
+  tx.readFrom([...context.references, options.settings]);
+  tx.collectFrom([options.change]);
+  tx.collectFrom([options.targetPool], poolSpendRedeemer);
+  const signers = options.signers.split(",");
+  for (let s of signers) {
+    tx.addSignerKey(s);
+  }
+  // pay the new pool with datum and value updated for withdrawal
+  tx.attachMintingPolicy(context.scripts.poolManageValidator);
+  tx.payToContract(
+    options.targetPool.address,
+    {
+      inline: Data.to(newPoolDatum, types.PoolDatum),
+    },
+    newPoolValue
+  );
+  tx.withdraw(context.scripts.poolManageAddress, 0n, poolManageRedeemer);
+  if (treasuryAmount != 0n) {
+    tx.payToAddressWithData(
+      treasuryAddress,
+      {
+        inline: "d87980" // Void
+      },
+      {
+        "lovelace": treasuryAmount,
+      },
+    );
+  }
+  if (withheld != 0n) {
+    tx.payToAddress(
+      options.withheldAddress,
+      {
+        "lovelace": withheld,
+      },
+    );
+  }
+  return tx;
+}
+
+async function processScooperLog() {
+  let log = await Deno.open(flags.scooperLog);
+  let scoopers = [];
+  let scooperFees = {};
+  for await (const line of readline(log)) {
+    let l;
+    if (line.length == 0) {
+      continue;
+    }
+    try {
+      l = JSON.parse(`${new TextDecoder().decode(line)}`);
+    } catch (e) {
+      console.log(`${new TextDecoder().decode(line)}`);
+      throw e;
+    }
+    if (scooperFees[l.scooperName]) {
+      scooperFees[l.scooperName] += BigInt(l.txFee);
+    } else {
+      scooperFees[l.scooperName] = BigInt(l.txFee);
+      scoopers.push({
+        name: l.scooperName,
+        address: l.scooperAddr,
+      });
+    }
+  }
+  let out = {};
+  for (let s of scoopers) {
+    out[s.name] = scooperFees[s.name];
+    //console.log(s.name, s.address, scooperFees[s.name]);
+  }
+  console.log(JSON.stringify(out, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+}
+
+async function queryPools() {
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  let poolUtxos = await blockfrost.getUtxos({
+    type: "Script",
+    hash: scripts.poolScriptHash,
+  });
+
+  let needed = BigInt(flags.needed);
+
+  let sum = 0n;
+  let count = 0;
+  let pools = [];
+  for (let poolUtxo of poolUtxos) {
+    try {
+      let poolDatum = Data.from(poolUtxo.datum, types.PoolDatum);
+      pools.push({ txHash: poolUtxo.txHash, protocolFees: poolDatum.protocolFees, ident: poolDatum.identifier });
+    } catch (e) {
+      console.log(`Error: ${e}`);
+    }
+  }
+  pools.sort((poolA, poolB) => poolA.protocolFees - poolB.protocolFees > 0 ? -1 : 1);
+  for (let pool of pools) {
+    console.log(pool.ident, pool.protocolFees);
+    sum += pool.protocolFees;
+    count++;
+    if (sum >= needed) {
+      console.log(`will reach target ${needed} lovelace with ${count} pools`);
+      break;
+    }
+  }
+}
+
+async function withdrawPoolRewardsBatch() {
+  let batchSize = flags.batchSize;
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  let poolAddress;
+  if (flags.poolAddress) {
+    poolAddress = flags.poolAddress;
+  } else {
+    console.log("poolScriptHash: " + scripts.poolScriptHash);
+    console.log("poolStakeHash: " + scripts.poolStakeHash);
+    poolAddress = lucid.utils.credentialToAddress(
+      {
+        type: "Script",
+        hash: scripts.poolScriptHash,
+      },
+      {
+        type: "Script",
+        hash: scripts.poolStakeHash,
+      }
+    );
+  }
+  console.log("poolAddress: " + poolAddress);
+  let knownPools = await lucid.provider.getUtxos(poolAddress);
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+  const settings = settingsUtxos[0];
+  console.log(settings.datum);
+  const change = await findChangeMany(blockfrost, address, batchSize);
+  if (change.length != batchSize) {
+    throw new Error(`Could not find change for a batch of size ${batchSize}`);
+  }
+
+  const idents = flags.poolIdents.split(",");
+  if (idents.length != batchSize) {
+    throw new Error(`Pool ident count (${idents.length}) does not match batch size ${batchSize}`);
+  }
+
+  const refs = await Deno.readTextFile(flags.references);
+  const lines = refs.split(/\r?\n/);
+  const refUtxosOutRefs: OutRef[] = [];
+  for (let line of lines) {
+    let [hash, ix] = line.split("#");
+    let ixNum = Number(ix);
+    if (hash == "" || isNaN(ixNum)) {
+      continue;
+    }
+    refUtxosOutRefs.push({
+      txHash: hash,
+      outputIndex: Number(ix),
+    });
+  }
+  const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
+
+  for (let i = 0; i < batchSize; i++) {
+    let thisChange = change[i];
+    let targetPool = null;
+    for (let knownPool of knownPools) {
+      let targetAssetName = computePoolNftName(fromHex(idents[i]));
+      let targetPolicyId = scripts.poolScriptHash;
+      let targetNftUnit = targetPolicyId + targetAssetName;
+      let amountOfTargetNft = knownPool.assets[targetNftUnit];
+      if (amountOfTargetNft == 1n) {
+        targetPool = knownPool;
+      } else if (amountOfTargetNft > 1n) {
+        throw new Error("Impossible: Multiple copies of pool NFT found in UTXO: " + JSON.stringify(knownPool));
+      }
+    }
+    if (targetPool == null) {
+      throw new Error("Can't find a pool UTXO containing the NFT for the ident: " + flags.poolIdent);
+    }
+    const buildContext = {
+      references: references,
+      scripts: scripts,
+      lucid: lucid,
+    };
+  
+    const options = {
+      settings: settings,
+      change: thisChange,
+      targetPool: targetPool,
+      signers: flags.signers,
+      withdrawnAmount: flags.withdrawnAmount,
+      remainingAmount: flags.remainingAmount,
+      treasuryAmount: flags.treasuryAmount,
+      allTreasury: flags.allTreasury,
+      autoTreasuryAmount: flags.autoTreasuryAmount,
+      withheldAddress: flags.withheldAddress,
+    };
+    const tx = await buildWithdrawPoolRewards(buildContext, options);
+    const txStr = await tx.toString();
+    console.log("tentative tx: " + txStr);
+    const completed = await tx.complete({
+      coinSelection: false,
+    });
+    const completedStr = await completed.toString();
+    console.log("completed tx: " + envelope(completedStr));
+    const txid = completed.toHash();
+    console.log("txid: " + txid);
+
+    if (flags.submit) {
+      const txid = completed.toHash();
+      console.log(txid);
+      const signedTx = await completed.sign().complete();
+      const response = prompt("Type 'submit' to submit");
+      if (response == "submit") {
+        await signedTx.submit();
+        console.log("submitted");
+      }
+    } else {
+      console.log("not submitted because --submit flag was not passed");
+    }
+  }
+}
+
 async function withdrawPoolRewards() {
   if (flags.scriptsFile == undefined) {
     throw "no scripts file";
@@ -315,13 +903,31 @@ async function withdrawPoolRewards() {
   console.log("address: " + address);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
-  lucid.selectWalletFrom({
-    address: address,
-  });
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
 
   let poolAddress;
   if (flags.poolAddress) {
@@ -367,63 +973,7 @@ async function withdrawPoolRewards() {
   }
   const settings = settingsUtxos[0];
   console.log(settings.datum);
-  const settingsDatum = Data.from(settings.datum, types.SettingsDatum);
-
-  const treasuryAddress = await addressPlutusToLucid(lucid, settingsDatum.treasuryAddress);
-  console.log("treasury address: " + treasuryAddress);
-
-  let remainingPoolFees = 5_000_000n;
-  let newPoolDatum = Data.from(targetPool.datum, types.PoolDatum);
-  const withdrawnAmount = newPoolDatum.protocolFees - remainingPoolFees;
-  newPoolDatum.protocolFees = remainingPoolFees;
-
-  // TODO: Only need to give a fraction of this, but we are free to give all of
-  // it
-  const treasuryAmount = withdrawnAmount * 92n / 100n;
-
-  const withheld = withdrawnAmount - treasuryAmount;
-
-  console.log("to treasury: " + treasuryAmount);
-  console.log("withheld: " + withheld);
-
-  const newPoolValue = structuredClone(targetPool.assets);
-  newPoolValue.lovelace -= withdrawnAmount;
-  console.log("targetPool.assets");
-  console.log(targetPool.assets);
-  console.log("newPoolValue");
-  console.log(newPoolValue);
-  
   const change = await findChange(blockfrost, address);
-
-  // We need to figure out what index in the inputs the pool utxo will have
-  let toSpend = [];
-  toSpend.push(change);
-  toSpend.push(targetPool);
-  toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
-  let poolInputIndex = 0n;
-  for (let e of toSpend) {
-    if (e.address == targetPool.address) {
-      break;
-    }
-    poolInputIndex = poolInputIndex + 1n;
-  }
-  console.log("toSpend: ")
-  console.log(toSpend);
-
-  const poolManageRedeemer = Data.to({
-    WithdrawFees: {
-      amount: withdrawnAmount,
-      treasuryOutput: 1n,
-      poolInput: poolInputIndex, 
-    }
-  }, types.PoolManageRedeemer);
-  console.log("poolManageRedeemer: " + poolManageRedeemer);
-
-  let poolSpendRedeemer = Data.to({
-    Manage: [],
-  }, types.PoolSpendRedeemer);
-  poolSpendRedeemer = "d87a9f" + poolSpendRedeemer + "ff";
-  console.log("poolSpendRedeemer: " + poolSpendRedeemer);
 
   const refs = await Deno.readTextFile(flags.references);
   const lines = refs.split(/\r?\n/);
@@ -441,50 +991,26 @@ async function withdrawPoolRewards() {
   }
   const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
 
-  // to withdraw fees,
-  // invoke the pool script with the Manage redeemer
-  // with a withdrawal against the management stake script
-  // the treasury admin multisig must be satisfied,
-  // we must can withdraw up to the amount of locked protocol fees but we need
-  // to remember to leave some behind for the minUTXO cost
-  // can take 9/10 of the amount and must send 1/10 to the treasury
-  // and you gotta update the datum
-  const tx = lucid.newTx();
-  const currentTime = Date.now();
-  //tx.validFrom(currentTime - 1000000);
-  //tx.validTo(currentTime + 1000000);
-  tx.readFrom([...references, settings]);
-  tx.collectFrom([change]);
-  tx.collectFrom([targetPool], poolSpendRedeemer);
-  const signers = flags.signers.split(",");
-  for (s of signers) {
-    tx.addSignerKey(s);
-  }
-  // pay the new pool with datum and value updated for withdrawal
-  tx.attachMintingPolicy(scripts.poolManageValidator);
-  tx.payToContract(
-    targetPool.address,
-    {
-      inline: Data.to(newPoolDatum, types.PoolDatum),
-    },
-    newPoolValue
-  );
-  tx.withdraw(scripts.poolManageAddress, 0n, poolManageRedeemer);
-  tx.payToAddressWithData(
-    treasuryAddress,
-    {
-      inline: "d87980" // Void
-    },
-    {
-      "lovelace": treasuryAmount,
-    },
-  );
-  tx.payToAddress(
-    flags.withheldAddress,
-    {
-      "lovelace": withheld,
-    },
-  );
+  const buildContext = {
+    references: references,
+    scripts: scripts,
+    lucid: lucid,
+  };
+
+  const options = {
+    settings: settings,
+    change: change,
+    targetPool: targetPool,
+    signers: flags.signers,
+    withdrawnAmount: flags.withdrawnAmount,
+    remainingAmount: flags.remainingAmount,
+    treasuryAmount: flags.treasuryAmount,
+    allTreasury: flags.allTreasury,
+    autoTreasuryAmount: flags.autoTreasuryAmount,
+    withheldAddress: flags.withheldAddress,
+  };
+
+  const tx = await buildWithdrawPoolRewards(buildContext, options);
   const txStr = await tx.toString();
   console.log("tentative tx: " + txStr);
   const completed = await tx.complete({
@@ -494,6 +1020,19 @@ async function withdrawPoolRewards() {
   console.log("completed tx: " + envelope(completedStr));
   const txid = completed.toHash();
   console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    console.log("not submitted because --submit flag was not passed");
+  }
 }
 
 async function updateSettingsDatumTreasury() {
@@ -511,7 +1050,7 @@ async function updateSettingsDatumTreasury() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   lucid.selectWalletFrom({
@@ -536,7 +1075,7 @@ async function updateSettingsDatumTreasury() {
 
   //let settingsDatum = Data.from(settingsDatumBytes, types.SettingsDatum);
   //console.log(settingsDatum);
-  
+
   let farming = true;
   let nonce = 0n;
   let completed;
@@ -603,7 +1142,7 @@ async function updateSettingsDatum() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   lucid.selectWalletFrom({
@@ -628,7 +1167,7 @@ async function updateSettingsDatum() {
 
   //let settingsDatum = Data.from(settingsDatumBytes, types.SettingsDatum);
   //console.log(settingsDatum);
-  
+
   let farming = true;
   let nonce = 0n;
   let completed;
@@ -679,6 +1218,204 @@ async function updateSettingsDatum() {
   //return signedStr;
 }
 
+async function updateTreasuryAdmin() {
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid = null;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  lucid.selectWalletFrom({
+    address: address,
+  });
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+
+  const settings = settingsUtxos[0];
+
+  let settingsDatum = Data.from(settings.datum, types.SettingsDatum);
+
+  settingsDatum.treasuryAdmin = {
+    Signature: {
+      signature: flags.newTreasuryAdmin,
+    },
+  };
+
+  console.log(settingsDatum);
+
+  const signers = flags.signers.split(",");
+
+  let completedStr;
+  let completedHash;
+  let retry = true;
+  let nonce = 0n;
+  while (retry) {
+    const tx = lucid.newTx();
+    const currentTime = Date.now();
+    //tx.validFrom(currentTime - 1000000);
+    //tx.validTo(currentTime + 1000000);
+    const change = await findChange(blockfrost, address);
+    tx.collectFrom([change]);
+    tx.collectFrom([settings], settingsRedeemerUpdate());
+    tx.attachSpendingValidator(scripts.settingsValidator);
+    for (s of signers) {
+      tx.addSignerKey(s);
+    }
+    tx.payToContract(
+      scripts.settingsAddress,
+      {
+        inline: Data.to(settingsDatum, types.SettingsDatum)
+      },
+      settings.assets
+    );
+    tx.payToAddress(
+      address,
+      {
+        "lovelace": 2_000_000n + nonce,
+      },
+    );
+
+    const txStr = await tx.toString();
+    //console.log("tx: " + txStr);
+    const completed = await tx.complete({
+      coinSelection: false,
+    });
+    completedStr = await completed.toString();
+    completedHash = completed.toHash();
+    if (completedHash.startsWith("0")) {
+      break;
+    } else {
+      nonce += 1n;
+    }
+  }
+  console.log("completed tx: " + completedStr);
+  console.log("completed hash: " + completedHash);
+  //const signedTx = await completed.sign().complete();
+  //const signedStr = await signedTx.toString();
+  //console.log("signed tx for noop settings: " + signedStr);
+  //return signedStr;
+}
+
+
+async function oneHundredPercentAllowance() {
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid = null;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  lucid.selectWalletFrom({
+    address: address,
+  });
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+
+  const settings = settingsUtxos[0];
+
+  let settingsDatum = Data.from(settings.datum, types.SettingsDatum);
+
+  settingsDatum.treasuryAllowance = [1n, 1n];
+
+  console.log(settingsDatum);
+
+  const signers = flags.signers.split(",");
+
+  let completedStr;
+  let completedHash;
+  let retry = true;
+  let nonce = 0n;
+  while (retry) {
+    const tx = lucid.newTx();
+    const currentTime = Date.now();
+    //tx.validFrom(currentTime - 1000000);
+    //tx.validTo(currentTime + 1000000);
+    const change = await findChange(blockfrost, address);
+    tx.collectFrom([change]);
+    tx.collectFrom([settings], settingsRedeemerUpdateTreasury());
+    tx.attachSpendingValidator(scripts.settingsValidator);
+    for (s of signers) {
+      tx.addSignerKey(s);
+    }
+    tx.payToContract(
+      scripts.settingsAddress,
+      {
+        inline: Data.to(settingsDatum, types.SettingsDatum)
+      },
+      settings.assets
+    );
+    tx.payToAddress(
+      address,
+      {
+        "lovelace": 2_000_000n + nonce,
+      },
+    );
+
+    const txStr = await tx.toString();
+    //console.log("tx: " + txStr);
+    const completed = await tx.complete({
+      coinSelection: false,
+    });
+    completedStr = await completed.toString();
+    completedHash = completed.toHash();
+    if (completedHash.startsWith("0")) {
+      break;
+    } else {
+      nonce += 1n;
+    }
+  }
+  console.log("completed tx: " + completedStr);
+  console.log("completed hash: " + completedHash);
+  //const signedTx = await completed.sign().complete();
+  //const signedStr = await signedTx.toString();
+  //console.log("signed tx for noop settings: " + signedStr);
+  //return signedStr;
+}
 
 async function addScooper() {
   if (flags.scriptsFile == undefined) {
@@ -697,7 +1434,7 @@ async function addScooper() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   lucid.selectWalletFrom({
@@ -764,7 +1501,7 @@ async function noopSettings(): Promise<TxHash> {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   lucid.selectWalletFrom({
@@ -995,7 +1732,7 @@ async function registerStakeAddress(scriptName: string) {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   if (flags.submit) {
@@ -1289,7 +2026,7 @@ async function realSettingsBoot() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   if (flags.submit) {
@@ -1535,7 +2272,7 @@ async function evaporatePool() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Preview");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   let settingsUtxos = await lucid.provider.getUtxos(scripts.settingsAddress);
@@ -1941,7 +2678,7 @@ async function mainnetMintPool() {
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
   const lucid = await Lucid.new(blockfrost, "Mainnet");
-  
+
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
   let settingsUtxos = await lucid.provider.getUtxos(scripts.settingsAddress);
@@ -2085,7 +2822,7 @@ async function addressPlutusToLucid(lucid: Lucid, addr: any): Promise<Address> {
 
   let stakingCred: Credential | null = null;
   if (addr.stakeCredential == null) {
-    // That's ok 
+    // That's ok
   } else if (addr.stakeCredential.VKeyCredential) {
     stakingCred = { type: "Key", hash: addr.stakeCredential.VKeyCredential.bytes };
   } else if (addr.stakeCredential.SCredential) {
@@ -2342,7 +3079,7 @@ async function testMintRberry(lucid: Lucid, emulator: Emulator, scripts: Scripts
 }
 
 async function fundUserAddress(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
- // const dummy = await 
+ // const dummy = await
 }
 
 async function testPostReferenceScript(lucid: Lucid, emulator: Emulator, scripts: Scripts, scriptName: string) {
@@ -2445,7 +3182,7 @@ async function buildSSE() {
     lucid.utils.getAddressDetails(userAddress);
 
   const signature = await signAsync(strategyExecutionBytes, skHex);
-  
+
   const signedStrategyExecution: SignedStrategyExecution = {
     strategy: strategyExecution,
     signature: toHex(signature),
@@ -2539,6 +3276,38 @@ async function findChange(provider: Provider, userAddress: string): Promise<UTxO
   throw new Error("findChange: Couldn't find a UTxO without a datum or script ref in the user wallet with over 200 ADA.");
 }
 
+async function findChangeMany(provider: Provider, userAddress: string, batchSize: number): Promise<UTxO> {
+  let startTime = Date.now();
+  let changeUtxos = await provider.getUtxos(userAddress);
+  let endTime = Date.now();
+  let selected = [];
+  //console.log(`Fetched utxos from wallet, time elapsed: ${endTime - startTime}ms`);
+  for (let changeUtxo of changeUtxos) {
+    //console.log(changeUtxo);
+    if (changeUtxo.datum != null && changeUtxo.datumHash != null) {
+      continue;
+    }
+    if (changeUtxo.scriptRef != null) {
+      continue;
+    }
+    if (Object.keys(changeUtxo.assets).length > 1) {
+      continue; // Don't want native assets
+    }
+    if (changeUtxo.assets["lovelace"] >= 2_000_000n) {
+      //console.log("changeUtxo:");
+      //console.log(changeUtxo);
+      selected.push(changeUtxo);
+    }
+    if (selected.length == batchSize) {
+      break;
+    }
+  }
+  if (batchSize != selected.length) {
+    throw new Error(`findChangeMany: couldn't find ${batchSize} appropriate change utxos in the wallet`);
+  }
+  return selected;
+}
+
 async function findSettings(provider: Provider, settingsAddress: string, settingsPolicyId: string): Promise<UTxO> {
   let settingsUtxos = await provider.getUtxos(settingsAddress);
   for (let settingsUtxo of settingsUtxos) {
@@ -2612,7 +3381,7 @@ async function previewRecordOrderDebug() {
     utxo: {
       txHash: "c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b44",
       outputIndex: 1n,
-      address: userAddress, 
+      address: userAddress,
       assets: { lovelace: 100_000_000n },
       datumHash: undefined,
       datum: undefined,
@@ -2667,7 +3436,7 @@ async function previewRecordOrderDebug() {
 
 
   const originalOrderDatum = "d8799fd8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef767ffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bff1a0010c8e0d8799fd8799fd87a9f581c75b05727d2c714297863d1c251190a82812f05008fc619af2cc9369dffd87a80ffd87980ffd87e9f9f581c63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c466f7261636c65ffffd87980ff";
-  const fixedOrderDatum = 
+  const fixedOrderDatum =
     "d8799fd8799f581cbcc8b7c0512de3524b1760b5ae4b456b0ee99374279abeafe8eef767ffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bff1a0010c8e0d8799fd8799fd87a9f581c75b05727d2c714297863d1c251190a82812f05008fc619af2cc9369dffd87a80ffd87980ffd87e9f9f581c63d77b5d97ce0b0bc4e70cb4ce885813d9db9901b0a4c3570a69612c466f7261636c65ffffd8799f581c035dee66d57cc271697711d63c8c35ffa0b6c4468a6a98024feac73bffff";
 
   // ORDER
@@ -2692,7 +3461,7 @@ async function previewRecordOrderDebug() {
       outputIndex: 0n,
       address: "addr_test1vzkjjdguttg6lpwqwkup0ldh6hg2pvspen6tsvpcy8psn7gnv7r5n",
       assets: {
-        lovelace: 11_546_490n, 
+        lovelace: 11_546_490n,
       },
       datumHash: undefined,
       datum: undefined,
@@ -2706,7 +3475,7 @@ async function previewRecordOrderDebug() {
       outputIndex: 0n,
       address: "addr_test1vzkjjdguttg6lpwqwkup0ldh6hg2pvspen6tsvpcy8psn7gnv7r5n",
       assets: {
-        lovelace: 68_692_780n, 
+        lovelace: 68_692_780n,
       },
       datumHash: undefined,
       datum: undefined,
@@ -2732,9 +3501,9 @@ async function previewRecordOrderDebug() {
 
   const change =
     emulator.ledger["b251fe5510e5237736ac2093e6c6001dd2aaa883d0c03cd8c466a0b3b63e90f62"].utxo;
-  const order = 
+  const order =
     emulator.ledger["70c17c4e12f2ca53c887faf887f49943f1bfcab1746916e5a6feebf4799a40d90"].utxo;
-  const pool = 
+  const pool =
     emulator.ledger["2a97101e262ae73c82f1815e96c91282b159279d7c42b298baa4023153562ace0"].utxo;
 
   const references =
@@ -2767,13 +3536,13 @@ async function previewRecordOrderDebug() {
     type: "PlutusV2",
     script: "5915fe010000332323232323232232225323232323232323233300d3001300e375401226464a66601ea66601e600660206ea80304c8c8c8c8c94ccc050c020c054dd5000899191919191919299980d9807980e1baa001132533301c3375e6008603c6ea8c010c078dd5000980b998101ba901a4bd70099299980e98091998009bab300b301f375400403600c264a66603c6028603e6ea80044c8c8c8c8c8c8c8c8c8c8c8cdc42400060546ea8c0acc8ccc004004dd6180898161baa3012302c375404c97bdb1810100000103d87a8000222533302f00210011333003003303200232323232533303030240011337606ea000cccc0c0009300103d87a80004c0103d87980001533303030250011325333031302530323754002264a666064604c60666ea80044c8c8c94ccc0d4c0a4c0d8dd500089919191919299981d19baf3022303c3754604460786ea8038c0d4cc0f8dd481325eb804c94ccc0ecc0bcc0f0dd500089919299981e99baf302b303f375400460846086608660866086608660866086607e6ea8c094c0fcdd501c8a99981e99b8f375c6048607e6ea80080b454ccc0f4cdd79812981f9baa0020051533303d3375e6e9c05cc108c10cc10cc10cc0fcdd50010a99981e99baf374e02c60846086608660866086607e6ea800854ccc0f4cdd79ba70153006303f3754004266ec0dd419b8001048008ccc0f403d30103d87a80004c0103d879800016161616161632533303d3031303e37540042646464646464646464646464a666098609e00426464646464931919191919299982a982c0010a4c2c6eb4c158004c158008dd7182a000982a0031bae3052005323232323253330543057002149858dd6982a800982a8011bae30530013053007375c60a200c6464646464a6660a660ac0042930b1bad30540013054002375c60a400260a40106eb8c14001d4ccc128c0f8c12cdd50050991919192999828982a0010991924c602600460240062c60a400260a400460a000260986ea802858c0a402c58dd6182680098268011bac304b001304b0023758609200260920046eb8c11c004c11c008c114004c114008c10c004c0fcdd50010b1299981e9818981f1baa00113232323253330443047002132498c94ccc108c0d800454ccc114c110dd50020a4c2c2a666084606e00226464a66608e60940042930b1bad3048001304437540082a66608460700022a66608a60886ea80105261616304237540062c64a66608860860022a666082606c6084002294454ccc104c0d4c1080045280b0b1baa304500130450023043001303f37540022c6080607a6ea800458cc01cdd59804181e1baa3022303c375406c01c2c6032002600260746ea800c8c0f4c0f8c0f8c0f8c0f8c0f8004c94ccc0dcc0acc0e0dd500109919191919191919191919192999823182480109919191924c64a66608e607600226464a666098609e00426493192999825181f00089919299982798290010a4c2c6eb8c140004c130dd50010a999825181f80089919299982798290010a4c2c6eb8c140004c130dd50010b18251baa00116304d0013049375400e2a66608e6078002264646464a66609c60a200426464931919191919299982a182b8010a4c2c6eb4c154004c154008dd7182980098298019bae3051002323232323253330533056002149858dd6982a000982a0011bae30520013052004375c60a00062c6eb0c13c004c13c008dd6182680098249baa00715333047303d00113232533304c304f002132498c8c8c8c8c8c8c8c94ccc150c15c00852616375a60aa00260aa0046eb8c14c004c14c00cdd7182880119191919192999829982b0010a4c2c6eb4c150004c150008dd7182900098290019bae3050002375860980046eb0c12800458c94ccc130c13cc13c0044cdd81827000982718278008b1bac304d0013049375400e2a66608e608000226464a666098609e0042649319191919192999828982a0010a4c2c6eb4c148004c148008dd7182800098280011bae304e001163758609a00260926ea801c54ccc11cc0fc0044c8c94ccc130c13c0084c926323232323232323253330543057002149858dd6982a800982a8011bae30530013053003375c60a20046464646464a6660a660ac0042930b1bad30540013054002375c60a400260a40066eb8c140008dd618260011bac304a0011632533304c304f304f001133760609c002609c609e0022c6eb0c134004c124dd50038a999823981f000899192999826182780109924c646eb8c130008dd718250008b19299982618279827800899bb0304e001304e304f001163758609a00260926ea801c58c11cdd5003192999823181d000899191919299982698280010991924c64a66609860800022a66609e609c6ea800c526161533304c30410011323253330513054002149858dd7182900098271baa0031533304c30420011323253330513054002149858c148004c138dd50018b18261baa002533304a303e304b3754006264646464a6660a260a80042646493192999828182200089919299982a982c00109924c64a6660a6608e00226464a6660b060b600426493180f8008b182c800982a9baa0021533305330480011323232323232533305c305f002149858dd6982e800982e8011bad305b001305b002375a60b200260aa6ea800858c14cdd50008b182b00098291baa00315333050304500115333053305237540062930b0b18281baa002301800316305200130520023050001304c37540062c2c609c002609c004609800260906ea802054ccc118c0ec00454ccc124c120dd50040a4c2c2c608c6ea801cc090028c94ccc110c0e00044c8c94ccc124c13000852616375c6094002608c6ea803054ccc110c0e400454ccc11cc118dd50060a4c2c2c60886ea802c58c11c004c11c008c114004c114008c10c004c10c008dd698208009820801181f800981f801181e800981c9baa002162325333038302c00113232533303d3040002149858dd7181f000981d1baa00215333038302d00113232533303d3040002149858dd7181f000981d1baa00216303837540026074606e6ea800458cc004dd59801181b1baa301c303637540606044606c6ea8c0e4c0d8dd5001911919299981b98158008a6103d87a800015333037302c001132323300100100622533303d00114c0103d87a80001323232533303d3371e00c6eb8c0f800c4c0dccc1040052f5c026600a00a004607c0046082004607e0026eb8c0f0c0e4dd5001098189981d981e181c9baa0024bd70181b9baa001301c303737540024607060726072607260726072607260726072607260720022c66646002002444a66606e004298103d87a8000132325333036302a003130303303a0024bd70099980280280099b8000348004c0ec00cc0e4008dd6180c98199baa30193033375405a6eb4c0d8c0ccdd50008b19991800800911299981b0010a60103d87a800013232533303530290031302f33039375000497ae01333005005001337000069000981d0019bad303800201f00314bded8c010100000103d87980003330133756603a60626ea800c06d2201066f7261636c650033710900018179baa3030003375a605c0046062004660586ea4098cc0b0dd4809198161816981700325eb80cc0acc0a0008cc0acc0a4008cc0acdd41998059bab3015302937540186eb8c0a0008dd7181480125eb80cc0a8c09c008cc0a8c0a0008cc0a8dd41998051bab3014302837540166eb8c09c008dd7181400125eb80c8cdd81815800981598160009bac302700232337606054002605460560026eb0c094004c8cdd81814800981498150009bac3028001302830243754008a666042602a60446ea800c4c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c94ccc0d0c0dc0084c8c9263253330333027001132325333038303b002132498c05400458c0e4004c0d4dd50038a99981998140008a99981b181a9baa00714985858c0ccdd5003191919191bae3037003375c606a004646eb8c0d800cdd7181a0011919bb03038001303830390013758606801c6466ec0c0dc004c0dcc0e0004dd618190068b1bad30350013035002375a60660026066004606200260620046eb4c0bc004c0bc008dd6981680098168011bad302b001302b002325333028302b302b0011337606054002605460560022c6eb0c0a4004c0a4008dd7181380098119baa003163001001223253330223016001132325333027302a002149858dd7181400098121baa002153330223017001132325333027302a002132498cc05c0048cc01801800458dd6181400098121baa002153330223018001132325333027302a002132498cc05c0048cc01801800458dd6181400098121baa00215333022301b0011323232325333029302c002132498cc0640048cc02002000458dd6181500098150011bad3028001302437540042a666044603400226464a66604e60540042930b1bad3028001302437540042a666044603200226464a66604e60540042930b1bad3028001302437540042a66604466e1d200c001132325333027302a002149858dd7181400098121baa0021630223754002604660406ea800458c010c07cdd50010b111192999810180a98109baa0011480004dd6981298111baa0013253330203015302137540022980103d87a8000132330010013756604c60466ea8008894ccc094004530103d87a8000132323253330253371e00e6eb8c09800c4c07ccc0a4dd4000a5eb804cc014014008dd698130011814801181380099198008008021129998120008a6103d87a8000132323253330243371e00e6eb8c09400c4c078cc0a0dd3000a5eb804cc014014008dd59812801181400118130008b1810180e9baa0011632533301e00114c103d87a8000130153301f30200014bd701bac3001301c3754600460386ea80588c07cc080c0800048c078004cc009220104000de14000007330014881040014df100000622337140040026eb8c064c058dd50008b1800980a9baa00f2301830190013758602c602e0046eb8c054004c044dd50060a5114984d958c94ccc03cc00c0044c8c8c8c94ccc058c0640084c926330060012375a0022c6eb0c05c004c05c008dd7180a80098089baa00c1533300f300400115333012301137540182930b0b18079baa00b22323300100100322533301400114984c8cc00c00cc060008c00cc0580044cc8894ccc040c8c8c94ccc04cc020c050dd500089919299980a9999911119198008008029119299980e180800089919198008008041129998110008a5013253330203371e6eb8c09400801052889980180180098128009bae3021301e37540042a66603860220022660106eb0c084c078dd50011198020020008a99980e1809000899198008009bac3022301f375400644a66604200229404c94ccc07ccc018018c09000852889980180180098120008a99980e180a80089919b89375a6044002646660020026eb0c08cc09000920002225333023002100113330030033026002533302033007007302500213370000290010800980f1baa0021533301c301400113232533301e3013301f3754002264a66603e64a66604660440022a666040602a6042002294454ccc080c050c0840045280b0b1baa300f30213754601e60426ea80204cdc4800801899b88001003375a604660406ea80045281806180f9baa300d301f375400c6eb4c084c078dd50010a99980e180980089919299980f1809980f9baa001132533301f3253330233022001153330203015302100114a22a6660406028604200229405858dd5180798109baa300e30213754010266e2400c0044cdc40018009bad3023302037540022940c030c07cdd51806180f9baa006375a6042603c6ea80084c8c8cc004004018894ccc088004528099299981019baf0043021302500214a2266006006002604a002602c66040602e660406042603c6ea80092f5c097ae0301c37540026008602e6ea8048dd6180d180d980d980d980d980d980d980d980d980b9baa30043017375400c60346036603660366036603660366036602e6ea8c010c05cdd50031bab301a301b301b301b301b301b301b301737546008602e6ea80184cc004dd6180d180d980d980b9baa30043017375400c4601464a66602e601860306ea8004520001375a603860326ea8004c94ccc05cc030c060dd50008a6103d87a8000132330010013756603a60346ea8008894ccc070004530103d87a80001323232533301c3371e911066f7261636c6500375c603a0062602c660406ea00052f5c026600a00a0046eb4c074008c080008c078004c8cc004004dd59803980c9baa00222533301b00114c103d87a80001323232533301b3371e0106eb8c07000c4c054cc07cdd3000a5eb804cc014014008dd5980e001180f801180e8008a5022323300100100322533301b00114a2264a6660326008603c0042660060060022940c078004dd7180c180a9baa00116300130143754600260286ea8c94ccc04cc020c050dd5000899299980a1804180a9baa00113004301637546032602c6ea800458cc88c8cc00400400c894ccc0680045300103d87a80001323253330193375e601060366ea80080144c04ccc0740092f5c0266008008002603c00460380026eb0c008c054dd51801180a9baa0043018301537540022c600460286ea800c8c05c0048c058c05c0045261365632323232533301130053012375401c2646464646464646464646464a666040604600426464646464931919191919299981498160010a4c2c6eb4c0a8004c0a8008dd7181400098140031bae302600532323232325333028302b002149858dd6981480098148011bae30270013027007375c604a00c6464646464a66604e60540042930b1bad30280013028002375c604c002604c0106eb8c09001d4ccc078c048c07cdd5005099191919299981298140010991924c602a00460280062c604c002604c004604800260406ea802858c03402c58dd6181080098108011bac301f001301f0023758603a002603a0046eb8c06c004c06c008c064004c064008c05c004c04cdd50070b180080091192999809180300089919299980b980d0010a4c2c6eb8c060004c050dd50010a999809180380089919299980b980d00109924c6600e00246600c00c0022c6eb0c060004c050dd50010a999809180400089919299980b980d00109924c6600e00246600c00c0022c6eb0c060004c050dd50010a9998091805800899191919299980c980e00109924c660120024660100100022c6eb0c068004c068008dd6980c000980a1baa00215333012300a001132325333017301a002149858dd6980c000980a1baa002153330123009001132325333017301a002149858dd6980c000980a1baa002153330123370e900600089919299980b980d0010a4c2c6eb8c060004c050dd50010b18091baa0012533300f300330103754002264646464a66602c60320042649319299980a18040008a99980b980b1baa00414985854ccc050c0240044c8c94ccc064c07000852616375a6034002602c6ea801054ccc050c02800454ccc05cc058dd50020a4c2c2c60286ea800c58c94ccc058c05400454ccc04cc020c0500045288a9998099803980a0008a5016163754602e002602e004602a00260226ea80045888c8cc00400400c894ccc050004526132330030033018002300330160013012300f37540126e1d2000370e90011b8748010dc3a40146e1d2008370e90031ba548000dd2a40046eb80055cd2ab9d5573caae7d5d02ba157449811e581c44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a1104140001",
   };
-  
+
   console.log("oh baby");
 
   lucid.selectWalletFrom({
     address: userAddress,
   });
-  
+
   const currentTime = emulator.now();
   console.log(`currentTime: ${currentTime}`);
   const tx = lucid.newTx();
@@ -2983,9 +3752,9 @@ async function protov3ScoopDebugStrategy() {
 
   const change =
     emulator.ledger["f401bc107c6e69b94a5a6e2eb395ffb797f976d5dbc7c20da9d3d3c547a9f0512"].utxo;
-  const order = 
+  const order =
     emulator.ledger["35b925b56c729d6099978c721df5c622bac03029ded2800781e636e347de714e0"].utxo;
-  const pool = 
+  const pool =
     emulator.ledger["f401bc107c6e69b94a5a6e2eb395ffb797f976d5dbc7c20da9d3d3c547a9f0510"].utxo;
 
   const references =
@@ -3016,13 +3785,13 @@ async function protov3ScoopDebugStrategy() {
     type: "PlutusV2",
     script: "5901420100003323232323232322322253330053253330063370e900218039baa300130083754004264a66600e66e1d2000300837540022646600200264a66601266e1d2002300a3754002297adef6c6013756601c60166ea8004c8cc004004dd5980218059baa300e300b375400644a66601a0022980103d87a80001323232533300d3371e0166eb8c03800c4cdd2a4000660226e980052f5c026600a00a0046eacc038008c044008c03c004894ccc030004528099299980519b873371c6eb8c02cc03c00920024806852889980180180098078008b1929998050008a6103d87a800013374a9000198059806000a5eb80dd618059806180618041baa300b3008375400429408c02cc03000452613656375c002ae6955ceaab9e5573eae815d0aba24c011e581c04123d867240ebbf6703317449fa06079ce747f09706773683cf01db0001"
   };
-  
+
   console.log("oh baby");
 
   lucid.selectWalletFrom({
     address: userAddress,
   });
-  
+
   const currentTime = emulator.now();
   console.log(`currentTime: ${currentTime}`);
   const tx = lucid.newTx();
@@ -3048,7 +3817,7 @@ async function protov3ScoopDebugStrategy() {
     })
     .payToAddress(orderDestination, {
       "lovelace": 2_600_000n,
-      [sberry]: 1_996n, 
+      [sberry]: 1_996n,
     })
     //.payToAddress(userAddress, {
     //  "lovelace": 99_759_203n
@@ -3228,9 +3997,9 @@ async function protov3ScoopDebug() {
 
   const change =
     emulator.ledger["c3bb601268244b710cc507170eb4f67ce625ebaa23d1ee80382e2e9fe6d32b440"].utxo;
-  const order = 
+  const order =
     emulator.ledger["6175708f51362c9e8b860b0b2851b43eb5ed670aed1b5e3b0d96d9b7ab411b9b0"].utxo;
-  const pool = 
+  const pool =
     emulator.ledger["b6c88753597872cf7ad5e1d2ff2ca02a6a31b3cc63980829e01f40e1abeb047a0"].utxo;
 
   const references =
@@ -3261,13 +4030,13 @@ async function protov3ScoopDebug() {
     type: "PlutusV2",
     script: "5901420100003323232323232322322253330053253330063370e900218039baa300130083754004264a66600e66e1d2000300837540022646600200264a66601266e1d2002300a3754002297adef6c6013756601c60166ea8004c8cc004004dd5980218059baa300e300b375400644a66601a0022980103d87a80001323232533300d3371e0166eb8c03800c4cdd2a4000660226e980052f5c026600a00a0046eacc038008c044008c03c004894ccc030004528099299980519b873371c6eb8c02cc03c00920024806852889980180180098078008b1929998050008a6103d87a800013374a9000198059806000a5eb80dd618059806180618041baa300b3008375400429408c02cc03000452613656375c002ae6955ceaab9e5573eae815d0aba24c011e581c04123d867240ebbf6703317449fa06079ce747f09706773683cf01db0001"
   };
-  
+
   console.log("oh baby");
 
   lucid.selectWalletFrom({
     address: userAddress,
   });
-  
+
   const currentTime = emulator.now();
   console.log(`currentTime: ${currentTime}`);
   const tx = lucid.newTx();
@@ -3309,8 +4078,6 @@ async function protov3ScoopDebug() {
   //const scoopedHash = signedTx.submit();
   //await emulator.awaitTx(scoopedHash);
   //return exUnits;
-
-    
 }
 
 async function benchmark(flags: any) {
@@ -3446,6 +4213,10 @@ if (flags.runBenchmark) {
   await noopSettings();
 } else if (flags.addScooper) {
   await addScooper();
+} else if (flags.updateTreasuryAdmin) {
+  await updateTreasuryAdmin();
+} else if (flags.oneHundredPercentAllowance) {
+  await oneHundredPercentAllowance();
 } else if (flags.updateSettingsDatum) {
   await updateSettingsDatum();
 } else if (flags.updateSettingsDatumTreasury) {
@@ -3456,6 +4227,10 @@ if (flags.runBenchmark) {
   await protov3ScoopDebugStrategy();
 } else if (flags.withdrawPoolRewards) {
   await withdrawPoolRewards();
+} else if (flags.withdrawPoolRewardsBatch) {
+  await withdrawPoolRewardsBatch();
+} else if (flags.withdrawPoolStakeRewards) {
+  await withdrawPoolStakeRewards();
 } else if (flags.mintPool) {
   await mainnetMintPool();
 } else if (flags.updatePoolFees) {
@@ -3466,8 +4241,14 @@ if (flags.runBenchmark) {
   await delegatePool();
 } else if (flags.debugOracle) {
   await previewRecordOrderDebug();
+} else if (flags.payoutScoopers) {
+  await payoutScoopers();
 } else if (flags.dummy) {
   await dummy();
+} else if (flags.queryPools) {
+  await queryPools();
+} else if (flags.processScooperLog) {
+  await processScooperLog();
 }
 
 // Corresponds to strategy_verify_signature in contracts tests
@@ -3511,4 +4292,101 @@ Deno.test("test buildSSE", async () => {
     toHex(signature),
     "d22ea1fb150eb58cedae1fe6d7f83fcfc2f102fb19dc0b3e99cd9efdc69d865a5a6cb98691aca3ec5d4523c7bb0eb684d8ba2d918b9de5411cdd9f56bbac1307",
   );
+});
+
+// WIP
+Deno.test("test withdrawPoolRewards", async () => {
+  const accounts: any[] = [];
+  let emulator = new Emulator(accounts, {
+    ...PROTOCOL_PARAMETERS_DEFAULT,
+    maxTxSize: 999999999999,
+    maxTxExMem: 999999999999999n,
+  });
+  let lucid = await Lucid.new(emulator);
+
+  let poolDatum = {
+    identifier: toHex("00000000000000000000000000000000000000000000000000000000"),
+    assets: [
+      [rberryPolicy,rberryToken],
+      [sberryPolicy,sberryToken],
+    ],
+    circulatingLp: 100_000_000_000n,
+    bidFeesPer10Thousand: 30n,
+    askFeesPer10Thousand: 30n,
+    marketOpen: 0n,
+    protocolFees: 100_000_000n,
+  };
+  let poolTxHash = "9999999999999999999999999999999999999999999999999999999999999999";
+  emulator.ledger[poolTxHash + "0"] = {
+    utxo: {
+      txHash: poolTxHash,
+      outputIndex: 0n,
+      address: poolAddress,
+      assets: {
+        lovelace: 100_000_000n,
+        [rberry]: 100_000_000_000n,
+        [sberry]: 100_000_000_000n,
+        [poolnft]: 1n,
+      },
+      datumHash: undefined,
+      datum: Data.to(poolDatum, types.PoolDatum),
+      scriptRef: undefined,
+    },
+    spent: false,
+  };
+  
+  let userFundsTxHash = "8888888888888888888888888888888888888888888888888888888888888888";
+  emulator.ledger[userFundsTxHash + "0"] = {
+    utxo: {
+      txHash: poolTxHash,
+      outputIndex: 0n,
+      address: userAddress,
+      assets: {
+        lovelace: 1_000_000_000n,
+      },
+      datumHash: undefined,
+      datum: undefined,
+      scriptRef: undefined,
+    },
+    spent: false,
+  };
+
+  emulator.ledger[settingsTxHash + "0"] = {
+    utxo: {
+      txHash: settingsTxHash,
+      outputIndex: 0n,
+      address: settingsAddress,
+      assets: {
+        lovelace: 3_000_000n,
+        [toUnit("85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76", fromText("settings"))]: 1n,
+        [toUnit(settingsScriptHash, fromText("settings"))]: 1n,
+      },
+      datumHash: undefined,
+      datum: settingsDatum,
+      scriptRef: undefined
+    },
+    spent: false
+  };
+
+  const context = {
+    //references: UTXO[],
+    scripts: scripts,
+    lucid: lucid,
+  };
+
+  const options = {
+    settings: UTXO,
+    change: emulator.ledger[userFundsTxHash + "0"].utxo,
+    targetPool: emulator.ledger[poolTxHash + "0"].utxo,
+    //signers: string,
+    withdrawnAmount: undefined,
+    remainingAmount: 2_000_000n,
+    treasuryAmount: 2_000_000n,
+    allTreasury: undefined,
+    autoTreasuryAmount: undefined,
+    withheldAddress: userAddress,
+  };
+
+  const tx = buildWithdrawPoolRewards(context, options);
+  await emulator.awaitTx(withdrawPooleRewardsTxHash);
 });
