@@ -531,7 +531,9 @@ interface BuildWithdrawPoolRewards {
 }
 
 async function buildWithdrawPoolRewards(context: BuildContext, options: BuildWithdrawPoolRewards) {
+  console.log("get pool datum");
   let newPoolDatum = Data.from(options.targetPool.datum, types.PoolDatum);
+  console.log("got pool datum");
   let withdrawnAmount;
   if (options.withdrawnAmount != undefined) {
     withdrawnAmount = BigInt(options.withdrawnAmount);
@@ -653,7 +655,7 @@ async function buildWithdrawPoolRewards(context: BuildContext, options: BuildWit
       },
     );
   }
-  return tx;
+  return { withheld: withheld, tx: tx };
 }
 
 async function processScooperLog() {
@@ -709,27 +711,196 @@ async function queryPools() {
 
   let needed = BigInt(flags.needed);
 
+  let todo = await doQueryPools(poolUtxos, needed);
+  for (let pool of todo) {
+    console.log(pool.pool.ident, pool.amount);
+  }
+  console.log(`will reach target ${needed} lovelace with ${count} pools`);
+}
+
+async function doQueryPools(poolUtxos, needed) {
   let sum = 0n;
   let count = 0;
   let pools = [];
+  let todo = [];
   for (let poolUtxo of poolUtxos) {
     try {
       let poolDatum = Data.from(poolUtxo.datum, types.PoolDatum);
-      pools.push({ txHash: poolUtxo.txHash, protocolFees: poolDatum.protocolFees, ident: poolDatum.identifier });
+      // skip pools that have had assets drained since withdrawing rewards is
+      // not possible
+      if (poolDatum.circluatingLp != 0) {
+        pools.push({ utxo: poolUtxo, txHash: poolUtxo.txHash, protocolFees: poolDatum.protocolFees, ident: poolDatum.identifier });
+      }
     } catch (e) {
-      console.log(`Error: ${e}`);
+      console.log(`doQueryPools: ${e}`);
     }
   }
   pools.sort((poolA, poolB) => poolA.protocolFees - poolB.protocolFees > 0 ? -1 : 1);
   for (let pool of pools) {
-    console.log(pool.ident, pool.protocolFees);
-    sum += pool.protocolFees;
-    count++;
+    if (pool.protocolFees <= needed - sum) {
+      todo.push({ pool: pool, amount: pool.protocolFees, partial: false });
+      sum += pool.protocolFees;
+      count++;
+    } else {
+      todo.push({ pool: pool, amount: needed - sum, partial: true });
+      sum = needed;
+      count++;
+    }
     if (sum >= needed) {
-      console.log(`will reach target ${needed} lovelace with ${count} pools`);
       break;
     }
   }
+  if (sum < needed) {
+    throw new Error(`couldn't reach target with available pool funds; only ${sum} is available to withdraw`);
+  }
+  return todo;
+}
+
+async function autoWithdrawRewards() {
+  let fundsNeeded = BigInt(flags.fundsNeeded);
+  if (flags.scriptsFile == undefined) {
+    throw "no scripts file";
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  let poolAddress;
+  if (flags.poolAddress) {
+    poolAddress = flags.poolAddress;
+  } else {
+    console.log("poolScriptHash: " + scripts.poolScriptHash);
+    console.log("poolStakeHash: " + scripts.poolStakeHash);
+    poolAddress = lucid.utils.credentialToAddress(
+      {
+        type: "Script",
+        hash: scripts.poolScriptHash,
+      },
+      {
+        type: "Script",
+        hash: scripts.poolStakeHash,
+      }
+    );
+  }
+  console.log("poolAddress: " + poolAddress);
+  let knownPools = await lucid.provider.getUtxos(poolAddress);
+
+  const settingsUtxos = await blockfrost.getUtxos(scripts.settingsAddress);
+  if (settingsUtxos.length == 0) {
+    throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
+  }
+  if (settingsUtxos.length > 1) {
+    throw new Error("Multiple utxos at the settings address, I don't know which one to choose");
+  }
+  const settings = settingsUtxos[0];
+  console.log(settings.datum);
+
+  let poolsTodo = await doQueryPools(knownPools, fundsNeeded);
+  console.log(poolsTodo);
+  let batchSize = poolsTodo.length;
+
+  const change = await findChangeMany(blockfrost, address, batchSize);
+  if (change.length != batchSize) {
+    throw new Error(`Could not find change for a batch of size ${batchSize}`);
+  }
+
+  const refs = await Deno.readTextFile(flags.references);
+  const lines = refs.split(/\r?\n/);
+  const refUtxosOutRefs: OutRef[] = [];
+  for (let line of lines) {
+    let [hash, ix] = line.split("#");
+    let ixNum = Number(ix);
+    if (hash == "" || isNaN(ixNum)) {
+      continue;
+    }
+    refUtxosOutRefs.push({
+      txHash: hash,
+      outputIndex: Number(ix),
+    });
+  }
+  const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
+
+  let totalWithheld = 0n;
+  for (let i = 0; i < poolsTodo.length; i++) {
+    console.log("ok 1");
+    let thisChange = change[i];
+    let targetPool = poolsTodo[i].pool.utxo;
+    const buildContext = {
+      references: references,
+      scripts: scripts,
+      lucid: lucid,
+    };
+  
+    const options = {
+      settings: settings,
+      change: thisChange,
+      targetPool: targetPool,
+      signers: flags.signers,
+      withdrawnAmount: poolsTodo[i].amount,
+      treasuryAmount: 1_000_000n,
+      withheldAddress: flags.withheldAddress,
+    };
+    console.log("ok 2");
+    const result = await buildWithdrawPoolRewards(buildContext, options);
+    console.log("ok 3");
+    const tx = result.tx;
+    totalWithheld += result.withheld;
+    const txStr = await tx.toString();
+    console.log("tentative tx: " + txStr);
+    const completed = await tx.complete({
+      coinSelection: false,
+    });
+    const completedStr = await completed.toString();
+    console.log("completed tx: " + envelope(completedStr));
+    const txid = completed.toHash();
+    console.log("txid: " + txid);
+
+    if (flags.submit) {
+      const txid = completed.toHash();
+      console.log(txid);
+      const signedTx = await completed.sign().complete();
+      const response = prompt("Type 'submit' to submit");
+      if (response == "submit") {
+        await signedTx.submit();
+        console.log("submitted");
+      }
+    } else {
+      console.log("not submitted because --submit flag was not passed");
+    }
+  }
+  console.log(`total withheld: ${totalWithheld}`);
 }
 
 async function withdrawPoolRewardsBatch() {
@@ -827,7 +998,7 @@ async function withdrawPoolRewardsBatch() {
     });
   }
   const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
-
+  let totalWithheld = 0n;
   for (let i = 0; i < batchSize; i++) {
     let thisChange = change[i];
     let targetPool = null;
@@ -863,7 +1034,9 @@ async function withdrawPoolRewardsBatch() {
       autoTreasuryAmount: flags.autoTreasuryAmount,
       withheldAddress: flags.withheldAddress,
     };
-    const tx = await buildWithdrawPoolRewards(buildContext, options);
+    const result = await buildWithdrawPoolRewards(buildContext, options);
+    const tx = result.tx;
+    totalWithheld += result.withheld;
     const txStr = await tx.toString();
     console.log("tentative tx: " + txStr);
     const completed = await tx.complete({
@@ -887,6 +1060,7 @@ async function withdrawPoolRewardsBatch() {
       console.log("not submitted because --submit flag was not passed");
     }
   }
+  console.log(`total withheld: ${totalWithheld}`);
 }
 
 async function withdrawPoolRewards() {
@@ -4229,6 +4403,8 @@ if (flags.runBenchmark) {
   await withdrawPoolRewards();
 } else if (flags.withdrawPoolRewardsBatch) {
   await withdrawPoolRewardsBatch();
+} else if (flags.autoWithdrawRewards) {
+  await autoWithdrawRewards();
 } else if (flags.withdrawPoolStakeRewards) {
   await withdrawPoolStakeRewards();
 } else if (flags.mintPool) {
