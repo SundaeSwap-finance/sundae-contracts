@@ -1,8 +1,8 @@
 use aiken/math
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use calculation/shared.{PoolState} as calc_shared
+use cardano/address.{Address, VerificationKey}
+use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use shared.{SingletonValue}
 use sundae/multisig
 use types/order.{Destination, Fixed, OrderDatum, Self}
@@ -57,7 +57,7 @@ pub fn do_deposit(
       }
     math.min(
       asset_a.3rd,
-      value.quantity_of(input_value, asset_a.1st, asset_a.2nd) - extra_ada,
+      assets.quantity_of(input_value, asset_a.1st, asset_a.2nd) - extra_ada,
     )
   }
   // Because we subtract off the deposit and the actual protocol fee, this could end up negative
@@ -67,7 +67,7 @@ pub fn do_deposit(
   let user_gives_b =
     math.min(
       asset_b.3rd,
-      value.quantity_of(input_value, asset_b.1st, asset_b.2nd),
+      assets.quantity_of(input_value, asset_b.1st, asset_b.2nd),
     )
 
   // The ratio of a to b might have shifted since the user created their order amount
@@ -93,9 +93,9 @@ pub fn do_deposit(
   // This maintains the invariant that the minted LP tokens, as a percentage of the new circulating supply,
   // is equal to the percentage of assets the user deposited in the pool.
   // We can choose either asset A or asset B to compute this, since presumably, they're depositing equal value of each
-  // 
+  //
   // issued_lp_tokens / (pool_state.quantity_lp.3rd + issued_lp_tokens) = deposited_a / (pool_state.quantity_a.3rd + deposited_a)
-  // 
+  //
   // Solving for `issued_lp_tokens` gives:
   let issued_lp_tokens = deposited_a * pool_quantity_lp / pool_quantity_a
 
@@ -107,10 +107,10 @@ pub fn do_deposit(
   // plus the relevant LP tokens
   let out_value =
     input_value
-      |> value.add(asset_a.1st, asset_a.2nd, -deposited_a)
-      |> value.add(asset_b.1st, asset_b.2nd, -deposited_b)
-      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(pool_policy_lp, pool_asset_name_lp, issued_lp_tokens)
+      |> assets.add(asset_a.1st, asset_a.2nd, -deposited_a)
+      |> assets.add(asset_b.1st, asset_b.2nd, -deposited_b)
+      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> assets.add(pool_policy_lp, pool_asset_name_lp, issued_lp_tokens)
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
@@ -143,7 +143,7 @@ pub fn do_deposit(
 test deposit_test() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -159,8 +159,8 @@ test deposit_test() {
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
   let input_value =
-    value.from_lovelace(14_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 10_000_000)
+    assets.from_lovelace(14_500_000)
+      |> assets.add(rberry.1st, rberry.2nd, 10_000_000)
   let assets =
     ((ada.1st, ada.2nd, 10_000_000), (rberry.1st, rberry.2nd, 10_000_000))
   let order =
@@ -177,8 +177,8 @@ test deposit_test() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(2_000_000)
-        |> value.add(lp.1st, lp.2nd, 10_000_000),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(lp.1st, lp.2nd, 10_000_000),
       datum: NoDatum,
       reference_script: None,
     }
@@ -189,6 +189,7 @@ test deposit_test() {
       datum: InlineDatum(order),
       reference_script: None,
     }
+
   let
     new_a,
     new_b,

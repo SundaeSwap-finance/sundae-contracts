@@ -1,6 +1,6 @@
 use aiken/cbor
 use aiken/interval
-use aiken/transaction.{NoDatum, OutputReference, TransactionId}
+use cardano/transaction.{NoDatum, OutputReference}
 use sundae/multisig
 use tests/examples/ex_shared.{print_example, wallet_address}
 use types/order.{
@@ -125,9 +125,7 @@ test example_strategy() {
 fn mk_strategy_execution() {
   let tx_ref =
     OutputReference(
-      TransactionId(
-        #"797831ec63153a84ae1393bd5fea14196684f1dd12d6485e93cfe373d142e0d3",
-      ),
+      #"797831ec63153a84ae1393bd5fea14196684f1dd12d6485e93cfe373d142e0d3",
       1,
     )
   let valid_range = interval.between(1000, 10000)

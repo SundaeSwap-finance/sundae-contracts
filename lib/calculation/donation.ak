@@ -1,9 +1,9 @@
-use aiken/transaction.{Output}
-use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/transaction.{Output}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
-// 
+//
 // Calculates the new pool state, and whether to consume this output or not
 /// A donation describes an amount of assets to deposit into the pool, receiving nothing in return (except for the extra change on the UTXO).
 /// Because every LP token holder has an entitlement to a percentage of the assets in the pool, the donation is distributed to all LP token holders
@@ -47,11 +47,11 @@ pub fn do_donation(
   // Compute however much of the UTXO value is *left over* after deducting the donation amount from it; If nonzero, this will need to be returned to the user
   let remainder =
     input_value
-      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(asset_a_policy_id, asset_a_asset_name, -asset_a_qty)
-      |> value.add(asset_b_policy_id, asset_b_asset_name, -asset_b_qty)
+      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> assets.add(asset_a_policy_id, asset_a_asset_name, -asset_a_qty)
+      |> assets.add(asset_b_policy_id, asset_b_asset_name, -asset_b_qty)
 
-  let has_remainder = remainder != value.zero()
+  let has_remainder = remainder != assets.zero
   // If we have a remainder, then we need to check the details of the output; this awkward structure
   // is so that we can do a few expects without having to return a value right away
   expect or {
@@ -77,13 +77,13 @@ pub fn do_donation(
         },
       },
     }
-  // Continue with the new pool state, which is exactly the old pool state, plus the 
+  // Continue with the new pool state, which is exactly the old pool state, plus the
   // quantities of assets donated, plus the protocol fee!
   // We also returned whether we had a remainder or not, so the calling function knows
   // whether to consume the output they gave us or not.
   continuation(
-    pool_quantity_a + assets.1st.3rd,
-    pool_quantity_b + assets.2nd.3rd,
+    pool_quantity_a + asset_a_qty,
+    pool_quantity_b + asset_b_qty,
     has_remainder,
   )
 }

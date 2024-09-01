@@ -1,5 +1,5 @@
-use aiken/transaction.{Output}
-use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/transaction.{Output}
 use types/order.{Destination, Fixed, Self}
 
 pub fn check_record(
@@ -20,8 +20,8 @@ pub fn check_record(
   // its own spending policy, and it must be burned when spent.
   let remainder =
     input.value
-      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(asset_id.1st, asset_id.2nd, 1)
+      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> assets.add(asset_id.1st, asset_id.2nd, 1)
 
   and {
     output.value == remainder,

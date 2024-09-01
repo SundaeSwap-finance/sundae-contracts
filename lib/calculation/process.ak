@@ -1,16 +1,7 @@
-use aiken/bytearray
 use aiken/cbor
-use aiken/dict.{Dict}
-use aiken/hash.{Blake2b_256, Hash}
+use aiken/collection/dict.{Dict}
+use aiken/crypto.{Blake2b_256, Hash}
 use aiken/interval
-use aiken/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, TransactionId,
-  ValidityRange,
-}
-use aiken/transaction/credential.{
-  Address, ScriptCredential, StakeCredential, VerificationKeyCredential,
-}
-use aiken/transaction/value.{AssetName, PolicyId, Value}
 use calculation/deposit
 use calculation/donation
 use calculation/record
@@ -20,6 +11,11 @@ use calculation/shared.{
 use calculation/strategy
 use calculation/swap
 use calculation/withdrawal
+use cardano/address.{Address, Credential, Script, VerificationKey}
+use cardano/assets.{AssetName, PolicyId, Value}
+use cardano/transaction.{
+  InlineDatum, Input, NoDatum, Output, OutputReference, ValidityRange,
+}
 use shared.{Ident, datum_of, is_script, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, Fixed, Order, OrderDatum, SignedStrategyExecution}
@@ -61,7 +57,7 @@ pub fn pool_input_to_state(
   // If asset_a is ADA, then we need to not consider the protocol fees as part of this
   // We don't have to check asset_b, because assets are guaranteed to be in lexicographical order.
   let min_utxo =
-    if asset_a_policy_id == value.ada_policy_id {
+    if asset_a_policy_id == assets.ada_policy_id {
       protocol_fees
     } else {
       0
@@ -78,10 +74,10 @@ pub fn pool_input_to_state(
   continuation(
     asset_a_policy_id,
     asset_a_name,
-    value.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo,
+    assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo,
     asset_b_policy_id,
     asset_b_name,
-    value.quantity_of(input.value, asset_b_policy_id, asset_b_name),
+    assets.quantity_of(input.value, asset_b_policy_id, asset_b_name),
     pool_token_policy,
     pool_lp_name(identifier),
     circulating_lp,
@@ -99,7 +95,7 @@ fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool 
   }
 }
 
-/// Process a single order, comparing it to the output to ensure it was executed faithfully, and returning the new pool state 
+/// Process a single order, comparing it to the output to ensure it was executed faithfully, and returning the new pool state
 ///
 /// Most of the parameters here are for performance reasons, to avoid destructuring objects, since thats very expensive
 pub fn process_order(
@@ -120,7 +116,7 @@ pub fn process_order(
   // The validity range of the transaction, used to ensure the signed execution is within the correct time window
   tx_valid_range: ValidityRange,
   // The transaction withdrawals, so we can check strategy executions
-  withdrawals: Dict<StakeCredential, Int>,
+  withdrawals: Pairs<Credential, Int>,
   // The input being processed
   input: Output,
   // The value attached to the input, so we can ensure that any surplus tokens are paid out to the destination along with the results of the order; this lets transactions chain
@@ -338,7 +334,7 @@ pub fn process_orders(
   // The transaction valid range, if we end up processing a strategy
   tx_valid_range: ValidityRange,
   // The withdrawals attached to the transaction, for validating strategies
-  withdrawals: Dict<StakeCredential, Int>,
+  withdrawals: Pairs<Credential, Int>,
   // The datums in the witness set, in case we need to lookup a non-inline datum
   datums: Dict<Hash<Blake2b_256, Data>, Data>,
   // The initial / current pool state, passed recursively as we process each order
@@ -406,6 +402,7 @@ pub fn process_orders(
         } else {
           unsafe_fast_index_skip_with_tail(all_inputs, idx)
         }
+
       expect [input_to_process, ..rest_of_input_list] = next_input_list
       let Input { output_reference, output: order } = input_to_process
 
@@ -424,7 +421,6 @@ pub fn process_orders(
       expect datum: OrderDatum = datum
       let OrderDatum { pool_ident, destination, max_protocol_fee, details, .. } =
         datum
-
       // Make sure we're allowed to process this order (i.e. if the user specified a specific pool, we have to honor that)
       expect validate_pool_id(pool_ident, this_pool_ident)
       // Check whether this is a strategy, then increment the count appropriately
@@ -433,7 +429,6 @@ pub fn process_orders(
           order.Strategy(..) -> (simple_count, strategy_count + 1)
           _ -> (simple_count + 1, strategy_count)
         }
-
       // And finally, process this one individual order and compute the next state
       // Note that we get back next_orders here, which is needed if we process a donation that has no change UTXO
       let
@@ -509,7 +504,7 @@ pub fn process_orders(
 test process_orders_test() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -524,6 +519,7 @@ test process_orders_test() {
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
+
   let order_datum =
     OrderDatum {
       pool_ident: None,
@@ -544,7 +540,7 @@ test process_orders_test() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(999_999_999_999_999_999),
+      value: assets.from_lovelace(999_999_999_999_999_999),
       datum: NoDatum,
       reference_script: None,
     }
@@ -552,32 +548,27 @@ test process_orders_test() {
   let order_output =
     Output {
       address: Address(
-        ScriptCredential(
-          #"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-        ),
+        Script(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
         None,
       ),
-      value: value.from_lovelace(3_500_000)
-        |> value.add(rberry.1st, rberry.2nd, 1_000_000),
+      value: assets.from_lovelace(3_500_000)
+        |> assets.add(rberry.1st, rberry.2nd, 1_000_000),
       datum: InlineDatum(order_datum),
       reference_script: None,
     }
 
   let order_datum_data: Data = order_datum
   let datums =
-    dict.new()
+    dict.empty
       |> dict.insert(
-          key: hash.blake2b_256(cbor.serialise(order_datum)),
+          key: crypto.blake2b_256(cbor.serialise(order_datum)),
           value: order_datum_data,
-          compare: bytearray.compare,
         )
 
   let input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId {
-          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
-        },
+        transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
         output_index: 0,
       },
       output: order_output,
@@ -601,7 +592,7 @@ test process_orders_test() {
     process_orders(
       #"",
       valid_range,
-      dict.new(),
+      [],
       datums,
       pool_state.quantity_a.1st,
       pool_state.quantity_a.2nd,
@@ -638,7 +629,7 @@ test process_orders_test() {
 test process_30_shuffled_orders_test() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -673,7 +664,7 @@ test process_30_shuffled_orders_test() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(999_999_999_999_999_999),
+      value: assets.from_lovelace(999_999_999_999_999_999),
       datum: NoDatum,
       reference_script: None,
     }
@@ -681,32 +672,27 @@ test process_30_shuffled_orders_test() {
   let order_output =
     Output {
       address: Address(
-        ScriptCredential(
-          #"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-        ),
+        Script(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
         None,
       ),
-      value: value.from_lovelace(3_500_000)
-        |> value.add(rberry.1st, rberry.2nd, 1_000_000),
+      value: assets.from_lovelace(3_500_000)
+        |> assets.add(rberry.1st, rberry.2nd, 1_000_000),
       datum: InlineDatum(order_datum),
       reference_script: None,
     }
 
   let order_datum_data: Data = order_datum
   let datums =
-    dict.new()
+    dict.empty
       |> dict.insert(
-          key: hash.blake2b_256(cbor.serialise(order_datum)),
+          key: crypto.blake2b_256(cbor.serialise(order_datum)),
           value: order_datum_data,
-          compare: bytearray.compare,
         )
 
   let input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId {
-          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
-        },
+        transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
         output_index: 0,
       },
       output: order_output,
@@ -715,70 +701,19 @@ test process_30_shuffled_orders_test() {
 
   let inputs =
     [
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
-      input,
+      input, input, input, input, input, input, input, input, input, input,
+      input, input, input, input, input, input, input, input, input, input,
+      input, input, input, input, input, input, input, input, input, input,
     ]
   // shuffled order processing:
   let input_order =
     [
-      (11, None, 0),
-      (26, None, 0),
-      (18, None, 0),
-      (2, None, 0),
-      (28, None, 0),
-      (13, None, 0),
-      (16, None, 0),
-      (1, None, 0),
-      (8, None, 0),
-      (27, None, 0),
-      (12, None, 0),
-      (23, None, 0),
-      (22, None, 0),
-      (14, None, 0),
-      (10, None, 0),
-      (0, None, 0),
-      (24, None, 0),
-      (5, None, 0),
-      (7, None, 0),
-      (17, None, 0),
-      (20, None, 0),
-      (29, None, 0),
-      (19, None, 0),
-      (21, None, 0),
-      (9, None, 0),
-      (25, None, 0),
-      (6, None, 0),
-      (4, None, 0),
-      (3, None, 0),
-      (15, None, 0),
+      (11, None, 0), (26, None, 0), (18, None, 0), (2, None, 0), (28, None, 0),
+      (13, None, 0), (16, None, 0), (1, None, 0), (8, None, 0), (27, None, 0),
+      (12, None, 0), (23, None, 0), (22, None, 0), (14, None, 0), (10, None, 0),
+      (0, None, 0), (24, None, 0), (5, None, 0), (7, None, 0), (17, None, 0),
+      (20, None, 0), (29, None, 0), (19, None, 0), (21, None, 0), (9, None, 0),
+      (25, None, 0), (6, None, 0), (4, None, 0), (3, None, 0), (15, None, 0),
     ]
   let outputs =
     [output]
@@ -793,7 +728,7 @@ test process_30_shuffled_orders_test() {
     process_orders(
       #"",
       valid_range,
-      dict.new(),
+      [],
       datums,
       pool_state.quantity_a.1st,
       pool_state.quantity_a.2nd,

@@ -1,9 +1,8 @@
-use aiken/dict
-use aiken/list
-use aiken/transaction.{
-  InlineDatum, Publish, ScriptContext, Transaction, WithdrawFrom,
-}
-use aiken/transaction/value.{PolicyId}
+use aiken/collection/list
+use aiken/collection/pairs
+use cardano/assets.{PolicyId}
+use cardano/script_context.{Publishing, ScriptContext, Withdrawing}
+use cardano/transaction.{InlineDatum, Transaction}
 use sundae/multisig
 use types/settings.{find_settings_datum}
 
@@ -18,12 +17,12 @@ use types/settings.{find_settings_datum}
 /// would fail on the new script context.
 /// However, in this case, the treasury admin can simply update to a new staking policy, rotate that onto the pools, and then use
 /// the new features. This is because the staking script doesn't actually run when the pool runs! it only runs in its own transaction
-/// so the fact that it becomes Plutus v66 makes no difference. 
-validator(settings_policy_id: PolicyId, _instance: Int) {
-  fn stake(_r: Data, ctx: ScriptContext) -> Bool {
+/// so the fact that it becomes Plutus v66 makes no difference.
+validator pool_stake(settings_policy_id: PolicyId, _instance: Int) {
+  else(ctx: ScriptContext) {
     // Deconstruct the script context and transaction to pull off the fields we'll need
     // This is to avoid destructing many times, because each field access is O(n)
-    let ScriptContext { transaction, purpose } = ctx
+    let ScriptContext { transaction, info: purpose, .. } = ctx
     let Transaction {
       reference_inputs,
       extra_signatories,
@@ -47,12 +46,12 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
 
     when purpose is {
       // To withdraw any amount of earned staking rewards,
-      WithdrawFrom(_) -> {
+      Withdrawing(_) -> {
         // We calculate the amount withdrawn by summing up *all* withdrawals
         // This is to avoid a double satisfaction problem, where withdrawing 100 ADA of rewards from
         // two different scripts each believe that 100 ADA has been paid to the treasury
         let amount_withdrawn =
-          dict.foldl(withdrawals, 0, fn(_k, v, s) { v + s })
+          pairs.foldl(withdrawals, 0, fn(_k, v, s) { v + s })
         // Allow the treasury administrator to keep some portion of the withdrawn rewards, for administrative costs like paying the scoopers
         // We multiply first, then divide, for maximal precision
         let allowance =
@@ -70,7 +69,7 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
           )
         // Make sure *at least* the amount we calculated is sent to the treasury; it can be larger,
         // if someone is feeling generous, or to deal with rounding for example, but it cannot be less
-        expect value.lovelace_of(treasury_output.value) >= to_treasury
+        expect assets.lovelace_of(treasury_output.value) >= to_treasury
         // We enforce that the treasury is paid with a null datum
         // Sending to a script with *no* datum is very dangerous, and letting an arbitrary datum could
         // allow shenaigans.
@@ -79,7 +78,7 @@ validator(settings_policy_id: PolicyId, _instance: Int) {
         treasury_output.datum == InlineDatum(Void)
       }
       // Publishing a cert succeeds, because we've already checked that the multisig script was satisfied above
-      Publish(_) -> True
+      Publishing(..) -> True
       // Prevent minting or spending, just in case
       _ -> False
     }

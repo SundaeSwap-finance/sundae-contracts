@@ -1,14 +1,14 @@
 use aiken/builtin
-use aiken/bytearray
-use aiken/dict.{Dict}
-use aiken/hash.{Blake2b_256, Hash}
-use aiken/list
-use aiken/transaction.{
-  DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext,
-  Spend, find_input,
+use aiken/collection/dict.{Dict}
+use aiken/collection/list
+use aiken/crypto.{Blake2b_256, Hash}
+use aiken/primitive/bytearray
+use cardano/address.{Credential, Script}
+use cardano/assets.{AssetName, PolicyId}
+use cardano/transaction.{
+  DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+  find_input,
 }
-use aiken/transaction/credential.{Credential, ScriptCredential}
-use aiken/transaction/value.{AssetName, PolicyId}
 use tests/examples/ex_shared.{
   mk_output_reference, script_address, wallet_address,
 }
@@ -30,8 +30,8 @@ pub type SingletonValue =
   (PolicyId, AssetName, Int)
 
 /// Convert a singleton value to an actual value; convenient for comparing or adding together values
-pub fn to_value(sv: SingletonValue) -> value.Value {
-  value.from_asset(sv.1st, sv.2nd, sv.3rd)
+pub fn to_value((p, a, i): SingletonValue) -> assets.Value {
+  assets.from_asset(p, a, i)
 }
 
 /// Find the datum for a specific output
@@ -53,16 +53,20 @@ pub fn datum_of(
 
 /// Find the **input** (which was the output of some other transaction) for which we're actually evaluating the script to determine if it is spendable
 /// Also called "own_input" in places
-pub fn spent_output(ctx: ScriptContext) -> Output {
-  expect Spend(out_ref) = ctx.purpose
-  expect Some(input) = find_input(ctx.transaction.inputs, out_ref)
+pub fn spent_output(
+  transaction: Transaction,
+  out_ref: OutputReference,
+) -> Output {
+  expect Some(input) = find_input(transaction.inputs, out_ref)
   input.output
 }
 
 /// Find the index of the given "out_ref"; confusingly, this is the  the inputs, not the outputs
-pub fn own_input_index(ctx: ScriptContext) -> Int {
-  expect Spend(out_ref) = ctx.purpose
-  do_own_input_index(ctx.transaction.inputs, out_ref, 0)
+pub fn own_input_index(
+  transaction: Transaction,
+  out_ref: OutputReference,
+) -> Int {
+  do_own_input_index(transaction.inputs, out_ref, 0)
 }
 
 pub fn do_own_input_index(
@@ -91,7 +95,7 @@ pub fn get_input_with_token(
 ) -> Output {
   // Optimization: assume first reference input by farming for high reference script hashes
   expect Some(input) = list.at(inputs, idx)
-  expect value.quantity_of(input.output.value, token.1st, token.2nd) >= 1
+  expect assets.quantity_of(input.output.value, token.1st, token.2nd) >= 1
   input.output
 }
 
@@ -102,7 +106,7 @@ pub fn find_input_with_token(inputs: List<Input>, token: AssetClass) -> Output {
     list.find(
       inputs,
       fn(input) {
-        value.quantity_of(input.output.value, token.1st, token.2nd) >= 1
+        assets.quantity_of(input.output.value, token.1st, token.2nd) >= 1
       },
     )
   input.output
@@ -129,7 +133,7 @@ const exact_non_order_script_inputs = 1
 /// even if we don't know what the specific hash is going to be
 pub fn is_script(credential: Credential) -> Bool {
   when credential is {
-    ScriptCredential(_) -> True
+    Script(_) -> True
     _ -> False
   }
 }
@@ -148,7 +152,7 @@ pub fn count_orders(tx_inputs: List<Input>) -> Int {
       // - and we compare the script this way so that if we implement a new order script, with additional logic,
       //   and the correct datum format, it can be processed the pool just fine
       when input.output.address.payment_credential is {
-        ScriptCredential(_) -> count_orders(rest) + 1
+        Script(_) -> count_orders(rest) + 1
         _ -> count_orders(rest)
       }
   }
@@ -170,10 +174,10 @@ test is_sqrt2() {
 /// Check whether a specific value has *exactly* the right amount of tokens
 /// This is important to, for example, efficiently check the pool output has the correct value
 /// Check where this is used, because it's a very subtle bit of logic for where this is safe to do
-pub fn has_exact_token_count(val: value.Value, count: Int) {
+pub fn has_exact_token_count(val: assets.Value, count: Int) {
   count == list.foldl(
     // Convert the value to a list, so we can fold over it
-    dict.to_list(value.to_dict(val)),
+    dict.to_pairs(assets.to_dict(val)),
     0,
     fn(tk_pair, total) {
       // The first fold is over the list of policy IDs
@@ -181,7 +185,7 @@ pub fn has_exact_token_count(val: value.Value, count: Int) {
       // so we can count the distinct Asset IDs
       // TODO: can we just use list.length here?
       list.foldl(
-        dict.to_list(builtin.snd_pair(tk_pair)),
+        dict.to_pairs(builtin.snd_pair(tk_pair)),
         0,
         fn(_tn, tn_length) { tn_length + 1 },
       ) + total
@@ -191,19 +195,19 @@ pub fn has_exact_token_count(val: value.Value, count: Int) {
 
 test test_has_exact_token_count() {
   let val =
-    value.from_lovelace(100)
-      |> value.add("abc", "def", 100)
-      |> value.add("xyz", "www", 200)
+    assets.from_lovelace(100)
+      |> assets.add("abc", "def", 100)
+      |> assets.add("xyz", "www", 200)
   expect has_exact_token_count(val, 3)
 
   let val =
-    value.from_lovelace(100)
-      |> value.add("abc", "def", 100)
+    assets.from_lovelace(100)
+      |> assets.add("abc", "def", 100)
   expect has_exact_token_count(val, 2)
 
   let val =
-    value.from_lovelace(100)
-      |> value.add("abc", "def", 100)
+    assets.from_lovelace(100)
+      |> assets.add("abc", "def", 100)
   expect !has_exact_token_count(val, 3)
   True
 }
@@ -214,7 +218,7 @@ pub fn pool_ref_name(pool_ident: Ident) {
   bytearray.concat(#"000643b0", pool_ident)
 }
 
-/// The CIP-68 (222) "nft" token for a given pool identifier; this token is an NFT used to track the actual swappable funds in the pool 
+/// The CIP-68 (222) "nft" token for a given pool identifier; this token is an NFT used to track the actual swappable funds in the pool
 pub fn pool_nft_name(pool_ident: Ident) {
   bytearray.concat(#"000de140", pool_ident)
 }
@@ -246,7 +250,7 @@ test count_orders_test() {
       output_reference: mk_output_reference(0),
       output: Output {
         address: pool_address,
-        value: value.from_lovelace(0),
+        value: assets.from_lovelace(0),
         datum: NoDatum,
         reference_script: None,
       },
@@ -260,7 +264,7 @@ test count_orders_test() {
       output_reference: mk_output_reference(2),
       output: Output {
         address: escrow_address,
-        value: value.from_lovelace(0),
+        value: assets.from_lovelace(0),
         datum: NoDatum,
         reference_script: None,
       },
@@ -270,7 +274,7 @@ test count_orders_test() {
       output_reference: mk_output_reference(3),
       output: Output {
         address: escrow_address,
-        value: value.from_lovelace(0),
+        value: assets.from_lovelace(0),
         datum: NoDatum,
         reference_script: None,
       },
@@ -282,7 +286,7 @@ test count_orders_test() {
       output_reference: mk_output_reference(4),
       output: Output {
         address: other_address,
-        value: value.from_lovelace(0),
+        value: assets.from_lovelace(0),
         datum: NoDatum,
         reference_script: None,
       },
@@ -290,22 +294,9 @@ test count_orders_test() {
 
   let inputs =
     [
-      pool_input,
-      other_in,
-      escrow1_in,
-      escrow2_in,
-      other_in,
-      escrow1_in,
-      escrow2_in,
-      other_in,
-      escrow1_in,
-      escrow2_in,
-      other_in,
-      escrow1_in,
-      escrow2_in,
-      other_in,
-      escrow1_in,
-      escrow2_in,
+      pool_input, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
+      escrow2_in, other_in, escrow1_in, escrow2_in, other_in, escrow1_in,
+      escrow2_in, other_in, escrow1_in, escrow2_in,
     ]
 
   count_orders(inputs) == 10

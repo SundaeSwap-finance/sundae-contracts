@@ -1,9 +1,9 @@
 use aiken/math
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value
 use calculation/deposit.{do_deposit}
-use calculation/shared.{PoolState}
+use calculation/shared.{PoolState} as calculation_shared
+use cardano/address.{Address, VerificationKey}
+use cardano/assets
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
 
@@ -16,8 +16,8 @@ test deposit_test() {
     50_000_000,
     200_000_000,
     500_000_000,
-    value.from_lovelace(47_500_000)
-      |> value.add(lp.1st, lp.2nd, 50_000_000),
+    assets.from_lovelace(47_500_000)
+      |> assets.add(lp.1st, lp.2nd, 50_000_000),
   )
 }
 
@@ -29,7 +29,7 @@ test deposit_test_minimum() fail {
     150,
     151_171_875,
     150,
-    value.from_lovelace(152_000_000),
+    assets.from_lovelace(152_000_000),
   )
 }
 
@@ -40,11 +40,11 @@ fn deposit_test_schema(
   has_b: Int,
   gives_a: Int,
   gives_b: Int,
-  out_value: value.Value,
+  out_value: assets.Value,
 ) {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -61,8 +61,8 @@ fn deposit_test_schema(
       quantity_lp: (lp.1st, lp.2nd, q_lp),
     }
   let input_value =
-    value.from_lovelace(has_a)
-      |> value.add(rberry.1st, rberry.2nd, has_b)
+    assets.from_lovelace(has_a)
+      |> assets.add(rberry.1st, rberry.2nd, has_b)
   let assets = ((ada.1st, ada.2nd, gives_a), (rberry.1st, rberry.2nd, gives_b))
   let order =
     OrderDatum {

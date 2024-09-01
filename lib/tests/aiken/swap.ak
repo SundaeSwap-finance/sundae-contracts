@@ -1,15 +1,15 @@
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value
 use calculation/shared.{PoolState} as calc_shared
 use calculation/swap.{do_swap}
+use cardano/address.{Address, VerificationKey}
+use cardano/assets
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
 
 test swap_mintakes_too_high() fail {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -24,7 +24,7 @@ test swap_mintakes_too_high() fail {
       quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
-  let input_value = value.from_lovelace(14_500_000)
+  let input_value = assets.from_lovelace(14_500_000)
   let swap_offer = (ada.1st, ada.2nd, 10_000_000)
   let swap_min_received = (rberry.1st, rberry.2nd, 10_000_000)
   let order =
@@ -41,8 +41,8 @@ test swap_mintakes_too_high() fail {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(2_000_000)
-        |> value.add(rberry.1st, rberry.2nd, 9_896_088),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(rberry.1st, rberry.2nd, 9_896_088),
       datum: NoDatum,
       reference_script: None,
     }
@@ -53,6 +53,7 @@ test swap_mintakes_too_high() fail {
       datum: InlineDatum(order),
       reference_script: None,
     }
+
   let
     new_a,
     new_b,
@@ -81,7 +82,7 @@ test swap_mintakes_too_high() fail {
 test swap_different_bid_ask() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -97,8 +98,8 @@ test swap_different_bid_ask() {
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
   let input_value =
-    value.from_lovelace(4_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 10_000_000)
+    assets.from_lovelace(4_500_000)
+      |> assets.add(rberry.1st, rberry.2nd, 10_000_000)
   let swap_offer = (rberry.1st, rberry.2nd, 10_000_000)
   let swap_min_received = (ada.1st, ada.2nd, 0)
   let order =
@@ -115,7 +116,7 @@ test swap_different_bid_ask() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(11_802_950),
+      value: assets.from_lovelace(11_802_950),
       datum: NoDatum,
       reference_script: None,
     }

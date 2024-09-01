@@ -1,4 +1,4 @@
-use aiken/transaction.{ValidityRange}
+use cardano/transaction.{ValidityRange}
 use shared.{Ident, SingletonValue}
 use sundae/multisig
 

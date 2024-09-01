@@ -1,9 +1,9 @@
 use aiken/option
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value.{Value}
 use calculation/shared.{PoolState} as calc_shared
 use calculation/withdrawal.{do_withdrawal}
+use cardano/address.{Address, VerificationKey}
+use cardano/assets.{Value}
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
 
@@ -28,7 +28,7 @@ test withdrawal_wrong_output_value() fail {
   let options =
     WithdrawalTestOptions {
       ..default_withdrawal_test_options(),
-      edit_withdrawal_value: Some(value.from_lovelace(2_000_000)),
+      edit_withdrawal_value: Some(assets.from_lovelace(2_000_000)),
     }
   withdrawal_test(options)
 }
@@ -36,7 +36,7 @@ test withdrawal_wrong_output_value() fail {
 test withdrawal_wrong_payout_address() fail {
   let burn_addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"77777777777777777777777777777777777777777777777777777777",
       ),
       None,
@@ -52,7 +52,7 @@ test withdrawal_wrong_payout_address() fail {
 fn withdrawal_test(options: WithdrawalTestOptions) {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -67,8 +67,8 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
     }
   let input_value =
-    value.from_lovelace(4_500_000)
-      |> value.add(lp.1st, lp.2nd, 10_000_000)
+    assets.from_lovelace(4_500_000)
+      |> assets.add(lp.1st, lp.2nd, 10_000_000)
   let amount = (lp.1st, lp.2nd, 10_000_000)
   let order =
     OrderDatum {
@@ -86,9 +86,9 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       address: option.or_else(options.edit_withdrawal_destination, addr),
       value: option.or_else(
         options.edit_withdrawal_value,
-        value.from_lovelace(2_000_000)
-          |> value.add(#"", #"", 10_000_000)
-          |> value.add(rberry.1st, rberry.2nd, 10_000_000),
+        assets.from_lovelace(2_000_000)
+          |> assets.add(#"", #"", 10_000_000)
+          |> assets.add(rberry.1st, rberry.2nd, 10_000_000),
       ),
       datum: NoDatum,
       reference_script: None,

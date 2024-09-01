@@ -10,15 +10,15 @@ platform = "github"
 
 [[dependencies]]
 name = "aiken-lang/stdlib"
-version = "97cd61345bcc8925c521b30d0f354859eb0148cd"
+version = "v2"
 source = "github"
 
 [[dependencies]]
-name = "SundaeSwap-finance/aicone"
-version = "faca3e33f1cc7183e2f3801ee56b705883c6832e"
+name = "KtorZ/aicone"
+version = "a9ae9ef8b6bdb183ea020ea97f6b648f9343924e"
 source = "github"
 
 [[dependencies]]
-name = "aiken-extra/tx_util"
-version = "39d4bceebeba6e02ffa72d2a2411487d97d2a738"
+name = "KtorZ/tx_util"
+version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
 source = "github"
