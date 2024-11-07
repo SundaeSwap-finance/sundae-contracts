@@ -88,7 +88,10 @@ pub fn pool_input_to_state(
 }
 
 /// If the order is restricted to a specific pool, then make sure pool_ident matches that; otherwise just return true
-fn validate_pool_id(order_pool_ident: Option<Ident>, pool_ident: Ident) -> Bool {
+pub fn validate_pool_id(
+  order_pool_ident: Option<Ident>,
+  pool_ident: Ident,
+) -> Bool {
   when order_pool_ident is {
     Some(i) -> i == pool_ident
     None -> True
@@ -575,12 +578,9 @@ test process_orders_test() {
     }
   let valid_range = interval.between(1, 2)
 
-  let input_order =
-    [(0, None, 0)]
-  let inputs =
-    [input]
-  let outputs =
-    [output]
+  let input_order = [(0, None, 0)]
+  let inputs = [input]
+  let outputs = [output]
 
   let
     new_a,
@@ -715,8 +715,7 @@ test process_30_shuffled_orders_test() {
       (20, None, 0), (29, None, 0), (19, None, 0), (21, None, 0), (9, None, 0),
       (25, None, 0), (6, None, 0), (4, None, 0), (3, None, 0), (15, None, 0),
     ]
-  let outputs =
-    [output]
+  let outputs = [output]
 
   let
     new_a,
