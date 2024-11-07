@@ -1,24 +1,27 @@
-use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{ScriptHash}
 use aiken/interval
 use aiken/primitive/bytearray
-use calculation/process.{pool_input_to_state, process_orders}
+use calculation/sub_conditions/shared.{
+  condition_pool_input_to_state, minted_correct_pool_tokens,
+  process_withdrawal_orders,
+} as sub_conditions_shared
 use cardano/address.{Address, Inline, Script}
-use cardano/assets.{PolicyId, Value}
+use cardano/assets.{AssetName, PolicyId, Value, ada_policy_id}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, Withdraw,
 }
 use shared.{
-  AssetClass, Ident, count_orders, has_expected_pool_value, own_input_index,
-  pool_lp_name, spent_output,
+  AssetClass, Ident, count_orders, own_input_index, pool_nft_name, spent_output,
 }
 use sundae/multisig
-use types/pool.{
-  BurnPool, CreatePool, Manage, ManageRedeemer, MintLP, PoolDatum,
-  PoolMintRedeemer, PoolRedeemer, PoolScoop, UpdatePoolFees, WithdrawFees,
+use types/condition_pool.{
+  ConditionBurnPool, ConditionCreatePool, ConditionManage,
+  ConditionManageRedeemer, ConditionMintLP, ConditionPoolDatum,
+  ConditionPoolMintRedeemer, ConditionPoolRedeemer, ConditionPoolScoop,
+  ConditionUpdateCondition, ConditionWithdrawFees, find_pool_output,
 } as types_pool
 use types/settings.{SettingsDatum, find_settings_datum}
 
@@ -48,13 +51,13 @@ use types/settings.{SettingsDatum, find_settings_datum}
 /// It is likely, then, that protocols converge on the per-order cost of batching being lower than un-batched variants, i.e.
 ///
 /// A + B*n + C < (A + B) * n
-validator pool(
+validator condition_pool(
   manage_stake_script_hash: ScriptHash,
   settings_policy_id: PolicyId,
 ) {
   spend(
-    datum: Option<PoolDatum>,
-    redeemer: PoolRedeemer,
+    datum: Option<ConditionPoolDatum>,
+    redeemer: ConditionPoolRedeemer,
     out_ref: OutputReference,
     transaction: Transaction,
   ) {
@@ -93,18 +96,23 @@ validator pool(
     // - Withdrawing protocol fees to the treasury
     when redeemer is {
       // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
-      PoolScoop { signatory_index, scooper_index, input_order } -> {
+      ConditionPoolScoop {
+        signatory_index,
+        scooper_index,
+        input_order,
+        withdrawal_only,
+      } -> {
         // Find the pool output, the output datum, and destructure it to access the fields we need to process the scoop
         let (
           Output { address: pool_output_address, value: pool_output_value, .. },
-          PoolDatum {
+          ConditionPoolDatum {
             identifier: actual_identifier,
             circulating_lp: actual_circulating_lp,
             protocol_fees: actual_protocol_fees,
             assets: actual_assets,
-            bid_fees_per_10_thousand: actual_bid_fees_per_10_thousand,
-            ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
             market_open: actual_market_open,
+            condition: actual_condition,
+            condition_datum: actual_condition_datum,
             ..
           },
         ) = find_pool_output(outputs)
@@ -117,192 +125,204 @@ validator pool(
         expect
           pool_output_address.payment_credential == Script(pool_script_hash)
 
-        // Deconstruct the settings datum with the fields we need for a scoop
-        let SettingsDatum {
-          authorized_scoopers,
-          base_fee,
-          simple_fee,
-          strategy_fee,
-          ..
-        } = settings_datum
+        when withdrawal_only is {
+          True -> {
+            // Deconstruct the settings datum with the fields we need for a scoop
+            let SettingsDatum { authorized_scoopers, base_fee, simple_fee, .. } =
+              settings_datum
 
-        // Do a simple scan over the orders to count up the number of orders we'll be processing
-        // This is unavoidable, because it's part of making sure that the provided redeemer set isn't
-        // excluding orders
-        let real_order_count = count_orders(inputs)
-        // Calculate the portion of the fee that each order will be
-        // entitled to pay;
-        // Because the division is rounded down, we add real_order_count and subtact 1
-        // to ensure that we take the ceiling instead, and round in the protocols favor.
-        let amortized_base_fee =
-          ( base_fee + real_order_count - 1 ) / real_order_count
-        // Make sure it's not negative, for example if base_fee was negative
-        expect amortized_base_fee >= 0
+            // Do a simple scan over the orders to count up the number of orders we'll be processing
+            // This is unavoidable, because it's part of making sure that the provided redeemer set isn't
+            // excluding orders
+            let real_order_count = count_orders(inputs)
+            // Calculate the portion of the fee that each order will be
+            // entitled to pay;
+            // Because the division is rounded down, we add real_order_count and subtact 1
+            // to ensure that we take the ceiling instead, and round in the protocols favor.
+            let amortized_base_fee =
+              ( base_fee + real_order_count - 1 ) / real_order_count
+            // Make sure it's not negative, for example if base_fee was negative
+            expect amortized_base_fee >= 0
 
-        // Construct the initial pool state from the datum and the locked values
-        // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
-        // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
-        // (excluding protocol fees, which shouldn't factor into the price)
-        // Note: this abomination is brought to you by the fact that constructing and destructuring structs
-        // is expensive, so it's cheaper to have **massive** lambdas / continuations
-        let
-          pool_policy_a,
-          pool_asset_name_a,
-          pool_quantity_a,
-          pool_policy_b,
-          pool_asset_name_b,
-          pool_quantity_b,
-          pool_policy_lp,
-          pool_asset_name_lp,
-          pool_quantity_lp,
-          bid_fees,
-          ask_fees,
-          initial_protocol_fees,
-        <- pool_input_to_state(pool_script_hash, datum, pool_input)
+            expect InlineDatum(pool_input_datum) = pool_input.datum
+            expect ConditionPoolDatum {
+              assets,
+              protocol_fees,
+              identifier,
+              circulating_lp,
+              ..
+            } = pool_input_datum
 
-        // Process the orders in order, and decide the final pool state we should see
-        // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
-        // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
-        let
-          final_a,
-          final_b,
-          final_lp,
-          simple_count,
-          strategy_count,
-        <-
-          process_orders(
-            actual_identifier,
-            // The pool identifier, so we can check that each order is for this pool
-            validity_range,
-            // The validity range of the transaction, so we can check strategies haven't expired
-            withdrawals,
-            // Include the withdrawals, in case a strategy has some kind of attached script condition
-            datums,
-            // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
-            // The initial pool state, such as the reserves and circulating LP
-            pool_policy_a,
-            pool_asset_name_a,
-            pool_quantity_a,
-            pool_policy_b,
-            pool_asset_name_b,
-            pool_quantity_b,
-            pool_policy_lp,
-            pool_asset_name_lp,
-            pool_quantity_lp,
-            input_order,
-            // The input ordering specified by the scooper
-            bid_fees,
-            // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
-            ask_fees,
-            // ... for Ask (swap B -> A)
-            amortized_base_fee,
-            // The base fee split by the number of orders, paid for each user
-            simple_fee,
-            // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
-            strategy_fee,
-            // The fee to charge for each "strategy" order
-            0,
-            // The previous index we processed, intitially 0; this lets us detect if we need to "restart" the input list
-            inputs,
-            // *All* inputs, so we can start over at the beginning of the list if we want
-            inputs,
-            // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
-            list.drop(outputs, 1),
-            // The list of outputs we should be comparing orders against
-            0,
+            // Construct the initial pool state from the datum and the locked values
+            // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
+            // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
+            // (excluding protocol fees, which shouldn't factor into the price)
+            // Note: this abomination is brought to you by the fact that constructing and destructuring structs
+            // is expensive, so it's cheaper to have **massive** lambdas / continuations
+            let
+              pool_policy_a,
+              pool_asset_name_a,
+              pool_quantity_a,
+              pool_policy_b,
+              pool_asset_name_b,
+              pool_quantity_b,
+              pool_policy_lp,
+              pool_asset_name_lp,
+              pool_quantity_lp,
+              initial_protocol_fees,
+            <-
+              condition_pool_input_to_state(
+                pool_script_hash,
+                assets,
+                protocol_fees,
+                identifier,
+                circulating_lp,
+                pool_input,
+              )
+
+            // Process the orders in order, and decide the final pool state we should see
+            // This also counts up the number of simple / strategy orders, which let us compute the effective protocol fee.
+            // for optimization purposes, there are quite a lot of parameters, and their interaction is quite subtle
+            let
+              final_a,
+              final_b,
+              final_lp,
+            <-
+              process_withdrawal_orders(
+                actual_identifier,
+                // The pool identifier, so we can check that each order is for this pool
+                datums,
+                // The datums, so we can look up the datum of each order (which may be inline, but may also be in the datums dict)
+                // The initial pool state, such as the reserves and circulating LP
+                pool_policy_a,
+                pool_asset_name_a,
+                pool_quantity_a,
+                pool_policy_b,
+                pool_asset_name_b,
+                pool_quantity_b,
+                pool_policy_lp,
+                pool_asset_name_lp,
+                pool_quantity_lp,
+                input_order,
+                // The input ordering specified by the scooper
+                amortized_base_fee,
+                // The base fee split by the number of orders, paid for each user
+                simple_fee,
+                // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
+                0,
+                // The previous index we processed, intitially 0; this lets us detect if we need to "restart" the input list
+                inputs,
+                // *All* inputs, so we can start over at the beginning of the list if we want
+                inputs,
+                // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
+                list.drop(outputs, 1),
+                // The list of outputs we should be comparing orders against
+                0,
+              )
+
             // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
-            0,
-            // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
-            0,
-          )
-        // The accumulated count of "strategy" orders, see line above.
-        // We need to make sure that the number of orders matches the amount that we processed
-        // so the scooper doesn't "under-report" the orders and steal the funds on the order
-        expect simple_count + strategy_count == real_order_count
+            // The accumulated count of "strategy" orders, see line above.
+            // We need to make sure that the number of orders matches the amount that we processed
+            // so the scooper doesn't "under-report" the orders and steal the funds on the order
+            // Is this needed for withdrawal only?
+            // expect simple_count + strategy_count == real_order_count
+            // We calculate the expected total collected protocol fee
+            // We multiply amortized_base_fee, which everyone paid, by the number of orders
+            // and then the respective fees for each simple order and strategy order
+            let expected_fees_collected =
+              amortized_base_fee * real_order_count + real_order_count * simple_fee
 
-        // We calculate the expected total collected protocol fee
-        // We multiply amortized_base_fee, which everyone paid, by the number of orders
-        // and then the respective fees for each simple order and strategy order
-        let expected_fees_collected =
-          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee
+            // Make sure we actually increased the protocol fee by exactly this amount
+            expect
+              actual_protocol_fees == initial_protocol_fees + expected_fees_collected
 
-        // Make sure we actually increased the protocol fee by exactly this amount
-        expect
-          actual_protocol_fees == initial_protocol_fees + expected_fees_collected
+            // The pool should have all of the scooper fees, and the quantity of each token of the outcome
+            // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
+            // TODO: do we need to account for this? it seems to have gotten lost in some changes.
+            expect
+              minted_correct_pool_tokens(
+                pool_script_hash,
+                mint,
+                identifier,
+                circulating_lp,
+                final_lp,
+              )
 
-        // The pool should have all of the scooper fees, and the quantity of each token of the outcome
-        // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
-        // TODO: do we need to account for this? it seems to have gotten lost in some changes.
-        expect
-          minted_correct_pool_tokens(pool_script_hash, mint, datum, final_lp)
+            // Check that the scooper is authorized; the protocol can allow *any* scoopers, or limit it to a set of actors
+            // It's safe to use values provided in the redeemer to efficiently skip to the expected scooper / expected signature
+            // because at the end of the day, we just care that the scooper has signed the transaction. If the scooper provides
+            // anything but the correct indexes, it'll just fail the transaction.
+            expect
+              when authorized_scoopers is {
+                Some(authorized_scoopers) -> {
+                  // OPTIMIZATION: skip 10 entries at a time
+                  // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
+                  expect Some(scooper_sig) =
+                    list.at(extra_signatories, signatory_index)
+                  expect Some(scooper) =
+                    list.at(authorized_scoopers, scooper_index)
+                  // must be an authorized scooper
+                  scooper_sig == scooper
+                }
+                _ -> True
+              }
 
-        // Check that the scooper is authorized; the protocol can allow *any* scoopers, or limit it to a set of actors
-        // It's safe to use values provided in the redeemer to efficiently skip to the expected scooper / expected signature
-        // because at the end of the day, we just care that the scooper has signed the transaction. If the scooper provides
-        // anything but the correct indexes, it'll just fail the transaction.
-        expect
-          when authorized_scoopers is {
-            Some(authorized_scoopers) -> {
-              // OPTIMIZATION: skip 10 entries at a time
-              // OPTIMIZATION: assume scooper is first extra_signatory? have to assume there will only ever be one extra_signatory
-              expect Some(scooper_sig) =
-                list.at(extra_signatories, signatory_index)
-              expect Some(scooper) = list.at(authorized_scoopers, scooper_index)
-              // must be an authorized scooper
-              scooper_sig == scooper
+            // the market must have opened; this allows projects to pre-create their pool, potentially across multiple protocols, and allows
+            // people to open orders ahead of time, and avoids things like sniping bots, etc.
+            // TODO: should we *only* prevent swaps / withdrawals? would it be ok to allow deposits?
+            // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
+            expect interval.is_entirely_after(validity_range, datum.market_open)
+
+            // We also check that the pool output has the right value (as mentioned above)
+            // In particular, the pool must have:
+            // - the pool NFT
+            // - the correctly adjusted assets from swapping, deposits, withdrawals, etc.
+            // - an additional amount of ADA corresponding to the protocol fees
+            // - NOTHING ELSE; This is important because someone could add tons of junk tokens and increase the execution units, potentially even freezing the UTXO
+            expect
+              has_expected_pool_value(
+                pool_script_hash,
+                actual_identifier,
+                pool_output_value,
+                pool_policy_a,
+                pool_asset_name_a,
+                final_a,
+                pool_policy_b,
+                pool_asset_name_b,
+                final_b,
+                final_lp,
+                actual_protocol_fees,
+              )
+            // Now, we check various things about the output datum to ensure they're each correct.
+            // Check that the datum correctly records the final circulating LP, accounting for any deposits and withdrawals
+            // In particular, this is important because that circulating supply is exaclty what determines the users ownership of assets in the pool
+            // If this gets out of sync with what we've actually minted, then users will be able to either redeem assets they aren't entitled to,
+            // or be unable to access funds they are entitled to.
+            expect actual_circulating_lp == final_lp
+
+            // Make sure the protocol fees have been correctly updated
+            expect
+              actual_protocol_fees == initial_protocol_fees + expected_fees_collected
+
+            // And make sure each of these fields is unchanged
+            and {
+              datum.identifier == actual_identifier,
+              datum.assets == actual_assets,
+              datum.condition == actual_condition,
+              datum.condition_datum == actual_condition_datum,
+              datum.market_open == actual_market_open,
+              // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
+              pool_input.address.stake_credential == pool_output_address.stake_credential,
             }
-            _ -> True
           }
-
-        // the market must have opened; this allows projects to pre-create their pool, potentially across multiple protocols, and allows
-        // people to open orders ahead of time, and avoids things like sniping bots, etc.
-        // TODO: should we *only* prevent swaps / withdrawals? would it be ok to allow deposits?
-        // TODO: should we have a "blackout period", where withdrawals are prevented, similar to IPOs?
-        expect interval.is_entirely_after(validity_range, datum.market_open)
-
-        // We also check that the pool output has the right value (as mentioned above)
-        // In particular, the pool must have:
-        // - the pool NFT
-        // - the correctly adjusted assets from swapping, deposits, withdrawals, etc.
-        // - an additional amount of ADA corresponding to the protocol fees
-        // - NOTHING ELSE; This is important because someone could add tons of junk tokens and increase the execution units, potentially even freezing the UTXO
-        expect
-          has_expected_pool_value(
-            pool_script_hash,
-            actual_identifier,
-            pool_output_value,
-            pool_policy_a,
-            pool_asset_name_a,
-            final_a,
-            pool_policy_b,
-            pool_asset_name_b,
-            final_b,
-            final_lp,
-            actual_protocol_fees,
-          )
-        // Now, we check various things about the output datum to ensure they're each correct.
-        // Check that the datum correctly records the final circulating LP, accounting for any deposits and withdrawals
-        // In particular, this is important because that circulating supply is exaclty what determines the users ownership of assets in the pool
-        // If this gets out of sync with what we've actually minted, then users will be able to either redeem assets they aren't entitled to,
-        // or be unable to access funds they are entitled to.
-        expect actual_circulating_lp == final_lp
-
-        // Make sure the protocol fees have been correctly updated
-        expect
-          actual_protocol_fees == initial_protocol_fees + expected_fees_collected
-
-        // And make sure each of these fields is unchanged
-        and {
-          datum.identifier == actual_identifier,
-          datum.assets == actual_assets,
-          datum.bid_fees_per_10_thousand == actual_bid_fees_per_10_thousand,
-          datum.ask_fees_per_10_thousand == actual_ask_fees_per_10_thousand,
-          datum.market_open == actual_market_open,
-          // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
-          pool_input.address.stake_credential == pool_output_address.stake_credential,
+          False -> {
+            expect Some(..) =
+              pairs.get_first(withdrawals, address.Script(actual_condition))
+            True
+          }
         }
       }
-      Manage ->
+      ConditionManage ->
         // There must be a redeemer for a (stake-script) withdrawal against the manage stake script,
         // and the redeemer must correctly point at the pool UTXO
         pairs.foldl(
@@ -313,11 +333,11 @@ validator pool(
               Withdraw(Script(script)) -> {
                 let is_valid_manage_script_invoke =
                   if script == manage_stake_script_hash {
-                    expect redeemer: ManageRedeemer = redeemer
+                    expect redeemer: ConditionManageRedeemer = redeemer
                     let redeemer_pool_input =
                       when redeemer is {
-                        UpdatePoolFees { pool_input } -> pool_input
-                        WithdrawFees { pool_input, .. } -> pool_input
+                        ConditionUpdateCondition { pool_input } -> pool_input
+                        ConditionWithdrawFees { pool_input, .. } -> pool_input
                       }
                     let input_index = own_input_index(transaction, out_ref)
                     // Manage redeemer must have the correct index of this pool input
@@ -334,19 +354,23 @@ validator pool(
     }
   }
 
-  mint(r: PoolMintRedeemer, own_policy_id: PolicyId, transaction: Transaction) {
+  mint(
+    r: ConditionPoolMintRedeemer,
+    own_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     // When minting, we can be doing one of two things: minting the pool itself, or minting the LP token
     when r is {
       // For creating a new pool, one of our design objectives was to avoid requiring interaction with any global
       // "factory", as in v1; this created a lot of contention, and didn't serve it's original goal of ensuring that
       // the (pair, fee) was unique.
-      CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+      ConditionCreatePool(assets, pool_output_ix, metadata_output_ix) -> {
         // And grab the pool output
         expect Some(pool_output) = list.at(transaction.outputs, pool_output_ix)
 
         // Check that the pool datum is inline, because a datum hash could brick this pool
         expect InlineDatum(d) = pool_output.datum
-        expect pool_output_datum: PoolDatum = d
+        expect pool_output_datum: ConditionPoolDatum = d
 
         // The assets on the pool must be sorted
         // This is partially to make off-chain indexing easier, and as an on-chain optimization,
@@ -478,6 +502,12 @@ validator pool(
         //    and potentially even on access UIs for the Sundae protocol
         expect metadata_output.datum == InlineDatum(Void)
 
+        expect Some(..) =
+          pairs.get_first(
+            transaction.withdrawals,
+            address.Script(pool_output_datum.condition),
+          )
+
         // And check that the datum is initialized correctly; This is part of why we have a minting policy handling this,
         // as it allows us to authenticate the providence of the datum.
         // A datum is valid so long as
@@ -490,12 +520,6 @@ validator pool(
             pool_output_datum.identifier == new_pool_id,
             pool_output_datum.assets == (asset_a, asset_b),
             pool_output_datum.circulating_lp == initial_lq,
-            shared.fees_in_legal_range(
-              pool_output_datum.bid_fees_per_10_thousand,
-            ),
-            shared.fees_in_legal_range(
-              pool_output_datum.ask_fees_per_10_thousand,
-            ),
           }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
@@ -530,7 +554,7 @@ validator pool(
       // - During CreatePool, it would be impossible to mint multiple of the same pool tokens; a different pool token; a different number of LP tokens; or a different pool's LP tokens
       // - During MintLP, it would be impossible to mint the relevant pool token; thus, the pool script must run, and thus it will be impossible to mint another pool token, a different pool
       //   ident pool token, a different quantity of LP tokens, or a different pools LP tokens
-      MintLP(pool_ident) -> {
+      ConditionMintLP(pool_ident) -> {
         let pool_nft_name = shared.pool_nft_name(pool_ident)
         expect Some(pool_output) = list.head(transaction.outputs)
         and {
@@ -544,7 +568,7 @@ validator pool(
           ) == 0,
         }
       }
-      BurnPool(pool_ident) -> {
+      ConditionBurnPool(pool_ident) -> {
         // Burning an asset is only possible when spending it, so if we enforce
         // that the mints consist of exactly 1 burn for the specified pool NFT
         // then we can defer to the pool spending validator
@@ -560,41 +584,85 @@ validator pool(
   }
 }
 
-fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
-  // Find the pool output; we can assume the pool output is the first output, because:
-  // - The ledger doesn't reorder outputs, just inputs
-  // - We check that the address is correct, so if the first output was to a different contract, we would fail
-  // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
-  // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
-  expect Some(pool_output) = list.head(outputs)
-  expect InlineDatum(output_datum) = pool_output.datum
-  expect output_datum: PoolDatum = output_datum
-  (pool_output, output_datum)
-}
-
-/// This is responsible for checking that the minting value on the transaction is valid
-/// based on the pool state, the policy ID, and the initial incoming datum.
-fn minted_correct_pool_tokens(
-  pool_policy_id: PolicyId,
-  mint: Value,
-  datum: PoolDatum,
-  quantity_lp: Int,
+/// Check that the UTXO contents are correct given a specific pool outcome
+/// In particular, it must have the final A reserves, the final B reserves, the pool NFT, and the protocol fees
+pub fn has_expected_pool_value(
+  pool_script_hash: PolicyId,
+  identifier: Ident,
+  output_value: Value,
+  pool_policy_a: PolicyId,
+  pool_asset_name_a: AssetName,
+  pool_quantity_a: Int,
+  pool_policy_b: PolicyId,
+  pool_asset_name_b: AssetName,
+  pool_quantity_b: Int,
+  final_lp: Int,
+  final_protocol_fees: Int,
 ) -> Bool {
-  // Unwrap the silly MintedValue special type
-  // Note also we only look at the tokens with this policyID
-  // so that we can still mint other tokens
-  let minted_tokens = assets.tokens(mint, pool_policy_id)
-
-  // If the initial datum has the same circulating LP as the outcome, then we expect no minted tokens
-  // Otherwise, the minted tokens should be exactly the pool LP tokens and nothing else
-  // TODO: confirm that the "minting 0 ada" problem doesn't apply here; we have real-world transactions, so I doubt it does, but I want to confirm.
-  // TODO: This should allow minting of other tokens, from other policy IDs, perhaps, for composibility?
-  if datum.circulating_lp == quantity_lp {
-    dict.is_empty(minted_tokens)
+  // Asset A *could* be ADA; in which case there should be 3 tokens on the output
+  // (ADA, Asset B, and the NFT)
+  if pool_policy_a == ada_policy_id {
+    let actual =
+      list.foldl(
+        assets.flatten(output_value),
+        // (token count, lovelace amount, token b amount, pool nft amount)
+        (0, 0, 0, 0),
+        fn(asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == pool_policy_a {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th)
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th + 1)
+          }
+        },
+      )
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    let expected =
+      if final_lp == 0 {
+        expect pool_quantity_a == 0
+        expect pool_quantity_b == 0
+        (2, final_protocol_fees, 0, 1)
+      } else {
+        (3, final_protocol_fees + pool_quantity_a, pool_quantity_b, 1)
+      }
+    // Rather than constructing a value directly (which can be expensive)
+    // we can just compare the expected token count and amounts with a single pass over the value
+    expected == actual
   } else {
-    dict.to_pairs(minted_tokens) == [
-      Pair(pool_lp_name(datum.identifier), quantity_lp - datum.circulating_lp),
-    ]
+    // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
+    // ADA, the Pool NFT, Asset A, and Asset B
+    let actual =
+      list.foldl(
+        assets.flatten(output_value),
+        // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
+        (0, 0, 0, 0, 0),
+        fn(asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == ada_policy_id {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th, acc.5th)
+          } else if asset.1st == pool_policy_a && asset.2nd == pool_asset_name_a {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th, acc.5th)
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
+            (token_count, acc.2nd, acc.3rd, acc.4th + asset.3rd, acc.5th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th, acc.5th + 1)
+          }
+        },
+      )
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    let expected =
+      if final_lp == 0 {
+        expect pool_quantity_a == 0
+        expect pool_quantity_b == 0
+        (2, final_protocol_fees, 0, 0, 1)
+      } else {
+        (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1)
+      }
+    expected == actual
   }
 }
 
@@ -620,7 +688,7 @@ pub fn int_to_ident(n: Int) -> Ident {
 // it only checks for this particular script hash. This script, using the withdraw 0 trick, then checks the correct invariants
 validator manage(settings_policy_id: PolicyId) {
   else(ctx: ScriptContext) {
-    expect redeemer: ManageRedeemer = ctx.redeemer
+    expect redeemer: ConditionManageRedeemer = ctx.redeemer
     let transaction = ctx.transaction
     let Transaction {
       inputs,
@@ -638,7 +706,7 @@ validator manage(settings_policy_id: PolicyId) {
 
     when redeemer is {
       // In order to withdraw `amount` fees into `treasury_output` utxo, looking at `pool_input`
-      WithdrawFees { amount, treasury_output, pool_input } -> {
+      ConditionWithdrawFees { amount, treasury_output, pool_input } -> {
         // Find the pool input; note that we don't look for the pool NFT here, because if someone
         // spends with an unauthenticated UTXO, it will fail the spend script; and if someone
         // spends with a different script address, this script can't do anything fishy,
@@ -647,9 +715,9 @@ validator manage(settings_policy_id: PolicyId) {
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
-        expect datum: PoolDatum = datum
+        expect datum: ConditionPoolDatum = datum
         expect Script(pool_script_hash) = pool_input.address.payment_credential
-        let PoolDatum {
+        let ConditionPoolDatum {
           circulating_lp: initial_circulating_lp,
           protocol_fees: initial_protocol_fees,
           ..
@@ -716,7 +784,10 @@ validator manage(settings_policy_id: PolicyId) {
           // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
           // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
           let expected_datum =
-            PoolDatum { ..datum, protocol_fees: initial_protocol_fees - amount }
+            ConditionPoolDatum {
+              ..datum,
+              protocol_fees: initial_protocol_fees - amount,
+            }
           expect output_datum == expected_datum
 
           // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
@@ -732,7 +803,7 @@ validator manage(settings_policy_id: PolicyId) {
         }
       }
       // To update the pool fees for the pool at `pool_input`...
-      UpdatePoolFees { pool_input } -> {
+      ConditionUpdateCondition { pool_input } -> {
         // Find the pool input; note that we don't look for the pool NFT here, because if someone
         // spends with an unauthenticated UTXO, it will fail the spend script; and if someone
         // spends with a different script address, this script can't do anything fishy,
@@ -741,32 +812,32 @@ validator manage(settings_policy_id: PolicyId) {
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
-        expect datum: PoolDatum = datum
+        expect datum: ConditionPoolDatum = datum
         // We need the pool output to check that only the fees or fee manager are updated
         let (
           Output { address: pool_output_address, value: pool_output_value, .. },
           pool_output_datum,
         ) = find_pool_output(outputs)
 
-        let PoolDatum {
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
+        let ConditionPoolDatum {
+          condition: output_condition,
           fee_manager: output_fee_manager,
           ..
         } = pool_output_datum
 
-        // Make sure we don't update the fees to negative or above 100%
-        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
-        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
-
         let expected_datum =
-          PoolDatum {
+          ConditionPoolDatum {
             ..datum,
-            bid_fees_per_10_thousand: bid_fees_per_10_thousand,
-            ask_fees_per_10_thousand: ask_fees_per_10_thousand,
+            condition: output_condition,
             fee_manager: output_fee_manager,
           }
         expect pool_output_datum == expected_datum
+
+        expect Some(..) =
+          pairs.get_first(
+            transaction.withdrawals,
+            address.Script(output_condition),
+          )
 
         // Check that the *current* fee manager approves the update
         expect Some(fee_manager) = datum.fee_manager

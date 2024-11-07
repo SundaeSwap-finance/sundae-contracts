@@ -150,3 +150,5 @@ pub fn small_pow2(exponent: Int) -> Int {
     math.pow2(exponent)
   }
 }
+
+pub const millis_per_day = 86_400_000

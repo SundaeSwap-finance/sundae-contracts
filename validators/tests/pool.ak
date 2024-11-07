@@ -15,7 +15,7 @@ use cardano/transaction.{
   Transaction, Withdraw,
 }
 use pool as pool_validator
-use shared.{pool_lp_name}
+use shared.{has_expected_pool_value, pool_lp_name}
 use sundae/multisig
 use tests/constants
 use tests/examples/ex_settings.{
@@ -1406,7 +1406,7 @@ test has_expected_pool_value_test() {
     }
   let protocol_fees = 2_000_000
 
-  pool_validator.has_expected_pool_value(
+  has_expected_pool_value(
     constants.pool_script_hash,
     constants.pool_ident,
     pool_value,
@@ -1453,7 +1453,7 @@ test has_expected_pool_value_test2() {
     }
   let protocol_fees = 2_000_000
 
-  pool_validator.has_expected_pool_value(
+  has_expected_pool_value(
     constants.pool_script_hash,
     constants.pool_ident,
     pool_value,
@@ -1482,7 +1482,7 @@ test has_expected_pool_value_withdraw_all() {
     }
   let protocol_fees = 3_000_000
 
-  pool_validator.has_expected_pool_value(
+  has_expected_pool_value(
     constants.pool_script_hash,
     constants.pool_ident,
     pool_value,
