@@ -1,10 +1,10 @@
 use aiken/cbor
-use aiken/dict.{Dict}
+use aiken/collection/pairs
+use aiken/crypto.{verify_ed25519_signature}
 use aiken/interval.{Finite, Interval}
-use aiken/transaction.{OutputReference, ValidityRange}
-use aiken/transaction/credential.{
-  Inline, ScriptCredential, StakeCredential, verify_signature,
-}
+use cardano/address.{Credential}
+use cardano/assets.{Lovelace}
+use cardano/transaction.{OutputReference, ValidityRange}
 use types/order.{
   Order, Script, Signature, SignedStrategyExecution, StrategyAuthorization,
   StrategyExecution,
@@ -64,7 +64,7 @@ fn contains_interval(outer: Interval<Int>, inner: Interval<Int>) -> Bool {
 }
 
 /// Extract the order details for a "strategy" order that was provided by the scooper, and check that it is valid.
-/// 
+///
 /// In order for a strategy execution to be valid, it must:
 /// - Be for the specific order that is being processed
 /// - Be executed in a transaction that can only exist within the valid interval with the signature
@@ -72,7 +72,7 @@ fn contains_interval(outer: Interval<Int>, inner: Interval<Int>) -> Bool {
 pub fn get_strategy(
   order_tx_ref: OutputReference,
   tx_valid_range: ValidityRange,
-  withdrawals: Dict<StakeCredential, Int>,
+  withdrawals: Pairs<Credential, Lovelace>,
   auth: StrategyAuthorization,
   sse: SignedStrategyExecution,
 ) -> Order {
@@ -93,11 +93,11 @@ pub fn get_strategy(
       // you could replay that signature over some other strategy order with the same signing key
       let strategy_bytes = cbor.serialise(execution)
       expect Some(signature) = signature
-      expect verify_signature(signer, strategy_bytes, signature)
+      expect verify_ed25519_signature(signer, strategy_bytes, signature)
       details
     }
     Script { script } -> {
-      expect dict.has_key(withdrawals, Inline(ScriptCredential(script)))
+      expect Some(..) = pairs.get_first(withdrawals, address.Script(script))
       details
     }
   }

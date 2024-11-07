@@ -1,8 +1,9 @@
 use aiken/builtin
-use aiken/dict
-use aiken/transaction.{InlineDatum, Input, Output}
-use aiken/transaction/credential.{Address, Credential, VerificationKey}
-use aiken/transaction/value.{AssetName, PolicyId}
+use aiken/collection/dict
+use aiken/crypto.{VerificationKey}
+use cardano/address.{Address, Credential}
+use cardano/assets.{AssetName, PolicyId}
+use cardano/transaction.{InlineDatum, Input, Output}
 use shared.{Rational}
 use sundae/multisig.{MultisigScript}
 
@@ -90,10 +91,10 @@ pub fn find_settings_datum(
 ) -> SettingsDatum {
   // Assume the settings input is at the head of the list.
   let settings_output = builtin.head_list(reference_inputs).output
-  let settings_value_list = dict.to_list(value.to_dict(settings_output.value))
-  expect [_, (found_policy_id, settings_dict)] = settings_value_list
+  let settings_value_list = dict.to_pairs(assets.to_dict(settings_output.value))
+  expect [_, Pair(found_policy_id, settings_dict)] = settings_value_list
   expect found_policy_id == settings_policy_id
-  expect dict.to_list(settings_dict) == [(settings_nft_name, 1)]
+  expect dict.to_pairs(settings_dict) == [Pair(settings_nft_name, 1)]
   expect InlineDatum(settings_datum) = settings_output.datum
   expect settings_datum: SettingsDatum = settings_datum
   settings_datum

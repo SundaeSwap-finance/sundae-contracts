@@ -1,10 +1,8 @@
 use aiken/interval
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
-}
-use aiken/transaction/value
 use calculation/record.{check_record}
+use cardano/address.{Address, Script, VerificationKey}
+use cardano/assets
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use shared
 use sundae/multisig
 use types/oracle.{OracleDatum} as types_oracle
@@ -16,12 +14,10 @@ test record() {
   let oracle_name = shared.oracle_sft_name()
   let addr =
     Address(
-      ScriptCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      Script(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
       None,
     )
-  let input_value = value.from_lovelace(4_500_000)
+  let input_value = assets.from_lovelace(4_500_000)
   let destination = Fixed { address: addr, datum: NoDatum }
   let input =
     Output {
@@ -33,8 +29,8 @@ test record() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(2_000_000)
-        |> value.add(oracle_policy_id, oracle_name, 1),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(oracle_policy_id, oracle_name, 1),
       datum: InlineDatum(
         OracleDatum {
           owner: multisig.AnyOf([]),
@@ -62,12 +58,10 @@ test record_must_pay_to_destination() fail {
   let oracle_name = shared.oracle_sft_name()
   let addr =
     Address(
-      ScriptCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      Script(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
       None,
     )
-  let input_value = value.from_lovelace(4_500_000)
+  let input_value = assets.from_lovelace(4_500_000)
   let destination = Fixed { address: addr, datum: NoDatum }
   let input =
     Output {
@@ -78,9 +72,9 @@ test record_must_pay_to_destination() fail {
     }
   let output =
     Output {
-      address: Address(VerificationKeyCredential(#"00"), None),
-      value: value.from_lovelace(2_000_000)
-        |> value.add(oracle_policy_id, oracle_name, 1),
+      address: Address(VerificationKey(#"00"), None),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(oracle_policy_id, oracle_name, 1),
       datum: InlineDatum(
         OracleDatum {
           owner: multisig.AnyOf([]),
@@ -108,12 +102,10 @@ test record_must_have_token() fail {
   let oracle_name = shared.oracle_sft_name()
   let addr =
     Address(
-      ScriptCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      Script(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
       None,
     )
-  let input_value = value.from_lovelace(4_500_000)
+  let input_value = assets.from_lovelace(4_500_000)
   let destination = Fixed { address: addr, datum: NoDatum }
   let input =
     Output {
@@ -125,7 +117,7 @@ test record_must_have_token() fail {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(2_000_000),
+      value: assets.from_lovelace(2_000_000),
       datum: InlineDatum(
         OracleDatum {
           owner: multisig.AnyOf([]),
@@ -153,14 +145,12 @@ test record_bad_datum() fail {
   let oracle_name = shared.oracle_sft_name()
   let addr =
     Address(
-      ScriptCredential(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
+      Script(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
       None,
     )
   let input_value =
-    value.from_lovelace(4_500_000)
-      |> value.add(oracle_policy_id, oracle_name, 1)
+    assets.from_lovelace(4_500_000)
+      |> assets.add(oracle_policy_id, oracle_name, 1)
   let destination = Fixed { address: addr, datum: NoDatum }
   let input =
     Output {
@@ -172,8 +162,8 @@ test record_bad_datum() fail {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(2_000_000)
-        |> value.add(oracle_policy_id, oracle_name, 1),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(oracle_policy_id, oracle_name, 1),
       datum: InlineDatum(
         OracleDatum {
           owner: multisig.AnyOf([]),

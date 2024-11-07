@@ -1,4 +1,3 @@
-use aiken/time.{PosixTime}
 use shared.{AssetClass, Ident}
 use sundae/multisig
 use types/order.{SignedStrategyExecution}
@@ -24,7 +23,7 @@ pub type PoolDatum {
   fee_manager: Option<multisig.MultisigScript>,
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
   /// TODO: deposits and arguably withdrawals should be processed before the market open
-  market_open: PosixTime,
+  market_open: Int,
   /// The amount of ADA on the UTXO that is set aside by collecting protocol fees
   /// This should be increased on each scoop to represent collecting fees; deducted from the reserve amount (if one of the tokens in the pair is ADA)
   /// to calculate the swap amounts, and decreased when some amount is withdrawn.
@@ -77,7 +76,7 @@ pub type PoolMintRedeemer {
     ///  - A CIP-68 (111) token; Whichever UTXO holds this token can set a datum that determines on-chain metadata like decimals, name, and image
     /// That token is given to a "metadata administrator" who can set the appropriate metadata, and update it if needed.
     /// This is done so we can efficiently skip to the correct metadata output
-    /// This is safe because we validate that the token is paid to the metadata admin 
+    /// This is safe because we validate that the token is paid to the metadata admin
     metadata_output: Int,
   }
   /// to burn the pool NFT (when permitted by the spending validator)

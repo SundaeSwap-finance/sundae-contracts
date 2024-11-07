@@ -1,7 +1,7 @@
-use aiken/hash.{Blake2b_224, Hash}
-use aiken/transaction.{Datum, OutputReference, ValidityRange}
-use aiken/transaction/credential.{Address, Script, Signature, VerificationKey}
-use aiken/transaction/value.{AssetName, PolicyId}
+use aiken/crypto.{Blake2b_224, Hash, Script, Signature, VerificationKey}
+use cardano/address.{Address}
+use cardano/assets.{AssetName, PolicyId}
+use cardano/transaction.{Datum, OutputReference, ValidityRange}
 use shared.{Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
 
@@ -47,7 +47,7 @@ pub type Destination {
 
 /// There are two ways to delegate authorization of a strategy::
 /// - by a signing key
-/// - or by some script in the withdrawals of the transaction 
+/// - or by some script in the withdrawals of the transaction
 pub type StrategyAuthorization {
   Signature { signer: VerificationKey }
   Script { script: Hash<Blake2b_224, Script> }

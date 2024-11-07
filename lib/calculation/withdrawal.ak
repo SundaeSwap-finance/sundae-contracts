@@ -1,6 +1,6 @@
 use aiken/math
-use aiken/transaction.{Output}
-use aiken/transaction/value.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/transaction.{Output}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
@@ -44,7 +44,7 @@ pub fn do_withdrawal(
   // maximum to take. Also note, we specify an amount at all so that you can have things like
   // time-release withdrawals, where you withdraw a small amount across multiple steps in a chain.
   let withdrawn =
-    math.min(amount, value.quantity_of(input_value, lp_policy, lp_asset_name))
+    math.min(amount, assets.quantity_of(input_value, lp_policy, lp_asset_name))
 
   // We calculate the asset_a and asset_b to withdraw, namely the percentage of each asset
   // that corresponds to the percentage of LP token burned.  Note we multiply first to minimize precision loss.
@@ -59,10 +59,10 @@ pub fn do_withdrawal(
   // OPTIMIZATION: I wonder if there's a more efficient implementation that can do this in just one pass
   let remainder =
     input_value
-      |> value.add(lp_policy, lp_asset_name, -withdrawn)
-      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(pool_policy_a, pool_asset_name_a, withdrawn_a)
-      |> value.add(pool_policy_b, pool_asset_name_b, withdrawn_b)
+      |> assets.add(lp_policy, lp_asset_name, -withdrawn)
+      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> assets.add(pool_policy_a, pool_asset_name_a, withdrawn_a)
+      |> assets.add(pool_policy_b, pool_asset_name_b, withdrawn_b)
 
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)

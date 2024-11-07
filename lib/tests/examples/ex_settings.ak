@@ -1,9 +1,7 @@
 use aiken/cbor
-use aiken/transaction.{InlineDatum, Input, Output}
-use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
-}
-use aiken/transaction/value
+use cardano/address.{Address, Script, VerificationKey}
+use cardano/assets
+use cardano/transaction.{InlineDatum, Input, Output}
 use sundae/multisig
 use tests/examples/ex_shared.{mk_output_reference,
   print_example, script_address}
@@ -24,18 +22,12 @@ pub const example_treasury_address =
 pub fn mk_valid_settings_datum(scoopers: List<ByteArray>) -> SettingsDatum {
   SettingsDatum {
     settings_admin: multisig.Signature(example_settings_admin),
-    metadata_admin: Address(
-      VerificationKeyCredential(example_metadata_admin),
-      None,
-    ),
+    metadata_admin: Address(VerificationKey(example_metadata_admin), None),
     treasury_admin: multisig.Signature(example_treasury_admin),
-    treasury_address: Address(
-      VerificationKeyCredential(example_treasury_address),
-      None,
-    ),
+    treasury_address: Address(VerificationKey(example_treasury_address), None),
     treasury_allowance: (1, 10),
     authorized_scoopers: Some(scoopers),
-    authorized_staking_keys: [VerificationKeyCredential(example_settings_admin)],
+    authorized_staking_keys: [VerificationKey(example_settings_admin)],
     base_fee: 0,
     simple_fee: 2_500_000,
     strategy_fee: 5_000_000,
@@ -55,8 +47,8 @@ pub fn mk_valid_settings_input(scoopers: List<ByteArray>, ix: Int) -> Input {
       output_reference: mk_output_reference(ix),
       output: Output {
         address: settings_address,
-        value: value.from_lovelace(2_000_000)
-          |> value.add(hash_of_settings_script, settings_nft_name, 1),
+        value: assets.from_lovelace(2_000_000)
+          |> assets.add(hash_of_settings_script, settings_nft_name, 1),
         datum: InlineDatum(settings_datum),
         reference_script: None,
       },
@@ -135,16 +127,12 @@ test example_mainnet_boot_settings_datum() {
     SettingsDatum {
       settings_admin: admin,
       metadata_admin: Address(
-        ScriptCredential(
-          #"1854e9028a89496e9772a54882729d16554f8ed9af27ec6046c9a87c",
-        ),
+        Script(#"1854e9028a89496e9772a54882729d16554f8ed9af27ec6046c9a87c"),
         None,
       ),
       treasury_admin: admin,
       treasury_address: Address(
-        ScriptCredential(
-          #"c0d7aa781d14f206f1f6468f0a2d49187d1ebcb8f59c59d75d0c27a7",
-        ),
+        Script(#"c0d7aa781d14f206f1f6468f0a2d49187d1ebcb8f59c59d75d0c27a7"),
         None,
       ),
       treasury_allowance: (0, 10),
@@ -210,13 +198,10 @@ test example_mainnet_boot_settings_datum() {
           #"ee33744f202c96c2024b25b6cc177ad9537d46437cd48cc291f58009",
           // EASY
           #"37eb116b3ff8a70e4be778b5e8d30d3b40421ffe6622f6a983f67f3f",
-
         ],
       ),
       authorized_staking_keys: [
-        ScriptCredential(
-          #"4399813dad91bb78a5eb17c26ff50852bc75d3fa7b6e9ae87232ccc1",
-        ),
+        Script(#"4399813dad91bb78a5eb17c26ff50852bc75d3fa7b6e9ae87232ccc1"),
       ],
       base_fee: 332_000,
       simple_fee: 168_000,

@@ -1,9 +1,9 @@
-use aiken/dict
-use aiken/hash.{Blake2b_224, Hash}
-use aiken/transaction.{ScriptContext}
-use aiken/transaction/credential.{Inline, Script, ScriptCredential}
+use aiken/collection/pairs
+use aiken/crypto.{ScriptHash}
+use cardano/address.{Script}
+use cardano/transaction.{Transaction}
 use sundae/multisig
-use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop}
+use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop} as types_order
 
 /// The order validator is a basic order destined for execution against a pool
 ///
@@ -24,37 +24,46 @@ use types/order.{Cancel, OrderDatum, OrderRedeemer, Scoop}
 ///   Instead of re-checking the conditions in every single script, we instead use a clever trick
 ///   We look for the stake_script_hash in the list of withdrawals!
 ///   This means that the stake script must run, and it can always run, because withdrawals of 0 tokens are allowed!
-///   That stake_script then checks that a pool NFT is present on the UTXO, where most of the subtle and important logic is implemented. 
-validator(stake_script_hash: Hash<Blake2b_224, Script>) {
+///   That stake_script then checks that a pool NFT is present on the UTXO, where most of the subtle and important logic is implemented.
+validator order(stake_script_hash: ScriptHash) {
   // For the purposes of spending the order, we don't care what the datum is, so avoid deserializing it
-  pub fn spend(datum: Data, redeemer: OrderRedeemer, ctx: ScriptContext) -> Bool {
+  spend(
+    datum: Option<Data>,
+    redeemer: OrderRedeemer,
+    _out_ref,
+    transaction: Transaction,
+  ) {
     when redeemer is {
       Cancel -> {
         // We only expect the datum here, to avoid any related costs in the other branch, which doesn't need it
+        expect Some(datum) = datum
         expect datum: OrderDatum = datum
         // Defer to sundae.multisig
         multisig.satisfied(
           datum.owner,
-          ctx.transaction.extra_signatories,
-          ctx.transaction.validity_range,
-          ctx.transaction.withdrawals,
+          transaction.extra_signatories,
+          transaction.validity_range,
+          transaction.withdrawals,
         )
       }
       Scoop ->
-        dict.foldl(
-          ctx.transaction.withdrawals,
+        pairs.foldl(
+          transaction.withdrawals,
           False,
           fn(withdrawal, _amt, acc) {
             when withdrawal is {
-              // TODO: we could make this more efficient by CBOR encoding the `Inline(ScriptCredential())` into the `stake_script_hash` parameter
+              // TODO: we could make this more efficient by CBOR encoding the `Script` into the `stake_script_hash` parameter
               // or perhaps even the whole withdrawal list to compare it all at once!
               // and just doing a direct equaltiy comparison. Since this runs for each order, this could represent significant savings!
-              Inline(ScriptCredential(script)) ->
-                acc || script == stake_script_hash
+              Script(script) -> acc || script == stake_script_hash
               _ -> acc
             }
           },
         )
     }
+  }
+
+  else(_) {
+    fail
   }
 }

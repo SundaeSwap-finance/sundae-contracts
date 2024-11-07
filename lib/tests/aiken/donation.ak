@@ -1,15 +1,15 @@
-use aiken/transaction.{InlineDatum, NoDatum, Output}
-use aiken/transaction/credential.{Address, VerificationKeyCredential}
-use aiken/transaction/value
 use calculation/donation.{do_donation}
 use calculation/shared.{PoolState} as calc_shared
+use cardano/address.{Address, VerificationKey}
+use cardano/assets
+use cardano/transaction.{InlineDatum, NoDatum, Output}
 use sundae/multisig
 use types/order.{Fixed, OrderDatum}
 
 test donation() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -25,8 +25,8 @@ test donation() {
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
   let input_value =
-    value.from_lovelace(3_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+    assets.from_lovelace(3_500_000)
+      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
   let assets =
     ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
@@ -51,10 +51,11 @@ test donation() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(999_999_999_999_999_999),
+      value: assets.from_lovelace(999_999_999_999_999_999),
       datum: NoDatum,
       reference_script: None,
     }
+
   let
     new_a,
     new_b,
@@ -82,7 +83,7 @@ test donation() {
 test donation_with_remainder() {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -98,8 +99,8 @@ test donation_with_remainder() {
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
   let input_value =
-    value.from_lovelace(3_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+    assets.from_lovelace(3_500_000)
+      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
   let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
     OrderDatum {
@@ -122,10 +123,11 @@ test donation_with_remainder() {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(1_000_000),
+      value: assets.from_lovelace(1_000_000),
       datum: NoDatum,
       reference_script: None,
     }
+
   let
     new_a,
     new_b,
@@ -153,7 +155,7 @@ test donation_with_remainder() {
 test donation_with_wrong_remainder() fail {
   let addr =
     Address(
-      VerificationKeyCredential(
+      VerificationKey(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
       None,
@@ -169,8 +171,8 @@ test donation_with_wrong_remainder() fail {
       quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
     }
   let input_value =
-    value.from_lovelace(3_500_000)
-      |> value.add(rberry.1st, rberry.2nd, 1_000_000)
+    assets.from_lovelace(3_500_000)
+      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
   let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
   let order =
     OrderDatum {
@@ -193,10 +195,11 @@ test donation_with_wrong_remainder() fail {
   let output =
     Output {
       address: addr,
-      value: value.from_lovelace(123),
+      value: assets.from_lovelace(123),
       datum: NoDatum,
       reference_script: None,
     }
+
   let
     new_a,
     new_b,

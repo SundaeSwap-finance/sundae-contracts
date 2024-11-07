@@ -1,14 +1,12 @@
-use aiken/transaction.{Output}
-use aiken/transaction/value.{
-  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id,
-}
+use cardano/assets.{AssetName, PolicyId, Value, ada_asset_name, ada_policy_id}
+use cardano/transaction.{Output}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
 
 /// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
 ///
 /// As in other places, we have lots of parameters to avoid destructuring
-/// TODO: it'd be nice to support partial fills, so long as the ratio between `order_give` and `min_takes` is preserved 
+/// TODO: it'd be nice to support partial fills, so long as the ratio between `order_give` and `min_takes` is preserved
 pub fn swap_takes(
   // The policy ID of the token being given up by the user
   give_policy_id: PolicyId,
@@ -36,7 +34,7 @@ pub fn swap_takes(
   // A continuation once we've calculated the output; this is more efficient that constructing a tuple, especially with backpassing syntax
   continuation: fn(Int, Int, Value) -> Bool,
 ) -> Bool {
-  // We compute the AMM formula, but 
+  // We compute the AMM formula, but
   // algebraically rearranged to minimize rounding error
   // Also, we want to ensure that:
   //  - The full order is filled (the user gets the most `takes` for the tokens they've offered)
@@ -53,7 +51,7 @@ pub fn swap_takes(
 
   // Check how much the user is actually giving up, by comparing the difference between the input and output values
   let order_give =
-    value.quantity_of(input_value, give_policy_id, give_asset_name) - value.quantity_of(
+    assets.quantity_of(input_value, give_policy_id, give_asset_name) - assets.quantity_of(
       output_value,
       give_policy_id,
       give_asset_name,
@@ -100,14 +98,14 @@ pub fn swap_takes(
   // We need to make sure that the user is getting the most efficient swap
   // So we check what they would receive with one less unit of the token they're giving
   // This would be
-  // 
+  //
   // let takes =
   //   pool_take * difference * (order_give - 1) / (
   //     pool_give * 10000 + (order_give - 1) * difference
   //   )
   //
   //  We can expand this out, algebraically, and simplify to reuse things we've already calculated
-  // 
+  //
   let one_less =
     ( give_takes_numerator - pool_take_times_difference ) / (
       give_takes_denominator - difference
@@ -119,9 +117,9 @@ pub fn swap_takes(
   // plus the asset that we get as part of the swap
   let out_value =
     input_value
-      |> value.add(give_policy_id, give_asset_name, -order_give)
-      |> value.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> value.add(take_policy_id, take_asset_name, give_takes)
+      |> assets.add(give_policy_id, give_asset_name, -order_give)
+      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
+      |> assets.add(take_policy_id, take_asset_name, give_takes)
 
   continuation(give_takes, order_give, out_value)
 }
@@ -187,10 +185,11 @@ pub fn do_swap(
   // There are two symmetric cases, depending on whether you're giving order A or order B
   // If there's a clever way to write this as one branch it might be clearer to read
   if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
+    let (min_received_1st, min_received_2nd, min_received_3rd) = min_received
     // Make sure we're actually swapping against a pool with the correct assets
     // We do this, instead of checking the pool ident, to allow orders to be agnostic and execute against an arbitrary pool
-    expect min_received.1st == pool_policy_b
-    expect min_received.2nd == pool_asset_name_b
+    expect min_received_1st == pool_policy_b
+    expect min_received_2nd == pool_asset_name_b
     // Compute the actual takes / change
     let
       takes,
@@ -216,7 +215,7 @@ pub fn do_swap(
 
     // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
     // is satisfied
-    expect takes >= min_received.3rd
+    expect takes >= min_received_3rd
     continuation(pool_quantity_a + gives, pool_quantity_b - takes)
   } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
     // This code is a mirror of the above, so should be scrutinized extra carefully during audit;
