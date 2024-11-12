@@ -1,5 +1,6 @@
 use aiken/cbor
 use aiken/collection/dict.{Dict}
+use aiken/collection/list
 use aiken/crypto.{Blake2b_256, Hash}
 use aiken/interval
 use calculation/deposit
@@ -142,7 +143,7 @@ pub fn process_order(
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
   // A continuation to call with the next pool state and the list of outputs; this is more efficient than constructing an object and tuples
-  continuation: fn(Int, Int, Int, List<Output>) -> Bool,
+  continuation: fn(Int, Int, Int, List<Output>, Bool) -> Bool,
 ) -> Bool {
   // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
@@ -214,7 +215,13 @@ pub fn process_order(
           min_received,
           output,
         )
-      continuation(new_pool_a, new_pool_b, pool_quantity_lp, rest_outputs)
+      continuation(
+        new_pool_a,
+        new_pool_b,
+        pool_quantity_lp,
+        rest_outputs,
+        False,
+      )
     }
     order.Deposit(assets) -> {
       expect [output, ..rest_outputs] = outputs
@@ -244,7 +251,7 @@ pub fn process_order(
           fee,
           output,
         )
-      continuation(new_a, new_b, new_lp, rest_outputs)
+      continuation(new_a, new_b, new_lp, rest_outputs, False)
     }
     order.Withdrawal(amount) -> {
       expect [output, ..rest_outputs] = outputs
@@ -274,7 +281,7 @@ pub fn process_order(
           fee,
           output,
         )
-      continuation(new_a, new_b, new_lp, rest_outputs)
+      continuation(new_a, new_b, new_lp, rest_outputs, True)
     }
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
     // The cheaper fees the DAO voted on should make this acceptable
@@ -308,9 +315,9 @@ pub fn process_order(
       // so we can skip over it
       // TODO: can we just return used_output here instead of passing around the lists of outputs?
       if used_output {
-        continuation(new_a, new_b, pool_quantity_lp, rest_outputs)
+        continuation(new_a, new_b, pool_quantity_lp, rest_outputs, False)
       } else {
-        continuation(new_a, new_b, pool_quantity_lp, outputs)
+        continuation(new_a, new_b, pool_quantity_lp, outputs, False)
       }
     }
     order.Record(policy) -> {
@@ -324,6 +331,7 @@ pub fn process_order(
         pool_quantity_b,
         pool_quantity_lp,
         rest_outputs,
+        False,
       )
     }
   }
@@ -373,8 +381,9 @@ pub fn process_orders(
   // A recursive aggregator for the number of "simple" and "strategy" orders we see; used for computing the fee without traversing the list independently, since we're already walking this list
   simple_count: Int,
   strategy_count: Int,
+  withdrawal_only: Bool,
   // A continuation to call with the final pool state; more efficient than constructing tuples / objects
-  continuation: fn(Int, Int, Int, Int, Int) -> Bool,
+  continuation: fn(Int, Int, Int, Int, Int, Bool) -> Bool,
 ) -> Bool {
   // Returns the final pool state, and the count of each order type
   // The main "pump" of the recursive loop is the input_order, which is a set of indices into the inputs list
@@ -388,6 +397,7 @@ pub fn process_orders(
         pool_quantity_lp,
         simple_count,
         strategy_count,
+        withdrawal_only,
       )
     [(idx, sse, _), ..rest] -> {
       // First, it's important to check that each order is processed only once;
@@ -439,6 +449,7 @@ pub fn process_orders(
         new_b,
         new_lp,
         next_orders,
+        new_withdrawal_only,
       <-
         process_order(
           pool_policy_a,
@@ -498,6 +509,7 @@ pub fn process_orders(
         next_uniqueness_flag,
         next_simple_count,
         next_strategy_count,
+        new_withdrawal_only && withdrawal_only,
         continuation,
       )
     }
@@ -588,6 +600,7 @@ test process_orders_test() {
     new_lp,
     simple,
     strategies,
+    withdrawal_only,
   <-
     process_orders(
       #"",
@@ -616,6 +629,7 @@ test process_orders_test() {
       0,
       0,
       0,
+      True,
     )
 
   expect new_a == 1_001_000_000
@@ -623,6 +637,7 @@ test process_orders_test() {
   expect new_lp == 1_000_000_000
   expect simple == 1
   expect strategies == 0
+  expect withdrawal_only == False
   True
 }
 
@@ -723,6 +738,7 @@ test process_30_shuffled_orders_test() {
     new_lp,
     simple,
     strategies,
+    withdrawal_only,
   <-
     process_orders(
       #"",
@@ -751,7 +767,20 @@ test process_30_shuffled_orders_test() {
       0,
       0,
       0,
+      True,
     )
 
-  new_a == 1_030_000_000 && new_b == 1_030_000_000 && new_lp == 1_000_000_000 && simple == 30 && strategies == 0
+  new_a == 1_030_000_000 && new_b == 1_030_000_000 && new_lp == 1_000_000_000 && simple == 30 && strategies == 0 && !withdrawal_only
+}
+
+pub fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
+  // Find the pool output; we can assume the pool output is the first output, because:
+  // - The ledger doesn't reorder outputs, just inputs
+  // - We check that the address is correct, so if the first output was to a different contract, we would fail
+  // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
+  // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
+  expect Some(pool_output) = list.head(outputs)
+  expect InlineDatum(output_datum) = pool_output.datum
+  expect output_datum: PoolDatum = output_datum
+  (pool_output, output_datum)
 }

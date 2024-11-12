@@ -4,7 +4,7 @@ use aiken/collection/pairs
 use aiken/crypto.{ScriptHash}
 use aiken/interval
 use aiken/primitive/bytearray
-use calculation/process.{pool_input_to_state, process_orders}
+use calculation/process.{find_pool_output, pool_input_to_state, process_orders}
 use cardano/address.{Address, Inline, Script}
 use cardano/assets.{PolicyId, Value}
 use cardano/script_context.{ScriptContext}
@@ -105,6 +105,8 @@ validator pool(
             bid_fees_per_10_thousand: actual_bid_fees_per_10_thousand,
             ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
             market_open: actual_market_open,
+            condition: actual_condition,
+            condition_datum: actual_condition_datum
             ..
           },
         ) = find_pool_output(outputs)
@@ -169,6 +171,7 @@ validator pool(
           final_lp,
           simple_count,
           strategy_count,
+          withdrawal_only,
         <-
           process_orders(
             actual_identifier,
@@ -214,6 +217,8 @@ validator pool(
             0,
             // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,
+            // Flag that turns False as soon as we encounter a non withdrawal
+            True,
           )
         // The accumulated count of "strategy" orders, see line above.
         // We need to make sure that the number of orders matches the amount that we processed
@@ -252,6 +257,19 @@ validator pool(
               scooper_sig == scooper
             }
             _ -> True
+          }
+
+        expect
+          when datum.condition is {
+            Some(condition_script) ->
+              if !withdrawal_only {
+                expect Some(..) =
+                  pairs.get_first(withdrawals, address.Script(condition_script))
+                True
+              } else {
+                True
+              }
+            None -> True
           }
 
         // the market must have opened; this allows projects to pre-create their pool, potentially across multiple protocols, and allows
@@ -293,6 +311,8 @@ validator pool(
 
         // And make sure each of these fields is unchanged
         and {
+          datum.condition == actual_condition,
+          datum.condition_datum == actual_condition_datum,
           datum.identifier == actual_identifier,
           datum.assets == actual_assets,
           datum.bid_fees_per_10_thousand == actual_bid_fees_per_10_thousand,
@@ -558,18 +578,6 @@ validator pool(
   else(_) {
     fail
   }
-}
-
-fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
-  // Find the pool output; we can assume the pool output is the first output, because:
-  // - The ledger doesn't reorder outputs, just inputs
-  // - We check that the address is correct, so if the first output was to a different contract, we would fail
-  // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
-  // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
-  expect Some(pool_output) = list.head(outputs)
-  expect InlineDatum(output_datum) = pool_output.datum
-  expect output_datum: PoolDatum = output_datum
-  (pool_output, output_datum)
 }
 
 /// This is responsible for checking that the minting value on the transaction is valid
