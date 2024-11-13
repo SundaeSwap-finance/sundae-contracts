@@ -78,6 +78,8 @@ fn scoop_trading_hours(
   }
 }
 
+// We are dealing with start and finish defined as time of day, so we need to account 
+// for the case where open is in the evening and close in the morning (close < open)
 fn time_between_start_finish(time: Int, start: Int, finish: Int) -> Bool {
   if start < finish {
     and {
@@ -96,4 +98,67 @@ fn time_between_start_finish(time: Int, start: Int, finish: Int) -> Bool {
       },
     }
   }
+}
+
+test scoop_normal_case() {
+  let tx_validity =
+    Interval {
+      lower_bound: IntervalBound {
+        // Wednesday 13. November 2024 10:00:00
+        bound_type: Finite(1731492000000),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        // Wednesday 13. November 2024 10:10:00
+        bound_type: Finite(1731492600000),
+        is_inclusive: True,
+      },
+    }
+  // 9 am
+  let open = 32400000
+  // 5 pm
+  let close = 61200000
+  expect scoop_trading_hours(tx_validity, open, close)
+}
+
+test scoop_normal_case_negative() {
+  let tx_validity =
+    Interval {
+      lower_bound: IntervalBound {
+        // Wednesday 13. November 2024 23:50:00
+        bound_type: Finite(1731541800000),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        // Thursday 14. November 2024 00:10:00
+        bound_type: Finite(1731543000000),
+        is_inclusive: True,
+      },
+    }
+  // 5 pm
+  let open = 32400000
+  // 9 am
+  let close = 61200000
+  expect !scoop_trading_hours(tx_validity, open, close)
+}
+
+test scoop_night_time_case_negative() {
+  let tx_validity =
+    Interval {
+      lower_bound: IntervalBound {
+        // Wednesday 13. November 2024 10:00:00
+        bound_type: Finite(1731492000000),
+        is_inclusive: True,
+      },
+      upper_bound: IntervalBound {
+        // Wednesday 13. November 2024 10:10:00
+        bound_type: Finite(1731492600000),
+        is_inclusive: True,
+      },
+    }
+  // 5 pm
+  let open = 61200000
+  // 9 am
+  let close = 32400000
+  expect !scoop_trading_hours(tx_validity, open, close)
 }
