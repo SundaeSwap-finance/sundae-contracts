@@ -6,13 +6,16 @@ use aiken/crypto.{
 }
 use aiken/interval.{Finite, Interval, IntervalBound}
 use calculation/process.{find_pool_output}
-use cardano/address.{Credential}
-use cardano/transaction.{InlineDatum, Input, Output, Transaction, ValidityRange}
+use cardano/address.{Credential, from_verification_key}
+use cardano/assets.{ada_asset_name, ada_policy_id}
+use cardano/transaction.{
+  InlineDatum, Input, NoDatum, Output, Transaction, ValidityRange,
+}
 use shared.{datum_of, is_script}
 use sundae/multisig
 use types/conditions/permissioned.{ComplianceToken,
-  PermissionedDatum} as permissioned_types
-use types/order.{OrderDatum}
+  PermissionedDatum, TokenData} as permissioned_types
+use types/order.{Fixed, OrderDatum, Swap}
 use types/pool.{Manage, PoolDatum, PoolRedeemer, PoolScoop}
 
 validator permissioned {
@@ -140,7 +143,7 @@ fn process_order(
     order.destination == compliance.token.destination,
     // The order details hash to the same hash from the token
     blake2b_256(serialise(order.details)) == compliance.token.order_hash,
-    // The valid range of the transaction entirely contains the valid range from the token
+    // The valid range of the token entirely contains the valid range of the transaction
     token_from < tx_from,
     token_to > tx_to,
     // The signature is valid
@@ -150,4 +153,74 @@ fn process_order(
       compliance.oracle_signature,
     ),
   }
+}
+
+// oracle secret key: 2da637b0ab533b63f32d7adc3e1de5c26be33f878bf2364db3d4813c5873aac5
+// oracle public key: 49e7cc40f180809b4d9e05030a09127883151517d4ed40948ad9ada2c81820ea
+
+test process_order_with_signed_data() {
+  let token_validity =
+    Interval {
+      lower_bound: IntervalBound { bound_type: Finite(0), is_inclusive: False },
+      upper_bound: IntervalBound {
+        bound_type: Finite(10000),
+        is_inclusive: False,
+      },
+    }
+  let tx_validity =
+    Interval {
+      lower_bound: IntervalBound {
+        bound_type: Finite(1000),
+        is_inclusive: False,
+      },
+      upper_bound: IntervalBound {
+        bound_type: Finite(2000),
+        is_inclusive: False,
+      },
+    }
+  let user_pub_hash =
+    #"0000000000000000000000000000000000000000000000000000000000000000"
+  let destination =
+    Fixed { address: from_verification_key(user_pub_hash), datum: NoDatum }
+  let order =
+    Swap {
+      offer: (ada_policy_id, ada_asset_name, 10),
+      min_received: (ada_policy_id, ada_asset_name, 10),
+    }
+  let oracle_key =
+    #"49e7cc40f180809b4d9e05030a09127883151517d4ed40948ad9ada2c81820ea"
+  let token_data =
+    TokenData {
+      did: #"0000",
+      user_key: user_pub_hash,
+      destination,
+      order_hash: blake2b_256(serialise(order)),
+      validity_range: token_validity,
+      oracle_key,
+    }
+
+  // If the test case data changes use this trace to sign with the secret key commented above the test case
+  trace serialise(token_data)
+
+  let signature =
+    #"93b0e5878a118198ff15cd82c6de676503b6d7c2158e4a148091033f583599d0ee63598d1f609a3953806103db193ddaf355ede27b34e7ca614251fdb183dd0d"
+
+  let compliance_token =
+    ComplianceToken { token: token_data, oracle_signature: signature }
+
+  let order_datum =
+    OrderDatum {
+      pool_ident: None,
+      owner: multisig.Signature(user_pub_hash),
+      max_protocol_fee: 0,
+      destination,
+      details: order,
+      extension: compliance_token,
+    }
+
+  process_order(
+    validity_range: tx_validity,
+    order: order_datum,
+    oracles: [blake2b_256(oracle_key)],
+  )
 }
