@@ -106,7 +106,7 @@ validator pool(
             ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
             market_open: actual_market_open,
             condition: actual_condition,
-            condition_datum: actual_condition_datum
+            condition_datum: actual_condition_datum,
             ..
           },
         ) = find_pool_output(outputs)
@@ -260,7 +260,7 @@ validator pool(
           }
 
         expect
-          when datum.condition is {
+          when actual_condition is {
             Some(condition_script) ->
               if !withdrawal_only {
                 expect Some(..) =

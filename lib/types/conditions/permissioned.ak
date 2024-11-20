@@ -7,7 +7,7 @@ use types/order.{Destination}
 
 pub type ComplianceToken {
   token: TokenData,
-  //A signature from the compliance oracle for fields 1-6
+  //A signature from the compliance oracle for serialized TokenData
   oracle_signature: Signature,
 }
 
