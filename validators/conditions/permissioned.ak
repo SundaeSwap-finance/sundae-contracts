@@ -218,9 +218,42 @@ test process_order_with_signed_data() {
       extension: compliance_token,
     }
 
-  process_order(
-    validity_range: tx_validity,
-    order: order_datum,
-    oracles: [blake2b_256(oracle_key)],
-  )
+  let valid_oracles = [blake2b_256(oracle_key)]
+
+  let valid_case =
+    process_order(
+      validity_range: tx_validity,
+      order: order_datum,
+      oracles: valid_oracles,
+    )
+
+  let wrong_details =
+    process_order(
+      validity_range: tx_validity,
+      order: OrderDatum {
+        ..order_datum,
+        details: Swap {
+          offer: (ada_policy_id, ada_asset_name, 20),
+          min_received: (ada_policy_id, ada_asset_name, 10),
+        },
+      },
+      oracles: valid_oracles,
+    )
+
+  let wrong_signature =
+    process_order(
+      validity_range: tx_validity,
+      order: OrderDatum {
+        ..order_datum,
+        extension: ComplianceToken {
+          ..compliance_token,
+          token: TokenData { ..token_data, did: #"0010" },
+        },
+      },
+      oracles: valid_oracles,
+    )
+
+  expect valid_case
+  expect !wrong_details
+  expect !wrong_signature
 }
