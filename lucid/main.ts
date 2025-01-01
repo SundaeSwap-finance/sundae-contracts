@@ -579,6 +579,18 @@ async function payoutScoopers() {
   let totalPayout = 0n;
 
   let date = new Date();
+  // getMonth counts from 0, so january = 0, december = 11
+  // if it's january 2025 now, then we're doing payouts for december.
+  // so we want to show "2024-12".
+  // otherwise, the 0-indexed month represents the conventional numbering of the
+  // previous month, so we can use it as-is.
+  let month = date.getMonth();
+  let year = date.getFullYear();
+  if (month == 0) {
+    year -= 1;
+    month = 12;
+  }
+
 
   const tx = lucid.newTx();
   const currentTime = Date.now();
@@ -602,9 +614,22 @@ async function payoutScoopers() {
   }
   tx.attachMetadata(674, {
     "msg": [
-      `Sundae Revenue ${date.getFullYear()}-${date.getMonth().toString().padStart(2, '0')}`
+      `Sundae Revenue ${year}-${month.toString().padStart(2, '0')}`
     ]
   });
+
+  let breakdownMeta = {};
+  for (const [k, v] of Object.entries(scooperFees)) {
+    let address = scooperAddresses.scoopers[k].reward;
+    let details = getAddressDetails(address);
+    let paymentCredential = details.paymentCredential;
+    if (!paymentCredential) {
+      throw new Error("Couldn't get payment credential of scooper reward address");
+    }
+    breakdownMeta[`0x${paymentCredential.hash}`] = { fees: v, rewards: flags.flat };
+  }
+
+  tx.attachMetadataWithConversion(73115, breakdownMeta);
 
   let sundaeAWSFee = BigInt(flags.sundaeAWSFees);
   let sundaeMiscFee = BigInt(flags.sundaeMiscFee);
