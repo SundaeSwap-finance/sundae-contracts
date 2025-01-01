@@ -27,7 +27,8 @@ import {
   UTxO,
   PROTOCOL_PARAMETERS_DEFAULT,
   Provider,
-} from "../../sundae-lucid/mod.ts";
+//} from "../../sundae-lucid/mod.ts";
+} from "../../lucid-upstream/mod.ts";
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
 import { ABL, Coin, SwapFees, doSwap, doDeposit, doWithdrawal } from "./cpp.ts";
@@ -133,7 +134,7 @@ async function updatePoolFees() {
   console.log("treasury address: " + treasuryAddress);
 
   let newPoolDatum = Data.from(targetPool.datum, types.PoolDatum);
-  newPoolDatum.bidFeesPer10Thousand = 100n;
+  newPoolDatum.bidFeesPer10Thousand = 30n;
   newPoolDatum.askFeesPer10Thousand = 100n;
 
   const change = await findChange(blockfrost, address);
@@ -433,6 +434,91 @@ async function withdrawPoolStakeRewards() {
 
 }
 
+async function payoutExtras() {
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  let sundaeAWSFee = BigInt(flags.sundaeAWSFees);
+  let sundaeMiscFee = BigInt(flags.sundaeMiscFee);
+  let tokenHolderFee = BigInt(flags.tokenHolderFee);
+  let usdmFundFee = BigInt(flags.usdmFundFee);
+
+  const tx = lucid.newTx();
+  const currentTime = Date.now();
+  tx.payToAddress(
+    flags.destination,
+    {
+      "lovelace": sundaeAWSFee,
+    },
+  );
+  tx.payToAddress(
+    flags.destination,
+    {
+      "lovelace": sundaeMiscFee,
+    },
+  );
+  tx.payToAddress(
+    flags.destination,
+    {
+      "lovelace": tokenHolderFee,
+    },
+  );
+  tx.payToAddress(
+    flags.destination,
+    {
+      "lovelace": usdmFundFee,
+    },
+  );
+
+  const txStr = await tx.toString();
+  console.log("tentative tx: " + txStr);
+  const completed = await tx.complete();
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    const txid = completed.toHash();
+    console.log(txid);
+    console.log("not submitted because --submit flag was not passed");
+  }
+}
+
 async function payoutScoopers() {
   const address = flags.address;
   const userPkh = paymentCredentialOf(address).hash;
@@ -447,9 +533,22 @@ async function payoutScoopers() {
     lucid = await Lucid.new(blockfrost, "Preview");
   }
 
-  lucid.selectWalletFrom({
-    address: address,
-  });
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
 
   let extraChangeUtxos = [];
   if (flags.extraChange) {
@@ -479,6 +578,8 @@ async function payoutScoopers() {
 
   let totalPayout = 0n;
 
+  let date = new Date();
+
   const tx = lucid.newTx();
   const currentTime = Date.now();
   tx.collectFrom(extraChangeUtxos);
@@ -499,7 +600,43 @@ async function payoutScoopers() {
     );
     totalPayout += BigInt(v) + BigInt(flags.flat) + adjust;
   }
-  console.log(`total payout: ${totalPayout}`);
+  tx.attachMetadata(674, {
+    "msg": [
+      `Sundae Revenue ${date.getFullYear()}-${date.getMonth().toString().padStart(2, '0')}`
+    ]
+  });
+
+  let sundaeAWSFee = BigInt(flags.sundaeAWSFees);
+  let sundaeMiscFee = BigInt(flags.sundaeMiscFee);
+  let tokenHolderFee = BigInt(flags.tokenHolderFee);
+  let usdmFundFee = BigInt(flags.usdmFundFee);
+
+  tx.payToAddress(
+    flags.tokenHoldersDestination,
+    {
+      "lovelace": sundaeAWSFee,
+    },
+  );
+  tx.payToAddress(
+    flags.otherPaymentsDestination,
+    {
+      "lovelace": sundaeMiscFee,
+    },
+  );
+  tx.payToAddress(
+    flags.otherPaymentsDestination,
+    {
+      "lovelace": tokenHolderFee,
+    },
+  );
+  tx.payToAddress(
+    flags.otherPaymentsDestination,
+    {
+      "lovelace": usdmFundFee,
+    },
+  );
+
+  console.log(`total scooper payout: ${totalPayout}`);
   const txStr = await tx.toString();
   console.log("tentative tx: " + txStr);
   const completed = await tx.complete({
@@ -507,8 +644,19 @@ async function payoutScoopers() {
   });
   const completedStr = await completed.toString();
   console.log("completed tx: " + envelope(completedStr));
-  const txid = completed.toHash();
-  console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    console.log("not submitted because --submit flag was not passed");
+  }
 }
 
 interface BuildContext {
@@ -531,9 +679,7 @@ interface BuildWithdrawPoolRewards {
 }
 
 async function buildWithdrawPoolRewards(context: BuildContext, options: BuildWithdrawPoolRewards) {
-  console.log("get pool datum");
   let newPoolDatum = Data.from(options.targetPool.datum, types.PoolDatum);
-  console.log("got pool datum");
   let withdrawnAmount;
   if (options.withdrawnAmount != undefined) {
     withdrawnAmount = BigInt(options.withdrawnAmount);
@@ -655,7 +801,7 @@ async function buildWithdrawPoolRewards(context: BuildContext, options: BuildWit
       },
     );
   }
-  return { withheld: withheld, tx: tx };
+  return { withdrawn: withdrawnAmount, tx: tx };
 }
 
 async function processScooperLog() {
@@ -689,6 +835,49 @@ async function processScooperLog() {
     //console.log(s.name, s.address, scooperFees[s.name]);
   }
   console.log(JSON.stringify(out, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+}
+
+async function showPools() {
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  let s = await Deno.readTextFile(flags.scriptsFile);
+  let scriptsJson = JSON.parse(s);
+  const scripts = getScriptsAiken(lucid, scriptsJson);
+
+  let poolUtxos = await blockfrost.getUtxos({
+    type: "Script",
+    hash: scripts.poolScriptHash,
+  });
+
+  let pools = await doShowPools(poolUtxos);
+  console.log(JSON.stringify(pools, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+  //for (let pool of pools) {
+  //  console.log(pool);
+  //  //console.log(pool.ident, pool.assetA, pool.assetB, pool.feeManager);
+  //}
+}
+
+async function doShowPools(poolUtxos) {
+  let pools = [];
+  for (let poolUtxo of poolUtxos) {
+    try {
+      let poolDatum = Data.from(poolUtxo.datum, types.PoolDatum);
+      // skip pools that have had assets drained since withdrawing rewards is
+      // not possible
+      let assetA = poolDatum.assets[0][0] + "." + poolDatum.assets[0][1];
+      let assetB = poolDatum.assets[1][0] + "." + poolDatum.assets[1][1];
+      pools.push({ ident: poolDatum.identifier, assetA, assetB, feeManager: poolDatum.feeManager });
+    } catch (e) {
+      console.log(`doShowPools: ${e}`);
+    }
+  }
+  return pools;
 }
 
 async function queryPools() {
@@ -728,7 +917,7 @@ async function doQueryPools(poolUtxos, needed) {
       let poolDatum = Data.from(poolUtxo.datum, types.PoolDatum);
       // skip pools that have had assets drained since withdrawing rewards is
       // not possible
-      if (poolDatum.circluatingLp != 0) {
+      if (poolDatum.circulatingLp != 0n) {
         pools.push({ utxo: poolUtxo, txHash: poolUtxo.txHash, protocolFees: poolDatum.protocolFees, ident: poolDatum.identifier });
       }
     } catch (e) {
@@ -737,9 +926,10 @@ async function doQueryPools(poolUtxos, needed) {
   }
   pools.sort((poolA, poolB) => poolA.protocolFees - poolB.protocolFees > 0 ? -1 : 1);
   for (let pool of pools) {
-    if (pool.protocolFees <= needed - sum) {
-      todo.push({ pool: pool, amount: pool.protocolFees, partial: false });
-      sum += pool.protocolFees;
+    let canWithdraw = pool.protocolFees - 3_000_000n;
+    if (canWithdraw <= needed - sum) {
+      todo.push({ pool: pool, amount: canWithdraw, partial: false });
+      sum += canWithdraw;
       count++;
     } else {
       todo.push({ pool: pool, amount: needed - sum, partial: true });
@@ -852,9 +1042,8 @@ async function autoWithdrawRewards() {
   }
   const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
 
-  let totalWithheld = 0n;
+  let totalWithdrawn = 0n;
   for (let i = 0; i < poolsTodo.length; i++) {
-    console.log("ok 1");
     let thisChange = change[i];
     let targetPool = poolsTodo[i].pool.utxo;
     const buildContext = {
@@ -872,11 +1061,8 @@ async function autoWithdrawRewards() {
       treasuryAmount: 1_000_000n,
       withheldAddress: flags.withheldAddress,
     };
-    console.log("ok 2");
     const result = await buildWithdrawPoolRewards(buildContext, options);
-    console.log("ok 3");
     const tx = result.tx;
-    totalWithheld += result.withheld;
     const txStr = await tx.toString();
     console.log("tentative tx: " + txStr);
     const completed = await tx.complete({
@@ -887,20 +1073,32 @@ async function autoWithdrawRewards() {
     const txid = completed.toHash();
     console.log("txid: " + txid);
 
-    if (flags.submit) {
-      const txid = completed.toHash();
-      console.log(txid);
-      const signedTx = await completed.sign().complete();
-      const response = prompt("Type 'submit' to submit");
-      if (response == "submit") {
+    try {
+      if (flags.forceSubmit) {
+        const txid = completed.toHash();
+        console.log(txid);
+        const signedTx = await completed.sign().complete();
         await signedTx.submit();
         console.log("submitted");
+      } else if (flags.submit) {
+        const txid = completed.toHash();
+        console.log(txid);
+        const signedTx = await completed.sign().complete();
+        const response = prompt("Type 'submit' to submit");
+        if (response == "submit") {
+          await signedTx.submit();
+          console.log("submitted");
+        }
+      } else {
+        console.log("not submitted because --submit flag was not passed");
       }
-    } else {
-      console.log("not submitted because --submit flag was not passed");
+    } catch (e) {
+      console.log(`failed to submit transaction: '${e}' total withdrawn so far: ${totalWithdrawn}`)
+      return
     }
+    totalWithdrawn += result.withdrawn;
+    console.log(`total withdrawn: ${totalWithdrawn}`);
   }
-  console.log(`total withheld: ${totalWithheld}`);
 }
 
 async function withdrawPoolRewardsBatch() {
@@ -998,7 +1196,7 @@ async function withdrawPoolRewardsBatch() {
     });
   }
   const references = await blockfrost.getUtxosByOutRef(refUtxosOutRefs);
-  let totalWithheld = 0n;
+  let totalWithdrawn = 0n;
   for (let i = 0; i < batchSize; i++) {
     let thisChange = change[i];
     let targetPool = null;
@@ -1036,7 +1234,7 @@ async function withdrawPoolRewardsBatch() {
     };
     const result = await buildWithdrawPoolRewards(buildContext, options);
     const tx = result.tx;
-    totalWithheld += result.withheld;
+    totalWithdrawn += result.withdrawn;
     const txStr = await tx.toString();
     console.log("tentative tx: " + txStr);
     const completed = await tx.complete({
@@ -1060,7 +1258,7 @@ async function withdrawPoolRewardsBatch() {
       console.log("not submitted because --submit flag was not passed");
     }
   }
-  console.log(`total withheld: ${totalWithheld}`);
+  console.log(`total withdrawn: ${totalWithdrawn}`);
 }
 
 async function withdrawPoolRewards() {
@@ -1385,7 +1583,7 @@ async function updateSettingsDatum() {
     }
   }
   const completedStr = await completed.toString();
-  console.log("tx: " + completedStr);
+  console.log("tx: " + envelope(completedStr));
   //const signedTx = await completed.sign().complete();
   //const signedStr = await signedTx.toString();
   //console.log("signed tx for noop settings: " + signedStr);
@@ -2131,6 +2329,118 @@ async function testSettingsBoot(lucid: Lucid, emulator: Emulator, scripts: Scrip
   return bootedHash;
 }
 
+async function payToWallet() {
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  const tx = lucid.newTx();
+  tx.payToAddress(flags.destination, { "lovelace": BigInt(flags.pay) });
+  const completed = await tx.complete();
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+  const txid = completed.toHash();
+  console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    console.log("not submitted because --submit flag was not passed");
+  }
+}
+
+async function makeChange() {
+  const address = flags.address;
+  const userPkh = paymentCredentialOf(address).hash;
+
+  console.log("address: " + address);
+
+  const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
+  let lucid;
+  if (flags.mainnet) {
+    lucid = await Lucid.new(blockfrost, "Mainnet");
+  } else {
+    lucid = await Lucid.new(blockfrost, "Preview");
+  }
+
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
+
+  const change = await findChange(blockfrost, address, 2_000_000n * BigInt(flags.count));
+  const tx = lucid.newTx();
+  tx.collectFrom([change]);
+  for (let i = 0; i < flags.count; i++) {
+    tx.payToAddress(address, { "lovelace": 2_000_000n });
+  }
+  const completed = await tx.complete({
+    coinSelection: false,
+  });
+  const completedStr = await completed.toString();
+  console.log("completed tx: " + envelope(completedStr));
+  const txid = completed.toHash();
+  console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const txid = completed.toHash();
+    console.log(txid);
+    const signedTx = await completed.sign().complete();
+    const response = prompt("Type 'submit' to submit");
+    if (response == "submit") {
+      await signedTx.submit();
+      console.log("submitted");
+    }
+  } else {
+    console.log("not submitted because --submit flag was not passed");
+  }
+}
+
 async function dummy() {
   const address = flags.address;
   const userPkh = paymentCredentialOf(address).hash;
@@ -2641,6 +2951,36 @@ const factFeeManager = {
   },
 };
 
+const agentMillenialFeeManager = {
+  Signature: {
+    signature: "0bc4df2c05da7920fe0825b68f83fd96d84f215da6ef360f7057ad83",
+  },
+};
+
+const oADAFeeManager = {
+  Signature: {
+    signature: "d0c30d6a202da16b9bb48c1ad7df9a00130363653855eff420b715c7",
+  },
+};
+
+const oADAClarityFeeManager = {
+  Signature: {
+    signature: "f656350f59f0d76fe4c4a5f0fce55df72fb025dae97c311f470f3826",
+  },
+};
+
+const strikeFeeManager = {
+  Signature: {
+    signature: "0b824e63de4a33383e942ea68a2d8f18273954cebed67a9cb9f5f06e",
+  },
+};
+
+const sundaem4FeeManager = {
+  Signature: {
+    signature: "55bf4118b01e1c794647db9375ffc873e435d737007b2adbc48cdbaa",
+  },
+};
+
 async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], extraChangeUtxos: UTxO[]): Promise<TxHash> {
   const poolId = computePoolId(seed);
   const liq = initialLiquidity(amountA, amountB);
@@ -2648,8 +2988,8 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
     identifier: toHex(poolId),
     assets: assets,
     circulatingLp: liq,
-    bidFeesPer10Thousand: 30n,
-    askFeesPer10Thousand: 30n,
+    bidFeesPer10Thousand: fees[0],
+    askFeesPer10Thousand: fees[1],
     marketOpen: 0n,
     protocolFees: 3_000_000n,
   };
@@ -2663,6 +3003,16 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
     newPoolDatum.feeManager = wmtFeeManager;
   } else if (flags.useFactFeeManager) {
     newPoolDatum.feeManager = factFeeManager;
+  } else if (flags.useAgentMillenialFeeManager) {
+    newPoolDatum.feeManager = agentMillenialFeeManager;
+  } else if (flags.useOADAFeeManager) {
+    newPoolDatum.feeManager = oADAFeeManager;
+  } else if (flags.useOADAClarityFeeManager) {
+    newPoolDatum.feeManager = oADAClarityFeeManager;
+  } else if (flags.useStrikeFeeManager) {
+    newPoolDatum.feeManager = strikeFeeManager;
+  } else if (flags.useSundaem4FeeManager) {
+    newPoolDatum.feeManager = sundaem4FeeManager;
   } else {
     throw new Error("must select fee manager");
   }
@@ -2932,7 +3282,7 @@ async function mainnetMintPool() {
     });
   }
 
-  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, BigInt(flags.hasA), BigInt(flags.hasB), 30n, extraChangeUtxos);
+  const minted = await mintPool(scripts, lucid, address, settings, references, assets, seed, BigInt(flags.hasA), BigInt(flags.hasB), [BigInt(flags.buyFee), BigInt(flags.sellFee)], extraChangeUtxos);
   console.log("minted");
   console.log(minted);
 }
@@ -3448,6 +3798,31 @@ async function findChange(provider: Provider, userAddress: string): Promise<UTxO
     }
   }
   throw new Error("findChange: Couldn't find a UTxO without a datum or script ref in the user wallet with over 200 ADA.");
+}
+
+async function findChangeAmount(provider: Provider, userAddress: string, amount: bigint): Promise<UTxO> {
+  let startTime = Date.now();
+  let changeUtxos = await provider.getUtxos(userAddress);
+  let endTime = Date.now();
+  //console.log(`Fetched utxos from wallet, time elapsed: ${endTime - startTime}ms`);
+  for (let changeUtxo of changeUtxos) {
+    //console.log(changeUtxo);
+    if (changeUtxo.datum != null && changeUtxo.datumHash != null) {
+      continue;
+    }
+    if (changeUtxo.scriptRef != null) {
+      continue;
+    }
+    if (Object.keys(changeUtxo.assets).length > 1) {
+      continue; // Don't want native assets
+    }
+    if (changeUtxo.assets["lovelace"] >= amount) {
+      //console.log("changeUtxo:");
+      //console.log(changeUtxo);
+      return changeUtxo;
+    }
+  }
+  throw new Error(`findChangeAmount: Couldn't find a UTxO without a datum or script ref in the user wallet with over ${amount} lovelace.`);
 }
 
 async function findChangeMany(provider: Provider, userAddress: string, batchSize: number): Promise<UTxO> {
@@ -4370,7 +4745,7 @@ async function benchmark(flags: any) {
 }
 
 const flags = parse(Deno.args, {
-  string: ["scriptsFile", "privateKey", "coinA", "coinB", "blockfrostUrl", "blockfrostProjectId", "scooperPkh"],
+  string: ["scriptsFile", "privateKey", "coinA", "coinB", "blockfrostUrl", "blockfrostProjectId", "scooperPkh", "destination"],
 });
 
 if (flags.runBenchmark) {
@@ -4419,12 +4794,20 @@ if (flags.runBenchmark) {
   await previewRecordOrderDebug();
 } else if (flags.payoutScoopers) {
   await payoutScoopers();
+} else if (flags.payoutExtras) {
+  await payoutExtras();
 } else if (flags.dummy) {
   await dummy();
 } else if (flags.queryPools) {
   await queryPools();
+} else if (flags.showPools) {
+  await showPools();
 } else if (flags.processScooperLog) {
   await processScooperLog();
+} else if (flags.makeChange) {
+  await makeChange();
+} else if (flags.payToWallet) {
+  await payToWallet();
 }
 
 // Corresponds to strategy_verify_signature in contracts tests
