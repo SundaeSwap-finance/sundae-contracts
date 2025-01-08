@@ -79,9 +79,22 @@ async function updatePoolFees() {
 
   const scripts = getScriptsAiken(lucid, scriptsJson);
 
-  lucid.selectWalletFrom({
-    address: address,
-  });
+  if (flags.submit) {
+    const sk = await Deno.readTextFile(flags.privateKeyFile);
+    const skCborHex = JSON.parse(sk).cborHex;
+    const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
+    const userPublicKey = toPublicKey(skBech32);
+    const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
+    const userAddress = lucid.utils.credentialToAddress({
+      type: "Key",
+      hash: userPkh.to_hex(),
+    });
+    lucid.selectWalletFromPrivateKey(skBech32);
+  } else {
+    lucid.selectWalletFrom({
+      address: address,
+    });
+  }
 
   let poolAddress;
   if (flags.poolAddress) {
@@ -134,8 +147,8 @@ async function updatePoolFees() {
   console.log("treasury address: " + treasuryAddress);
 
   let newPoolDatum = Data.from(targetPool.datum, types.PoolDatum);
-  newPoolDatum.bidFeesPer10Thousand = 30n;
-  newPoolDatum.askFeesPer10Thousand = 100n;
+  newPoolDatum.bidFeesPer10Thousand = BigInt(flags.bidFee);
+  newPoolDatum.askFeesPer10Thousand = BigInt(flags.askFee);
 
   const change = await findChange(blockfrost, address);
 
@@ -156,7 +169,7 @@ async function updatePoolFees() {
 
   let poolManageRedeemer = Data.to({
     UpdatePoolFees: {
-      poolInput: 1n,
+      poolInput: poolInputIndex,
     }
   }, types.PoolManageRedeemer);
 
@@ -212,6 +225,12 @@ async function updatePoolFees() {
   console.log("completed tx: " + envelope(completedStr));
   const txid = completed.toHash();
   console.log("txid: " + txid);
+
+  if (flags.submit) {
+    const signedTx = await completed.sign().complete();
+    await signedTx.submit();
+    console.log("submitted");
+  }
 }
 
 async function delegatePool() {
