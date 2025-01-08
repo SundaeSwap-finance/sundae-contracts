@@ -106,9 +106,7 @@ fn scoop_permission(
   )
 }
 
-/// Process a single order, comparing it to the output to ensure it was executed faithfully, and returning the new pool state
-///
-/// Most of the parameters here are for performance reasons, to avoid destructuring objects, since thats very expensive
+/// Process a single order, ensuring that the provided order datum has a valid ComplianceToken
 fn process_order(
   // The validity range of the transaction, used to ensure the signed execution is within the correct time window
   validity_range: ValidityRange,
