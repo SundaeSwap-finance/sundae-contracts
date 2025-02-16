@@ -38,7 +38,7 @@ validator permissioned {
     ) = find_pool_output(outputs)
 
     // Then, (confusing terminology aside) find the specific pool UTXO being spent by this transaction
-    expect Some(Input(_, pool_input)) =
+    expect Some(Input { output: pool_input, .. }) =
       list.find(
         inputs,
         fn(input) { input.output.address == pool_output_address },
@@ -119,7 +119,7 @@ fn process_order(
   expect compliance: ComplianceToken = order.extension
 
   // The owner of an order is the same as the public key in the token
-  expect multisig.Signature(owner_sig) = order.owner
+  expect multisig.Signature { key_hash: owner_sig } = order.owner
 
   expect Interval {
     lower_bound: IntervalBound { bound_type: Finite(tx_from), .. },

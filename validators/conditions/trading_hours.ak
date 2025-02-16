@@ -26,7 +26,7 @@ validator trading_hours {
     ) = find_pool_output(outputs)
 
     // Then, (confusing terminology aside) find the specific pool UTXO being spent by this transaction
-    expect Some(Input(_, pool_input)) =
+    expect Some(Input { output: pool_input, .. }) =
       list.find(
         inputs,
         fn(input) { input.output.address == pool_output_address },
