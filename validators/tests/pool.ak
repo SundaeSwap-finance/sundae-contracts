@@ -120,14 +120,22 @@ test ok_scoop_swap_with_over_rounding() {
       ..default_scoop_test_options(),
       edit_pool_input_value: Some(
         assets.from_lovelace(20_000_000_000 + 2_000_000)
-          |> assets.add(constants.rberry_policy, constants.rberry_asset_name, 50)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              50,
+            )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
       edit_pool_output_value: Some(
         assets.from_lovelace(
           amt_1 + amt_2 + 20_000_000_000 + 2_000_000 + 2_500_000 + 2_500_000,
         )
-          |> assets.add(constants.rberry_policy, constants.rberry_asset_name, 48)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              48,
+            )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
       edit_order_1_details: Some(
@@ -460,7 +468,7 @@ fn scoop(options: ScoopTestOptions) {
   }
   let (order1_out_addr, order1_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address: dest, datum }) -> (dest, datum)
       Some(Self) -> (order_address, InlineDatum(order_1_datum))
       None -> (user_addr, NoDatum)
     }
@@ -482,7 +490,7 @@ fn scoop(options: ScoopTestOptions) {
   // TODO: manage separately?
   let (order2_out_addr, order2_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address: dest, datum }) -> (dest, datum)
       Some(Self) -> (order_address, InlineDatum(order_2_datum))
       None -> (user_addr, NoDatum)
     }
@@ -666,7 +674,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   }
   let (order1_out_addr, order1_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address: dest, datum }) -> (dest, datum)
       Some(Self) -> (order_address, InlineDatum(order_datum_1))
       None -> (user_addr, NoDatum)
     }
@@ -687,7 +695,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     }
   let (order2_out_addr, order2_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address: dest, datum }) -> (dest, datum)
       Some(Self) -> (order_address, InlineDatum(order_datum_2))
       None -> (user_addr, NoDatum)
     }
@@ -1071,7 +1079,9 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
 
   let pool_output =
     new_tx_output(pool_output_address, 0, InlineDatum(pool_out_datum))
-      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(1_000_000_000 + pool_rider),
+        )
       |> add_asset_to_tx_output(
           assets.from_asset(
             constants.rberry_policy,
@@ -1201,10 +1211,10 @@ test mint_test_two_nfts() fail {
 
 fn pool_ident_from_input(tx_input: Input) -> ByteArray {
   tx_input.output_reference.transaction_id
-    |> bytearray.concat(#"23") // '#' character
+    |> bytearray.concat(#"23")
+    // '#' character
 
-    
-  |> bytearray.concat(
+    |> bytearray.concat(
         pool_validator.int_to_ident(tx_input.output_reference.output_index),
       )
     |> crypto.blake2b_256
@@ -1257,7 +1267,8 @@ fn mint_test_modify(
       |> assets.add(constants.pool_script_hash, new_pool_nft_token, 1)
       |> assets.merge(assets.from_lovelace(1_002_000_000))
   let pool_output =
-    new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
+    new_tx_output(pool_address, 0, inline_pool_datum)
+      // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
       |> add_asset_to_tx_output(pool_output_val)
       |> modify_pool_output
 
@@ -1269,7 +1280,8 @@ fn mint_test_modify(
     )
       |> assets.merge(assets.from_lovelace(2_000_000))
   let lp_output =
-    new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
+    new_tx_output(user_address, 0, NoDatum)
+      // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(lp_output_val)
       |> modify_lp_output
 
@@ -1278,7 +1290,8 @@ fn mint_test_modify(
       |> assets.merge(assets.from_lovelace(2_000_000))
   let metadata_admin = wallet_address(example_metadata_admin)
   let ref_output =
-    new_tx_output(metadata_admin, 0, InlineDatum(Void)) // we can probably get rid of the rider, it gets auto added
+    new_tx_output(metadata_admin, 0, InlineDatum(Void))
+      // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
@@ -1309,7 +1322,8 @@ fn mint_test_modify(
             |> assets.add(constants.pool_script_hash, new_pool_ref_token, 1),
         )
       |> add_tx_input(funds_input)
-      |> add_tx_ref_input(settings_input) // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
+      |> add_tx_ref_input(settings_input)
+      // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
       |> add_tx_output(ref_output)
       |> add_tx_output(lp_output)
       |> add_tx_output(pool_output)
@@ -1353,7 +1367,7 @@ test mint_exotic_pair() {
     },
     fn(redeemer) {
       when redeemer is {
-        CreatePool(_, ix, mx) ->
+        CreatePool { metadata_output: mx, pool_output: ix, .. } ->
           CreatePool(((#"01", #"54"), (#"02", #"55")), ix, mx)
         _ -> fail @"expected create pool"
       }

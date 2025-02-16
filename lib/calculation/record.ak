@@ -31,7 +31,7 @@ pub fn check_record(
       // E.g. for a standard sundae oracle, the datum encodes the owner, and
       // then the oracle minting policy checks that the scooper minted an oracle
       // with the correct owner
-      Fixed(address, _) -> output.address == address
+      Fixed { address, .. } -> output.address == address
       // It doesn't make sense for an oracle to chain into an oracle
       Self -> False
     },

@@ -147,7 +147,7 @@ pub fn process_order(
 ) -> Bool {
   // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
-    order.Strategy(signer) -> {
+    order.Strategy { auth: signer } -> {
       // For a strategy, we can basically "unpack" (and validate) the signed execution, and then recurse to process the deferred order
       expect Some(execution) = signed_execution
       let details =
@@ -189,7 +189,7 @@ pub fn process_order(
         continuation,
       )
     }
-    order.Swap(offer, min_received) -> {
+    order.Swap { min_received, offer } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
@@ -223,7 +223,7 @@ pub fn process_order(
         False,
       )
     }
-    order.Deposit(assets) -> {
+    order.Deposit { assets } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // i.e. the amortized base fee (which is the base fee shared by all orders), and the incremental fee (i.e. the fee paid by each order individually) should be no more than the max fee in the datum
@@ -253,7 +253,7 @@ pub fn process_order(
         )
       continuation(new_a, new_b, new_lp, rest_outputs, False)
     }
-    order.Withdrawal(amount) -> {
+    order.Withdrawal { amount } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // (See above)
@@ -286,7 +286,7 @@ pub fn process_order(
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
     // The cheaper fees the DAO voted on should make this acceptable
     // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(assets) -> {
+    order.Donation { assets } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // (See above)
@@ -320,7 +320,7 @@ pub fn process_order(
         continuation(new_a, new_b, pool_quantity_lp, outputs, False)
       }
     }
-    order.Record(policy) -> {
+    order.Record { policy } -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       expect [output, ..rest_outputs] = outputs
       let fee = amortized_base_fee + simple_fee
@@ -439,7 +439,7 @@ pub fn process_orders(
       // Check whether this is a strategy, then increment the count appropriately
       let (next_simple_count, next_strategy_count) =
         when details is {
-          order.Strategy(..) -> (simple_count, strategy_count + 1)
+          order.Strategy { .. } -> (simple_count, strategy_count + 1)
           _ -> (simple_count + 1, strategy_count)
         }
       // And finally, process this one individual order and compute the next state
