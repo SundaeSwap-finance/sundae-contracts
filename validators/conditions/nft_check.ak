@@ -2,14 +2,14 @@ use aiken/collection/dict.{Dict}
 use aiken/collection/list
 use aiken/crypto.{Blake2b_256, Hash}
 use calculation/process.{find_pool_output}
-use cardano/address.{Credential, VerificationKey}
+use cardano/address.{Address, Credential, Script, VerificationKey}
 use cardano/assets.{Value, zero}
-use cardano/transaction.{InlineDatum, Input, Output, Transaction}
+use cardano/transaction.{InlineDatum, Input, NoDatum, Output, Transaction}
 use shared.{datum_of, is_script}
 use sundae/multisig
 use types/conditions/nft_check.{All,
   Any, Check, NftCheckDatum} as nft_check_types
-use types/order.{OrderDatum}
+use types/order.{Fixed, OrderDatum, Swap}
 use types/pool.{Manage, PoolDatum, PoolRedeemer, PoolScoop}
 
 validator nft_check {
@@ -163,4 +163,95 @@ fn find_owner_outputs(outputs: List<Output>, owner: ByteArray) -> List<Output> {
 
 fn owner_value(outputs: List<Output>) -> Value {
   list.foldl(outputs, zero, fn(o, acc) { assets.merge(acc, o.value) })
+}
+
+test test_scoop_nft_check() {
+  let nft_check_value =
+    assets.from_asset_list(
+      [Pair("token1", [Pair("", 10)]), Pair("token2", [Pair("subtoken", 5)])],
+    )
+
+  let nft_check = Any
+
+  let reference_inputs =
+    [
+      Output {
+        address: Address {
+          payment_credential: VerificationKey("owner1"),
+          stake_credential: None,
+        },
+        value: assets.from_asset_list([Pair("token1", [Pair("", 10)])]),
+        datum: NoDatum,
+        reference_script: None,
+      },
+      Output {
+        address: Address {
+          payment_credential: VerificationKey("owner2"),
+          stake_credential: None,
+        },
+        value: assets.from_asset_list([Pair("token2", [Pair("subtoken", 5)])]),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    ]
+
+  let datums = dict.empty
+
+  let order_datum1 =
+    OrderDatum {
+      owner: multisig.Signature { key_hash: "owner1" },
+      pool_ident: None,
+      max_protocol_fee: 0,
+      destination: Fixed {
+        address: Address {
+          payment_credential: VerificationKey("owner1"),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
+      details: Swap(("ada", "lovelace", 10), ("rberry", "berry", 5)),
+      extension: Void,
+    }
+
+  let order1 =
+    Output {
+      address: Address {
+        payment_credential: Script("order"),
+        stake_credential: None,
+      },
+      value: assets.zero,
+      datum: InlineDatum(order_datum1),
+      reference_script: None,
+    }
+
+  let order_datum2 =
+    OrderDatum {
+      owner: multisig.Signature { key_hash: "owner2" },
+      pool_ident: None,
+      max_protocol_fee: 0,
+      destination: Fixed {
+        address: Address {
+          payment_credential: VerificationKey("owner2"),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
+      details: Swap(("ada", "lovelace", 10), ("rberry", "berry", 5)),
+      extension: Void,
+    }
+
+  let order2 =
+    Output {
+      address: Address {
+        payment_credential: Script("order"),
+        stake_credential: None,
+      },
+      value: assets.zero,
+      datum: InlineDatum(order_datum2),
+      reference_script: None,
+    }
+
+  let orders = [order1, order2]
+
+  scoop_nft_check(nft_check_value, nft_check, reference_inputs, datums, orders)
 }
