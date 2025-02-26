@@ -49,6 +49,10 @@ pub type PoolRedeemer {
     /// This is because the cardano ledger re-orders transaction inputs when building the script context; so this could end up processing
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
+    ///
+    /// Note that the last integer in the throuple is meaningless; it's used to work around a small quirk of plutus / aiken at the time we wrote the contracts.
+    /// Lists of pairs get serialized as cbor maps, which canonically are unordered! so we needed to insert a dummy value so that they get serialized as lists of triples appropriately.
+    /// Today, Aiken now has the `Pairs` abstraction to distinguish, and this wouldn't be needed.
     input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   }
   /// Withdraw the earned protocol fees into the treasury, or update the pool
