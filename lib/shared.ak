@@ -4,7 +4,7 @@ use aiken/collection/list
 use aiken/crypto.{Blake2b_256, Hash}
 use aiken/primitive/bytearray
 use cardano/address.{Credential, Script}
-use cardano/assets.{AssetName, PolicyId}
+use cardano/assets.{AssetName, PolicyId, Value, ada_policy_id}
 use cardano/transaction.{
   DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
   find_input,
@@ -48,6 +48,88 @@ pub fn datum_of(
     transaction.NoDatum -> None
     transaction.DatumHash(h) -> dict.get(datums, h)
     transaction.InlineDatum(d) -> Some(d)
+  }
+}
+
+/// Check that the UTXO contents are correct given a specific pool outcome
+/// In particular, it must have the final A reserves, the final B reserves, the pool NFT, and the protocol fees
+pub fn has_expected_pool_value(
+  pool_script_hash: PolicyId,
+  identifier: Ident,
+  output_value: Value,
+  pool_policy_a: PolicyId,
+  pool_asset_name_a: AssetName,
+  pool_quantity_a: Int,
+  pool_policy_b: PolicyId,
+  pool_asset_name_b: AssetName,
+  pool_quantity_b: Int,
+  final_lp: Int,
+  final_protocol_fees: Int,
+) -> Bool {
+  // Asset A *could* be ADA; in which case there should be 3 tokens on the output
+  // (ADA, Asset B, and the NFT)
+  if pool_policy_a == ada_policy_id {
+    let actual =
+      list.foldl(
+        assets.flatten(output_value),
+        // (token count, lovelace amount, token b amount, pool nft amount)
+        (0, 0, 0, 0),
+        fn(asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == pool_policy_a {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th)
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th + 1)
+          }
+        },
+      )
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    let expected =
+      if final_lp == 0 {
+        expect pool_quantity_a == 0
+        expect pool_quantity_b == 0
+        (2, final_protocol_fees, 0, 1)
+      } else {
+        (3, final_protocol_fees + pool_quantity_a, pool_quantity_b, 1)
+      }
+    // Rather than constructing a value directly (which can be expensive)
+    // we can just compare the expected token count and amounts with a single pass over the value
+    expected == actual
+  } else {
+    // Asset A isn't ADA, Asset B will *never* be ADA; in this case, there should be 4 tokens on the output:
+    // ADA, the Pool NFT, Asset A, and Asset B
+    let actual =
+      list.foldl(
+        assets.flatten(output_value),
+        // (token count, lovelace amount, token a amount, token b amount, pool nft amount)
+        (0, 0, 0, 0, 0),
+        fn(asset, acc) {
+          let token_count = acc.1st + 1
+          if asset.1st == ada_policy_id {
+            (token_count, acc.2nd + asset.3rd, acc.3rd, acc.4th, acc.5th)
+          } else if asset.1st == pool_policy_a && asset.2nd == pool_asset_name_a {
+            (token_count, acc.2nd, acc.3rd + asset.3rd, acc.4th, acc.5th)
+          } else if asset.1st == pool_policy_b && asset.2nd == pool_asset_name_b {
+            (token_count, acc.2nd, acc.3rd, acc.4th + asset.3rd, acc.5th)
+          } else {
+            expect asset == (pool_script_hash, pool_nft_name(identifier), 1)
+            (token_count, acc.2nd, acc.3rd, acc.4th, acc.5th + 1)
+          }
+        },
+      )
+    // If we're withdrawing the last bit of liquidity, we just have ADA and the pool token
+    let expected =
+      if final_lp == 0 {
+        expect pool_quantity_a == 0
+        expect pool_quantity_b == 0
+        (2, final_protocol_fees, 0, 0, 1)
+      } else {
+        (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1)
+      }
+    expected == actual
   }
 }
 

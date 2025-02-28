@@ -239,6 +239,8 @@ fn mint_oracle(
           fee_manager: None,
           market_open: 0,
           protocol_fees: 2_000_000,
+          condition: None,
+          condition_datum: None,
         },
       ),
       reference_script: None,
