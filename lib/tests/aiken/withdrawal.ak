@@ -115,6 +115,8 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       pool_state.quantity_lp.1st,
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd,
+      0,
+      pool_state.quantity_lp.3rd,
       input,
       amount,
       order.destination,

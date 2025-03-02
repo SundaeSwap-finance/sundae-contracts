@@ -1,128 +1,9 @@
-use cardano/assets.{AssetName, PolicyId, Value, ada_asset_name, ada_policy_id}
+use aiken/math
+use calculation/stableswap
+use cardano/assets.{AssetName, PolicyId, ada_policy_id}
 use cardano/transaction.{Output}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
-
-/// Compute the amount of token a swap yields; returns the amount of token received, and the remainder to be sent to the user
-///
-/// As in other places, we have lots of parameters to avoid destructuring
-/// TODO: it'd be nice to support partial fills, so long as the ratio between `order_give` and `min_takes` is preserved
-pub fn swap_takes(
-  // The policy ID of the token being given up by the user
-  give_policy_id: PolicyId,
-  // The asset name of the token being given up by the user
-  give_asset_name: AssetName,
-  // The policy ID of the token that should be *received* as a result of the swap
-  take_policy_id: PolicyId,
-  // The asset name of the token that should be *received* as a result of the swap
-  take_asset_name: AssetName,
-  // The quantity of the given token that the pool currently has
-  pool_give: Int,
-  // The quantity of the token that should be given to the user that the pool already has
-  pool_take: Int,
-  // The percentage fee collected on behalf of the liquidity providers, represented as the numerator of a fraction over 10,000 (commonly referred to as basis points)
-  // already adjusted for bid or ask
-  fees_per_10_thousand: Int,
-  // The ADA fee to deduct as part of the protocol fee
-  actual_protocol_fee: Int,
-  // The amount of the given token that the user has offered to swap
-  order_offer: Int,
-  // The input value on the order UTXO, to calculate change
-  input_value: Value,
-  // The output value on the order UTXO, to calculate the real order give amount
-  output_value: Value,
-  // A continuation once we've calculated the output; this is more efficient that constructing a tuple, especially with backpassing syntax
-  continuation: fn(Int, Int, Value) -> Bool,
-) -> Bool {
-  // We compute the AMM formula, but
-  // algebraically rearranged to minimize rounding error
-  // Also, we want to ensure that:
-  //  - The full order is filled (the user gets the most `takes` for the tokens they've offered)
-  //  - The user couldnot have gotten those `takes` any cheaper
-  //
-  // For example, consider a pool with 50 XDIAMOND and 20,000 ADA
-  // If a user offers 799 ADA for the swap, the AMM formula calculates roughly 1.9 XDIAMOND
-  // We have to round that down, because we can't give out fractional units, and rounding up would allow the pool to be drained
-  // But, 799 is dramatically overpaying for 1 XDIAMOND, as they could have gotten 1 XDIAMOND with as little as 409.391440 ADA.
-  //
-  // To ensure this, we let the scooper calculate the right amount off-chain, then verify it on-chain
-
-  let difference = 10000 - fees_per_10_thousand
-
-  // Check how much the user is actually giving up, by comparing the difference between the input and output values
-  let order_give =
-    assets.quantity_of(input_value, give_policy_id, give_asset_name) - assets.quantity_of(
-      output_value,
-      give_policy_id,
-      give_asset_name,
-    )
-  let order_give =
-    if give_policy_id == ada_policy_id {
-      order_give - actual_protocol_fee
-    } else {
-      order_give
-    }
-  // TODO: is this neccesary? or will one of the checks below *always* fail?
-  expect order_give > 0
-
-  // The AMM formula would be
-  // let takes =
-  //  pool_take * difference * order_give / (
-  //    pool_give * 10000 + order_give * difference
-  //  )
-  // Since we're going to calculate it a few times, we pull out some common terms for reuse
-  let pool_take_times_difference = pool_take * difference
-  let pool_give_10k = pool_give * 10000
-
-  // Now, we calculate the amount of token the user receives based on the amount they actually gave
-  let give_takes_numerator = pool_take_times_difference * order_give
-  let give_takes_denominator = pool_give_10k + order_give * difference
-  let give_takes = give_takes_numerator / give_takes_denominator
-  // Make sure they're getting at least one token!
-  expect give_takes > 0
-
-  // If the amount actually given by the user is less than the amount offered by the user,
-  // then we need to make sure they would have received the same amount, and this amount is just
-  // more efficient.
-  // Otherwise, they have to be equal (i.e. the scooper can not force the user to give up more than they offered)
-  expect
-    if order_give < order_offer {
-      let offer_takes_numerator = pool_take_times_difference * order_offer
-      let offer_takes_denominator = pool_give_10k + order_offer * difference
-      let offer_takes = offer_takes_numerator / offer_takes_denominator
-      offer_takes == give_takes
-    } else {
-      order_give == order_offer
-    }
-
-  // We need to make sure that the user is getting the most efficient swap
-  // So we check what they would receive with one less unit of the token they're giving
-  // This would be
-  //
-  // let takes =
-  //   pool_take * difference * (order_give - 1) / (
-  //     pool_give * 10000 + (order_give - 1) * difference
-  //   )
-  //
-  //  We can expand this out, algebraically, and simplify to reuse things we've already calculated
-  //
-  let one_less =
-    ( give_takes_numerator - pool_take_times_difference ) / (
-      give_takes_denominator - difference
-    )
-  // And that *must* give strictly less takes; this means that the user is getting the most efficient order possible
-  expect one_less < give_takes
-  // And then compute the desired output
-  // which is the input value, minus the tokens being swapped, minus the protocol fee
-  // plus the asset that we get as part of the swap
-  let out_value =
-    input_value
-      |> assets.add(give_policy_id, give_asset_name, -order_give)
-      |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
-      |> assets.add(take_policy_id, take_asset_name, give_takes)
-
-  continuation(give_takes, order_give, out_value)
-}
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
 pub fn do_swap(
@@ -133,6 +14,9 @@ pub fn do_swap(
   pool_policy_b: PolicyId,
   pool_asset_name_b: AssetName,
   pool_quantity_b: Int,
+  linear_amplification: Int,
+  sum_invariant: Int,
+  next_sum_invariant: Int,
   /// The full UTXO for this swap
   input_utxo: Output,
   /// Where the results of the swap need to be paid
@@ -157,12 +41,29 @@ pub fn do_swap(
     datum: output_datum,
     ..
   } = output
-  // Destructure the pool state
-  // TODO: it'd make the code nightmarish, but things would be way more efficient to just always pass these values destructured as parameters...
+  // Destructure the offer and the min_received
   let (offer_policy_id, offer_asset_name, offer_amt) = offer
+  let (min_received_1st, min_received_2nd, min_received_3rd) = min_received
 
-  // let (a_policy_id, a_asset_name, a_amt) = pool_quantity_a
-  // let (b_policy_id, b_asset_name, b_amt) = pool_quantity_b
+  // Check which direction we're swapping by comparing the asset IDs
+  // This also ensures that we're swapping against the right pool.
+  // We check the assets, rather than comparing the pool ident, so that orders can be "pool agnostic"
+  // By convention we call an order a "bid" if it swaps asset A for asset B,
+  // and an "ask" in the other direction
+  let (a_to_b, fee_rate) =
+    if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
+      expect min_received_1st == pool_policy_b
+      expect min_received_2nd == pool_asset_name_b
+      (True, bid_fees_per_10_thousand)
+    } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
+      expect min_received_1st == pool_policy_a
+      expect min_received_2nd == pool_asset_name_a
+      (True, ask_fees_per_10_thousand)
+    } else {
+      // If neither is true, then this is just the wrong pool! fail the script
+      fail @"wrong pool"
+    }
+
   // Make sure we're paying the result to the correct destination (both the address and the datum),
   // with the correct amount; In the special case where Datum is "Self" (for example for a repeating strategy)
   // use the input datum for validation
@@ -182,72 +83,89 @@ pub fn do_swap(
       }
     }
 
-  // There are two symmetric cases, depending on whether you're giving order A or order B
-  // If there's a clever way to write this as one branch it might be clearer to read
-  if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
-    let (min_received_1st, min_received_2nd, min_received_3rd) = min_received
-    // Make sure we're actually swapping against a pool with the correct assets
-    // We do this, instead of checking the pool ident, to allow orders to be agnostic and execute against an arbitrary pool
-    expect min_received_1st == pool_policy_b
-    expect min_received_2nd == pool_asset_name_b
-    // Compute the actual takes / change
-    let
-      takes,
-      gives,
-      out_value,
-    <-
-      swap_takes(
-        offer_policy_id,
-        offer_asset_name,
-        pool_policy_b,
-        pool_asset_name_b,
-        pool_quantity_a,
-        pool_quantity_b,
-        bid_fees_per_10_thousand,
-        actual_protocol_fee,
-        offer_amt,
-        input_value,
-        output_value,
+  // We look up how much of the offer token is on the input and output UTxO
+  // Because orders can contain extra assets for composibility, we consider this the "surplus"
+  let given_input =
+    assets.quantity_of(input_value, offer_policy_id, offer_asset_name)
+  let given_surplus =
+    assets.quantity_of(output_value, offer_policy_id, offer_asset_name)
+
+  // We then do a similar thing for the "taken" token, as a result of the swap
+  let taken_surplus =
+    assets.quantity_of(input_value, min_received_1st, min_received_2nd)
+  let taken_output =
+    assets.quantity_of(output_value, min_received_1st, min_received_2nd)
+
+  // Now, if one of the assets is ADA, we need to account for the fact
+  // that this value isn't taking part in the trade, so we subtract it
+  // from the order gives, or add it to the order takes
+  let (given_input, taken_surplus) =
+    if offer_policy_id == ada_policy_id {
+      (given_input - actual_protocol_fee, taken_surplus)
+    } else if min_received_1st == ada_policy_id {
+      (given_input, taken_surplus - actual_protocol_fee)
+    } else {
+      (given_input, taken_surplus)
+    }
+
+  // The amount the user gave up is the amount on the input, minus the surplus,
+  let order_give = given_input - given_surplus
+  // And the amount the user received is the amount on the output, minus the surplus that was already on the input
+  let order_takes = taken_output - taken_surplus
+
+  // Make sure the amount given is at most the users offer limit, and the amount taken is greater than the users order minimum
+  // Note that we check that the order give amount is the minimum of the offer amount and the given input
+  // This ensures that the scooper doesn't "under-execute" the swap; we can swap *less* than the offer amount,
+  // but only if that's because there are insufficient tokens on the pool
+  // NOTE: we *give up* the rounding protection we added in the base pool; this is partly because stableswaps aren't likely to be
+  // used with semi-fungible tokens, and partly because users generally complained about the dust they would get on these swaps
+  expect and {
+      order_give > 0,
+      order_give == math.min(offer_amt, given_input),
+      order_takes > 0,
+      order_takes >= min_received_3rd,
+    }
+
+  // We calculate a percentage fee for liquidity providers, TODO: and for the protocol
+  // Note that we assume the LP fee has already been deducted from the output, so we're
+  // calculating what the "pure" takes would have been; we do this in a way that is
+  // algebraically safe from rounding errors
+  // if order_takes_minus_fees = order_takes * (1 - fee)
+  // order_takes = order_takes_minus_fees / (1 - fee)
+  // order_takes = order_takes_minus_fees / (1 - (fee_rate / 10000))
+  // order_takes = order_takes_minus_fees / (10000/10000 - (fee_rate / 10000))
+  // order_takes = order_takes_minus_fees / ((10000 - fee_rate) / 10000)
+  // order_takes = order_takes_minus_fees * 10000 / (10000 - fee_rate)
+  let difference = 10000 - fee_rate
+  let swap_result = order_takes * 10000 / difference
+
+  let takes_fees = swap_result - order_takes
+
+  // Enforce that the stableswap invariant holds;
+  // this ensures that:
+  //  - The order_takes was computed by the scooper correctly
+  //  - The new sum invariant was computed by the scooper correctly
+  if a_to_b {
+    expect
+      stableswap.swap_invariant(
+        pool_quantity_a + order_give,
+        pool_quantity_b - order_takes,
+        takes_fees,
+        linear_amplification,
+        sum_invariant,
+        next_sum_invariant,
       )
-
-    // Make sure the correct value (including change) carries through to the output
-    expect output_value == out_value
-
-    // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
-    // is satisfied
-    expect takes >= min_received_3rd
-    continuation(pool_quantity_a + gives, pool_quantity_b - takes)
-  } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
-    // This code is a mirror of the above, so should be scrutinized extra carefully during audit;
-    // it's easy to make a mistake when copy-pasting. If there's an easier way to express this symmetry that would be good too
-    expect min_received.1st == pool_policy_a
-    expect min_received.2nd == pool_asset_name_a
-    let
-      takes,
-      gives,
-      out_value,
-    <-
-      swap_takes(
-        offer_policy_id,
-        offer_asset_name,
-        pool_policy_a,
-        pool_asset_name_a,
-        pool_quantity_b,
-        pool_quantity_a,
-        ask_fees_per_10_thousand,
-        actual_protocol_fee,
-        offer_amt,
-        input_value,
-        output_value,
-      )
-
-    // Make sure the correct value (including change) carries through to the output
-    expect output_value == out_value
-    // Check that mintakes is satisfied
-    expect takes >= min_received.3rd
-    continuation(pool_quantity_a - takes, pool_quantity_b + gives)
+    continuation(pool_quantity_a + order_give, pool_quantity_b - order_takes)
   } else {
-    // If neither of the assets match what's being offered, fail the transaction, the scooper has incorrectly chosen an order that can't be satisfied
-    fail
+    expect
+      stableswap.swap_invariant(
+        pool_quantity_b + order_give,
+        pool_quantity_a - order_takes,
+        takes_fees,
+        linear_amplification,
+        sum_invariant,
+        next_sum_invariant,
+      )
+    continuation(pool_quantity_a - order_takes, pool_quantity_b + order_give)
   }
 }

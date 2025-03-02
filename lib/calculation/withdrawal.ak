@@ -3,6 +3,7 @@ use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use cardano/transaction.{Output}
 use shared.{SingletonValue}
 use types/order.{Destination, Fixed, Self}
+use calculation/stableswap
 
 /// Execute a withdrawal order
 ///
@@ -19,6 +20,8 @@ pub fn do_withdrawal(
   pool_policy_lp: PolicyId,
   pool_asset_name_lp: AssetName,
   pool_quantity_lp: Int,
+  linear_amplification: Int,
+  next_sum_invariant: Int,
   input_utxo: Output,
   // The incoming UTXO, useful for returning surplus and handling Self destinations
   amount: SingletonValue,
@@ -39,6 +42,7 @@ pub fn do_withdrawal(
   // if we were to provide LP tokens for a different pool, you could withdraw funds that weren't yours
   expect lp_policy == pool_policy_lp
   expect lp_asset_name == pool_asset_name_lp
+
   // Calculate the amount of LP tokens to burn; because the outcome of a previous order in the chain
   // may be uncertain, we allow some flexibility here, and the amount in the order just specifies a
   // maximum to take. Also note, we specify an amount at all so that you can have things like
@@ -48,8 +52,6 @@ pub fn do_withdrawal(
 
   // We calculate the asset_a and asset_b to withdraw, namely the percentage of each asset
   // that corresponds to the percentage of LP token burned.  Note we multiply first to minimize precision loss.
-  // OPTIMIZATION: we can probably destructure the SingletonValues once and reuse, but optimizing
-  // deposits/withdrawals isn't as critical as optimizing swaps.
   let withdrawn_a = withdrawn * pool_quantity_a / pool_quantity_lp
   let withdrawn_b = withdrawn * pool_quantity_b / pool_quantity_lp
 
@@ -84,10 +86,18 @@ pub fn do_withdrawal(
       }
     }
 
+  // Now, we make sure that the provided next_sum_invariant is correct
+  // This is because future orders within this batch might depend on the updated invariant
+  let new_pool_a = pool_quantity_a - withdrawn_a
+  let new_pool_b = pool_quantity_b - withdrawn_b
+
+  // TODO: do I need to check some relationship between withdrawn, and the delta between sum_invariant and next_sum_invariant?
+  expect stableswap.liquidity_invariant(new_pool_a, new_pool_b, linear_amplification, next_sum_invariant)
+
   // Return the final pool state
   continuation(
-    pool_quantity_a - withdrawn_a,
-    pool_quantity_b - withdrawn_b,
+    new_pool_a,
+    new_pool_b,
     pool_quantity_lp - withdrawn,
   )
 }

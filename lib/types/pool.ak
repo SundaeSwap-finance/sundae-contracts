@@ -3,7 +3,7 @@ use sundae/multisig
 use types/order.{SignedStrategyExecution}
 
 /// The current state of a AMM liquidity pool at a UTXO.
-pub type PoolDatum {
+pub type StablePoolDatum {
   /// the unique identifier of the pool. Produced by hashing one of the input UTXOs used to produce the pool
   /// to ensure uniqueness.
   identifier: Ident,
@@ -29,8 +29,20 @@ pub type PoolDatum {
   /// to calculate the swap amounts, and decreased when some amount is withdrawn.
   /// Note that this also allows us to conveniently sidestep minUTXO woes, because the creator of the pool can set the initial protocol fees to whatever minUTXO is needed
   /// and withdrawals never have to be for the full amount.
-  /// TODO: should we add a field to the settings object to set a minimum initial protocol_fees on pool mint?
   protocol_fees: Int,
+  /// `A` from the Curve stableswap formula
+  ///
+  /// It represents the dominance of the linear portion of the curve formula
+  /// A higher value results in a wider range of prices that are close to a 1:1 ratio.
+  /// A value of 0 means that the curve mimics the uniswap constant product curve.
+  linear_amplification: Int,
+  /// `D` from the Curve stableswap formula
+  ///
+  /// It represents what the sum of both assets would be *if* the pool were at equilibrium
+  /// We store it in the datum, and update it on each swap to account for protocol fees.
+  /// Specifically, the scooper calculates it off-chain, and provides the new invariant,
+  /// and the contract enforces that the invariant satisfies the correct formula.
+  sum_invariant: Int,
 }
 
 /// A pool UTXO can be spent for two purposes:
@@ -49,6 +61,10 @@ pub type PoolRedeemer {
     /// This is because the cardano ledger re-orders transaction inputs when building the script context; so this could end up processing
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
+    ///
+    /// In the base AMM, the last integer in this tuple was ignored, and just a quirk of Plutus / Aiken;
+    /// We repurpose it here to represent the intermediate `D` value *after* processing this order.
+    /// We do so after a very careful review, keeping [this cautionary tale](https://dougseven.com/2014/04/17/knightmare-a-devops-cautionary-tale/) close to our hearts.
     input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   }
   /// Withdraw the earned protocol fees into the treasury, or update the pool

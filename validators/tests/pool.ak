@@ -33,7 +33,7 @@ use tx_util/builder.{
 }
 use types/order.{Deposit, Destination, Fixed, Order, OrderDatum, Self, Swap}
 use types/pool.{
-  BurnPool, CreatePool, Manage, PoolDatum, PoolMintRedeemer, PoolScoop,
+  BurnPool, CreatePool, Manage, PoolMintRedeemer, PoolScoop, StablePoolDatum,
   UpdatePoolFees, WithdrawFees,
 }
 use types/settings.{SettingsDatum, settings_nft_name}
@@ -56,7 +56,7 @@ type ScoopTestOptions {
   edit_pool_input_value: Option<Value>,
   edit_pool_output_address: Option<Address>,
   edit_pool_output_value: Option<Value>,
-  edit_pool_output_datum: Option<PoolDatum>,
+  edit_pool_output_datum: Option<StablePoolDatum>,
   edit_settings_datum: Option<Datum>,
 }
 
@@ -120,14 +120,22 @@ test ok_scoop_swap_with_over_rounding() {
       ..default_scoop_test_options(),
       edit_pool_input_value: Some(
         assets.from_lovelace(20_000_000_000 + 2_000_000)
-          |> assets.add(constants.rberry_policy, constants.rberry_asset_name, 50)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              50,
+            )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
       edit_pool_output_value: Some(
         assets.from_lovelace(
           amt_1 + amt_2 + 20_000_000_000 + 2_000_000 + 2_500_000 + 2_500_000,
         )
-          |> assets.add(constants.rberry_policy, constants.rberry_asset_name, 48)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              48,
+            )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
       edit_order_1_details: Some(
@@ -330,7 +338,7 @@ fn scoop(options: ScoopTestOptions) {
   let owner = multisig.Signature(constants.payment_key)
   let fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -342,9 +350,11 @@ fn scoop(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 2_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_out_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -356,6 +366,8 @@ fn scoop(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 7_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -456,7 +468,7 @@ fn scoop(options: ScoopTestOptions) {
   }
   let (order1_out_addr, order1_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address, datum }) -> (address, datum)
       Some(Self) -> (order_address, InlineDatum(order_1_datum))
       None -> (user_addr, NoDatum)
     }
@@ -478,7 +490,7 @@ fn scoop(options: ScoopTestOptions) {
   // TODO: manage separately?
   let (order2_out_addr, order2_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address, datum }) -> (address, datum)
       Some(Self) -> (order_address, InlineDatum(order_2_datum))
       None -> (user_addr, NoDatum)
     }
@@ -542,7 +554,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   let owner = multisig.Signature(constants.payment_key)
   let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -554,9 +566,11 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 2_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_out_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -568,6 +582,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 7_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -658,7 +674,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
   }
   let (order1_out_addr, order1_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address, datum }) -> (address, datum)
       Some(Self) -> (order_address, InlineDatum(order_datum_1))
       None -> (user_addr, NoDatum)
     }
@@ -679,7 +695,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
     }
   let (order2_out_addr, order2_out_datum) =
     when options.edit_order_actual_destination is {
-      Some(Fixed(dest, datum)) -> (dest, datum)
+      Some(Fixed { address, datum }) -> (address, datum)
       Some(Self) -> (order_address, InlineDatum(order_datum_2))
       None -> (user_addr, NoDatum)
     }
@@ -769,7 +785,7 @@ fn withdraw_fees_transaction(
   let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let protocol_fees = 2_000_000
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -781,6 +797,8 @@ fn withdraw_fees_transaction(
       fee_manager: None,
       market_open: 0,
       protocol_fees,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let normal_input =
     new_tx_input(
@@ -810,7 +828,7 @@ fn withdraw_fees_transaction(
         )
   let pool_redeemer = Manage
   let pool_out_datum =
-    PoolDatum {
+    StablePoolDatum {
       ..pool_datum,
       protocol_fees: pool_datum.protocol_fees - withdraw_amount,
     }
@@ -1014,7 +1032,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
       Some(multisig.Signature(constants.pool_script_hash)),
     )
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -1026,6 +1044,8 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
       fee_manager,
       market_open: 0,
       protocol_fees: 2_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_rider = 2_000_000
   // pool_test_tx_input deduplicate?
@@ -1051,7 +1071,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
 
   let new_pool_fees = option.or_else(options.edit_new_swap_fees, (10, 10))
   let pool_out_datum =
-    PoolDatum {
+    StablePoolDatum {
       ..pool_datum,
       bid_fees_per_10_thousand: new_pool_fees.1st,
       ask_fees_per_10_thousand: new_pool_fees.2nd,
@@ -1059,7 +1079,9 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
 
   let pool_output =
     new_tx_output(pool_output_address, 0, InlineDatum(pool_out_datum))
-      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(1_000_000_000 + pool_rider),
+        )
       |> add_asset_to_tx_output(
           assets.from_asset(
             constants.rberry_policy,
@@ -1189,10 +1211,10 @@ test mint_test_two_nfts() fail {
 
 fn pool_ident_from_input(tx_input: Input) -> ByteArray {
   tx_input.output_reference.transaction_id
-    |> bytearray.concat(#"23") // '#' character
+    |> bytearray.concat(#"23")
+    // '#' character
 
-    
-  |> bytearray.concat(
+    |> bytearray.concat(
         pool_validator.int_to_ident(tx_input.output_reference.output_index),
       )
     |> crypto.blake2b_256
@@ -1219,7 +1241,7 @@ fn mint_test_modify(
   let inline_pool_datum =
     modify_datum(
       InlineDatum(
-        PoolDatum {
+        StablePoolDatum {
           identifier: pool_id,
           assets: (
             (ada_policy_id, ada_asset_name),
@@ -1231,6 +1253,8 @@ fn mint_test_modify(
           fee_manager: None,
           market_open: 0,
           protocol_fees: 2_000_000,
+          linear_amplification: 10,
+          sum_invariant: 10,
         },
       ),
     )
@@ -1243,7 +1267,8 @@ fn mint_test_modify(
       |> assets.add(constants.pool_script_hash, new_pool_nft_token, 1)
       |> assets.merge(assets.from_lovelace(1_002_000_000))
   let pool_output =
-    new_tx_output(pool_address, 0, inline_pool_datum) // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
+    new_tx_output(pool_address, 0, inline_pool_datum)
+      // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees
       |> add_asset_to_tx_output(pool_output_val)
       |> modify_pool_output
 
@@ -1255,7 +1280,8 @@ fn mint_test_modify(
     )
       |> assets.merge(assets.from_lovelace(2_000_000))
   let lp_output =
-    new_tx_output(user_address, 0, NoDatum) // we can probably get rid of the rider, it gets auto added
+    new_tx_output(user_address, 0, NoDatum)
+      // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(lp_output_val)
       |> modify_lp_output
 
@@ -1264,7 +1290,8 @@ fn mint_test_modify(
       |> assets.merge(assets.from_lovelace(2_000_000))
   let metadata_admin = wallet_address(example_metadata_admin)
   let ref_output =
-    new_tx_output(metadata_admin, 0, InlineDatum(Void)) // we can probably get rid of the rider, it gets auto added
+    new_tx_output(metadata_admin, 0, InlineDatum(Void))
+      // we can probably get rid of the rider, it gets auto added
       |> add_asset_to_tx_output(ref_output_val)
       |> modify_ref_output
 
@@ -1295,7 +1322,8 @@ fn mint_test_modify(
             |> assets.add(constants.pool_script_hash, new_pool_ref_token, 1),
         )
       |> add_tx_input(funds_input)
-      |> add_tx_ref_input(settings_input) // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
+      |> add_tx_ref_input(settings_input)
+      // these must be in reverse order like so, in order to get [pool_output, lp_output, ref_output]
       |> add_tx_output(ref_output)
       |> add_tx_output(lp_output)
       |> add_tx_output(pool_output)
@@ -1332,15 +1360,22 @@ test mint_exotic_pair() {
     identity,
     fn(pool_datum) {
       expect InlineDatum(pool_datum) = pool_datum
-      expect pool_datum: PoolDatum = pool_datum
+      expect pool_datum: StablePoolDatum = pool_datum
       InlineDatum(
-        PoolDatum { ..pool_datum, assets: ((#"01", #"54"), (#"02", #"55")) },
+        StablePoolDatum {
+          ..pool_datum,
+          assets: ((#"01", #"54"), (#"02", #"55")),
+        },
       )
     },
     fn(redeemer) {
       when redeemer is {
-        CreatePool(_, ix, mx) ->
-          CreatePool(((#"01", #"54"), (#"02", #"55")), ix, mx)
+        CreatePool { pool_output, metadata_output, .. } ->
+          CreatePool(
+            ((#"01", #"54"), (#"02", #"55")),
+            pool_output,
+            metadata_output,
+          )
         _ -> fail @"expected create pool"
       }
     },
@@ -1503,7 +1538,7 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -1515,6 +1550,8 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 18_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   // pool_test_tx_input deduplicate?
   let pool_input =
@@ -1586,7 +1623,7 @@ test attempt_evaporate_pool_test() {
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_fees = (5, 5)
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -1598,6 +1635,8 @@ test attempt_evaporate_pool_test() {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 18_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   // pool_test_tx_input deduplicate?
   let pool_input =
@@ -1655,7 +1694,7 @@ test burn_pool() {
   let user_addr = wallet_address(constants.payment_key)
   let fees = (5, 5)
   let pool_datum =
-    PoolDatum {
+    StablePoolDatum {
       identifier: constants.pool_ident,
       assets: (
         (ada_policy_id, ada_asset_name),
@@ -1667,6 +1706,8 @@ test burn_pool() {
       fee_manager: None,
       market_open: 0,
       protocol_fees: 2_000_000,
+      linear_amplification: 10,
+      sum_invariant: 10,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)

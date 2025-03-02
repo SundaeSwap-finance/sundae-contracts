@@ -11,7 +11,7 @@ use sundae/multisig
 use tests/examples/ex_shared.{mk_tx_hash, script_address}
 use types/oracle.{Burn, Mint, OracleDatum, OracleRedeemer} as types_oracle
 use types/order.{Fixed, OrderDatum}
-use types/pool.{PoolDatum}
+use types/pool.{StablePoolDatum}
 
 // The oracle script holds an oracle token, and a snapshot of the pool price at the *end* of some scoop.
 // This allows other protocols to build integrations that read the pool price (for some confidence interval) without worrying about contention
@@ -82,8 +82,8 @@ validator oracle(pool_script_hash: ScriptHash) {
 
         // Then unpack the pool datum
         expect InlineDatum(pool_datum) = pool_output.datum
-        expect pool_datum: PoolDatum = pool_datum
-        let PoolDatum { assets: (asset_a, asset_b), circulating_lp, .. } =
+        expect pool_datum: StablePoolDatum = pool_datum
+        let StablePoolDatum { assets: (asset_a, asset_b), circulating_lp, .. } =
           pool_datum
 
         let reserve_a =
@@ -230,7 +230,7 @@ fn mint_oracle(
         |> assets.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
         |> assets.add(pool_script_hash, pool_nft_name, 1),
       datum: InlineDatum(
-        PoolDatum {
+        StablePoolDatum {
           identifier: pool_id,
           assets: ((#"", #""), (rberry_policy_id, rberry_token_name)),
           circulating_lp: 1_000_000_000,
@@ -239,6 +239,8 @@ fn mint_oracle(
           fee_manager: None,
           market_open: 0,
           protocol_fees: 2_000_000,
+          linear_amplification: 10,
+          sum_invariant: 10,
         },
       ),
       reference_script: None,

@@ -17,43 +17,32 @@ use shared.{
 }
 use sundae/multisig
 use types/pool.{
-  BurnPool, CreatePool, Manage, ManageRedeemer, MintLP, PoolDatum,
-  PoolMintRedeemer, PoolRedeemer, PoolScoop, UpdatePoolFees, WithdrawFees,
+  BurnPool, CreatePool, Manage, ManageRedeemer, MintLP, PoolMintRedeemer,
+  PoolRedeemer, PoolScoop, StablePoolDatum, UpdatePoolFees, WithdrawFees,
 } as types_pool
 use types/settings.{SettingsDatum, find_settings_datum}
 
-/// The core / base "pooled AMM" script for the SundaeSwap v3 protocol
+/// An implementation of a curve-like "Stableswap" invariant that enables more efficient trades for stablecoin pairs.
 ///
-/// Parameterized by the Settings policy ID, which makes the script unique, as well as lets us validate / read global settings.
+/// In addition to the responsibilities described in the core AMM pool, this script uses a different pricing curve, and
+/// enforces a specific invariant holds during all operations.
 ///
-/// This script is responsible for:
-///  - Guarding access to the pools assets on behalf of the depositors
-///  - Enabling and executing a batch of orders against those assets, implementing a standard 'AMM' swap protocol
-///  - Serving as a minting policy, minting the Pool NFT and LP tokens
-///  - Accumulating protocol fees on behalf of the protocol
-///  - Allowing protocol rewards to be withdrawn to a DAO treasury
+/// Whereas a "constant product pool" ensures that the product of the reserves remains constant, this pool uses the following
+/// equation:
 ///
-/// It does so by allowing a permissioned set of entities to "scoop" a batch of orders, and ensuring that each one
-/// pays out to the appropriate destination.
+/// 4 * A * (x + y) + D = 4 * A * D + (D^3 / 4 * (x * y))
 ///
-/// This set of people is permissioned to prevent classes of "sandwich" attacks, wherein a malicious actor could
-/// execute and match orders in their *own* favor, rather than the users favor.
+/// Here, A represents the size of the flatter region of the curve, and D represents an adjusted sum of what the reserve
+/// balances would be at equilibrium.
 ///
-/// Also of particular sensitivity is the optimizations applied; To achieve high-throughput, low-cost DeFi, executing
-/// each order independently suffers from some amount of overhead.  If, for example, the execution costs are split into:
-/// A - The costs that need to be run in each transaction, regardless of what is executed
-/// B - The costs that need to be executed for each order
-/// C - The costs exclusive to batching, such as sorting the orders
-///
-/// It is likely, then, that protocols converge on the per-order cost of batching being lower than un-batched variants, i.e.
-///
-/// A + B*n + C < (A + B) * n
+/// The `D` parameter needs to be updated each time a trade, deposit, or withdrawal occurs, for example, to account for fees.
+/// Rather than compute this on-chain, the scooper passes the updated `D` parameter in the redeemer, and the script checks that it still satisfies the invariant.
 validator pool(
   manage_stake_script_hash: ScriptHash,
   settings_policy_id: PolicyId,
 ) {
   spend(
-    datum: Option<PoolDatum>,
+    datum: Option<StablePoolDatum>,
     redeemer: PoolRedeemer,
     out_ref: OutputReference,
     transaction: Transaction,
@@ -97,7 +86,7 @@ validator pool(
         // Find the pool output, the output datum, and destructure it to access the fields we need to process the scoop
         let (
           Output { address: pool_output_address, value: pool_output_value, .. },
-          PoolDatum {
+          StablePoolDatum {
             identifier: actual_identifier,
             circulating_lp: actual_circulating_lp,
             protocol_fees: actual_protocol_fees,
@@ -105,6 +94,8 @@ validator pool(
             bid_fees_per_10_thousand: actual_bid_fees_per_10_thousand,
             ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
             market_open: actual_market_open,
+            linear_amplification: actual_linear_amplification,
+            sum_invariant: actual_sum_invariant,
             ..
           },
         ) = find_pool_output(outputs)
@@ -158,6 +149,8 @@ validator pool(
           bid_fees,
           ask_fees,
           initial_protocol_fees,
+          linear_amplification,
+          initial_sum_invariant,
         <- pool_input_to_state(pool_script_hash, datum, pool_input)
 
         // Process the orders in order, and decide the final pool state we should see
@@ -169,6 +162,7 @@ validator pool(
           final_lp,
           simple_count,
           strategy_count,
+          final_sum_invariant,
         <-
           process_orders(
             actual_identifier,
@@ -189,30 +183,35 @@ validator pool(
             pool_policy_lp,
             pool_asset_name_lp,
             pool_quantity_lp,
-            input_order,
             // The input ordering specified by the scooper
-            bid_fees,
+            input_order,
             // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
-            ask_fees,
+            bid_fees,
             // ... for Ask (swap B -> A)
-            amortized_base_fee,
+            ask_fees,
             // The base fee split by the number of orders, paid for each user
-            simple_fee,
+            amortized_base_fee,
             // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
-            strategy_fee,
+            simple_fee,
             // The fee to charge for each "strategy" order
-            0,
+            strategy_fee,
+            // The linear curve dominance, which decides how "flat" the pricing curve is
+            linear_amplification,
+            // The "adjusted sum invariant"; represents what the sum of the two tokens would be, if the prices were at equilibrium
+            initial_sum_invariant,
             // The previous index we processed, intitially 0; this lets us detect if we need to "restart" the input list
-            inputs,
+            0,
             // *All* inputs, so we can start over at the beginning of the list if we want
             inputs,
             // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
-            list.drop(outputs, 1),
+            inputs,
             // The list of outputs we should be comparing orders against
-            0,
+            list.drop(outputs, 1),
             // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
             0,
             // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
+            0,
+            // The accumulated count of "strategy" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,
           )
         // The accumulated count of "strategy" orders, see line above.
@@ -287,6 +286,13 @@ validator pool(
         // or be unable to access funds they are entitled to.
         expect actual_circulating_lp == final_lp
 
+        // We folded through the orders and got an expected "final" curve invariant
+        // This usually needs to be adjusted to account for deposits, withdrawals, or swaps adding liquidity provider fees
+        // Make sure this final value is what actually gets put in the output datum
+        expect actual_sum_invariant == final_sum_invariant
+        // We also need to make sure the amplification is unchanged
+        expect actual_linear_amplification == linear_amplification
+
         // Make sure the protocol fees have been correctly updated
         expect
           actual_protocol_fees == initial_protocol_fees + expected_fees_collected
@@ -340,13 +346,13 @@ validator pool(
       // For creating a new pool, one of our design objectives was to avoid requiring interaction with any global
       // "factory", as in v1; this created a lot of contention, and didn't serve it's original goal of ensuring that
       // the (pair, fee) was unique.
-      CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+      CreatePool { assets, pool_output, metadata_output } -> {
         // And grab the pool output
-        expect Some(pool_output) = list.at(transaction.outputs, pool_output_ix)
+        expect Some(pool_output) = list.at(transaction.outputs, pool_output)
 
         // Check that the pool datum is inline, because a datum hash could brick this pool
         expect InlineDatum(d) = pool_output.datum
-        expect pool_output_datum: PoolDatum = d
+        expect pool_output_datum: StablePoolDatum = d
 
         // The assets on the pool must be sorted
         // This is partially to make off-chain indexing easier, and as an on-chain optimization,
@@ -385,7 +391,8 @@ validator pool(
         // a collision, or the cost of grinding UTXOs on cardano to give fresh inputs to the pool script.
         let new_pool_id =
           first_input.output_reference.transaction_id
-            |> bytearray.concat(#"23") // '#' character
+            |> bytearray.concat(#"23")
+            // '#' character
             |> bytearray.concat(first_input_index)
             |> crypto.blake2b_256
             |> bytearray.drop(4)
@@ -462,7 +469,7 @@ validator pool(
         // We use an index from the redeemer to skip to the right output, in case there are multiple outputs to the metadata admin
         // This is safe to do for the usual reasons: if they point at a UTXO without the ref token, the transaction will fail.
         expect Some(metadata_output) =
-          list.at(transaction.outputs, metadata_output_ix)
+          list.at(transaction.outputs, metadata_output)
         expect metadata_output.address == settings_datum.metadata_admin
         expect
           assets.quantity_of(
@@ -530,8 +537,8 @@ validator pool(
       // - During CreatePool, it would be impossible to mint multiple of the same pool tokens; a different pool token; a different number of LP tokens; or a different pool's LP tokens
       // - During MintLP, it would be impossible to mint the relevant pool token; thus, the pool script must run, and thus it will be impossible to mint another pool token, a different pool
       //   ident pool token, a different quantity of LP tokens, or a different pools LP tokens
-      MintLP(pool_ident) -> {
-        let pool_nft_name = shared.pool_nft_name(pool_ident)
+      MintLP { identifier } -> {
+        let pool_nft_name = shared.pool_nft_name(identifier)
         expect Some(pool_output) = list.head(transaction.outputs)
         and {
           (
@@ -544,11 +551,11 @@ validator pool(
           ) == 0,
         }
       }
-      BurnPool(pool_ident) -> {
+      BurnPool { identifier } -> {
         // Burning an asset is only possible when spending it, so if we enforce
         // that the mints consist of exactly 1 burn for the specified pool NFT
         // then we can defer to the pool spending validator
-        let pool_nft_name = shared.pool_nft_name(pool_ident)
+        let pool_nft_name = shared.pool_nft_name(identifier)
         let expected_mint = shared.to_value((own_policy_id, pool_nft_name, -1))
         transaction.mint == expected_mint
       }
@@ -560,7 +567,7 @@ validator pool(
   }
 }
 
-fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
+fn find_pool_output(outputs: List<Output>) -> (Output, StablePoolDatum) {
   // Find the pool output; we can assume the pool output is the first output, because:
   // - The ledger doesn't reorder outputs, just inputs
   // - We check that the address is correct, so if the first output was to a different contract, we would fail
@@ -568,7 +575,7 @@ fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
   // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
   expect Some(pool_output) = list.head(outputs)
   expect InlineDatum(output_datum) = pool_output.datum
-  expect output_datum: PoolDatum = output_datum
+  expect output_datum: StablePoolDatum = output_datum
   (pool_output, output_datum)
 }
 
@@ -577,7 +584,7 @@ fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
 fn minted_correct_pool_tokens(
   pool_policy_id: PolicyId,
   mint: Value,
-  datum: PoolDatum,
+  datum: StablePoolDatum,
   quantity_lp: Int,
 ) -> Bool {
   // Unwrap the silly MintedValue special type
@@ -729,9 +736,9 @@ validator manage(settings_policy_id: PolicyId) {
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
-        expect datum: PoolDatum = datum
+        expect datum: StablePoolDatum = datum
         expect Script(pool_script_hash) = pool_input.address.payment_credential
-        let PoolDatum {
+        let StablePoolDatum {
           circulating_lp: initial_circulating_lp,
           protocol_fees: initial_protocol_fees,
           ..
@@ -798,7 +805,10 @@ validator manage(settings_policy_id: PolicyId) {
           // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
           // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
           let expected_datum =
-            PoolDatum { ..datum, protocol_fees: initial_protocol_fees - amount }
+            StablePoolDatum {
+              ..datum,
+              protocol_fees: initial_protocol_fees - amount,
+            }
           expect output_datum == expected_datum
 
           // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
@@ -823,14 +833,14 @@ validator manage(settings_policy_id: PolicyId) {
         expect Some(pool_input) = list.at(inputs, pool_input)
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
-        expect datum: PoolDatum = datum
+        expect datum: StablePoolDatum = datum
         // We need the pool output to check that only the fees or fee manager are updated
         let (
           Output { address: pool_output_address, value: pool_output_value, .. },
           pool_output_datum,
         ) = find_pool_output(outputs)
 
-        let PoolDatum {
+        let StablePoolDatum {
           bid_fees_per_10_thousand,
           ask_fees_per_10_thousand,
           fee_manager: output_fee_manager,
@@ -842,7 +852,7 @@ validator manage(settings_policy_id: PolicyId) {
         expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
 
         let expected_datum =
-          PoolDatum {
+          StablePoolDatum {
             ..datum,
             bid_fees_per_10_thousand: bid_fees_per_10_thousand,
             ask_fees_per_10_thousand: ask_fees_per_10_thousand,

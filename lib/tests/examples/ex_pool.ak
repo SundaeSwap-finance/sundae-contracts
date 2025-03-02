@@ -1,11 +1,11 @@
 use tests/examples/ex_shared.{print_example}
 use types/pool.{
-  CreatePool, ManageRedeemer, PoolDatum, PoolMintRedeemer, PoolRedeemer,
-  PoolScoop, WithdrawFees,
+  CreatePool, ManageRedeemer, PoolMintRedeemer, PoolRedeemer, PoolScoop,
+  StablePoolDatum, WithdrawFees,
 }
 
-fn mk_pool_datum() -> PoolDatum {
-  PoolDatum {
+fn mk_pool_datum() -> StablePoolDatum {
+  StablePoolDatum {
     identifier: "123",
     assets: (
       (#"", #""),
@@ -20,6 +20,8 @@ fn mk_pool_datum() -> PoolDatum {
     fee_manager: None,
     market_open: 100,
     protocol_fees: 10000000,
+    linear_amplification: 10,
+    sum_invariant: 10,
   }
 }
 

@@ -69,13 +69,6 @@ pub type Order {
   /// We use an at-most amount semantics to aide in composibility; perhaps the withdrawal is part of a longer chain,
   /// and you only want to withdraw a portion of your full LP tokens
   Withdrawal { amount: SingletonValue }
-  // Note: we decided not to implement native ZapIn / ZapOut for the purposes of time; they can be implemented via chained orders or strategies.
-  // ZapIn { assets: (SingletonValue, SingletonValue) }
-  // ZapOut { assets: (Int, Int) }
-  /// Deposit these assets into the pool, and mint the appropriate number of LP tokens
-  /// Donate some value to the pool; Likely not useful for an end user, but lets other
-  /// protocols create interesting options: for example, an incentive program for their liquidity providers, etc.
-  Donation { assets: (SingletonValue, SingletonValue) }
   // Record, like the verb; let some script witness a scoop, and enforce some property about the output
   // Used, for example, to record the state of the pool for an on-chain oracle, etc.
   Record { policy: (PolicyId, AssetName) }

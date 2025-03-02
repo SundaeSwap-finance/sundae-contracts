@@ -3,7 +3,6 @@ use aiken/collection/dict.{Dict}
 use aiken/crypto.{Blake2b_256, Hash}
 use aiken/interval
 use calculation/deposit
-use calculation/donation
 use calculation/record
 use calculation/shared.{
   PoolState, check_and_set_unique, unsafe_fast_index_skip_with_tail,
@@ -19,12 +18,12 @@ use cardano/transaction.{
 use shared.{Ident, datum_of, is_script, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, Fixed, Order, OrderDatum, SignedStrategyExecution}
-use types/pool.{PoolDatum}
+use types/pool.{StablePoolDatum}
 
 /// Construct the initial pool state for processing a set of orders
 pub fn pool_input_to_state(
   pool_token_policy: PolicyId,
-  datum: PoolDatum,
+  datum: StablePoolDatum,
   input: Output,
   continuation: fn(
     PolicyId,
@@ -39,16 +38,20 @@ pub fn pool_input_to_state(
     Int,
     Int,
     Int,
+    Int,
+    Int,
   ) ->
     Bool,
 ) -> Bool {
-  let PoolDatum {
+  let StablePoolDatum {
     assets,
     protocol_fees,
     identifier,
     circulating_lp,
     bid_fees_per_10_thousand,
     ask_fees_per_10_thousand,
+    linear_amplification,
+    sum_invariant,
     ..
   } = datum
   let (asset_a, asset_b) = assets
@@ -84,6 +87,8 @@ pub fn pool_input_to_state(
     bid_fees,
     ask_fees,
     protocol_fees,
+    linear_amplification,
+    sum_invariant,
   )
 }
 
@@ -135,6 +140,10 @@ pub fn process_order(
   // The amount to charge for simple vs strategy orders, taken from the settings
   simple_fee: Int,
   strategy_fee: Int,
+  // Stableswap invariants
+  linear_amplification: Int,
+  sum_invariant: Int,
+  next_sum_invariant: Int,
   // A list of outputs, so we can destructure the next output
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
@@ -143,7 +152,7 @@ pub fn process_order(
 ) -> Bool {
   // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
   when details is {
-    order.Strategy(signer) -> {
+    order.Strategy { auth } -> {
       // For a strategy, we can basically "unpack" (and validate) the signed execution, and then recurse to process the deferred order
       expect Some(execution) = signed_execution
       let details =
@@ -151,7 +160,7 @@ pub fn process_order(
           output_reference,
           tx_valid_range,
           withdrawals,
-          signer,
+          auth,
           execution,
         )
       process_order(
@@ -181,11 +190,14 @@ pub fn process_order(
         // because even though we're using the same logic, we're charging a different fee for strategies
         strategy_fee,
         strategy_fee,
+        linear_amplification,
+        sum_invariant,
+        next_sum_invariant,
         outputs,
         continuation,
       )
     }
-    order.Swap(offer, min_received) -> {
+    order.Swap { offer, min_received } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       let fee = amortized_base_fee + simple_fee
@@ -202,6 +214,9 @@ pub fn process_order(
           pool_policy_b,
           pool_asset_name_b,
           pool_quantity_b,
+          linear_amplification,
+          sum_invariant,
+          next_sum_invariant,
           input,
           destination,
           bid_fees_per_10_thousand,
@@ -213,7 +228,7 @@ pub fn process_order(
         )
       continuation(new_pool_a, new_pool_b, pool_quantity_lp, rest_outputs)
     }
-    order.Deposit(assets) -> {
+    order.Deposit { assets } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // i.e. the amortized base fee (which is the base fee shared by all orders), and the incremental fee (i.e. the fee paid by each order individually) should be no more than the max fee in the datum
@@ -235,6 +250,9 @@ pub fn process_order(
           pool_policy_lp,
           pool_asset_name_lp,
           pool_quantity_lp,
+          linear_amplification,
+          sum_invariant,
+          next_sum_invariant,
           input,
           assets,
           destination,
@@ -243,7 +261,7 @@ pub fn process_order(
         )
       continuation(new_a, new_b, new_lp, rest_outputs)
     }
-    order.Withdrawal(amount) -> {
+    order.Withdrawal { amount } -> {
       expect [output, ..rest_outputs] = outputs
       // Make sure the scooper can only take up to the max fee the user has agreed to
       // (See above)
@@ -265,6 +283,9 @@ pub fn process_order(
           pool_policy_lp,
           pool_asset_name_lp,
           pool_quantity_lp,
+          linear_amplification,
+          // sum_invariant, TODO: is this needed?
+          next_sum_invariant,
           input,
           amount,
           destination,
@@ -273,44 +294,7 @@ pub fn process_order(
         )
       continuation(new_a, new_b, new_lp, rest_outputs)
     }
-    // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
-    // The cheaper fees the DAO voted on should make this acceptable
-    // order.Zap(..) -> do_zap(initial, input, datum)
-    order.Donation(assets) -> {
-      expect [output, ..rest_outputs] = outputs
-      // Make sure the scooper can only take up to the max fee the user has agreed to
-      // (See above)
-      let fee = amortized_base_fee + simple_fee
-      expect max_protocol_fee >= fee
-      // Calculate and validate the result of a donation
-      let
-        new_a,
-        new_b,
-        used_output,
-      <-
-        donation.do_donation(
-          pool_policy_a,
-          pool_asset_name_a,
-          pool_quantity_a,
-          pool_policy_b,
-          pool_asset_name_b,
-          pool_quantity_b,
-          input,
-          assets,
-          destination,
-          fee,
-          output,
-        )
-      // If a donation has no change (ex it has exactly the donation + the fee) then we don't have an output dedicated to the order
-      // so we can skip over it
-      // TODO: can we just return used_output here instead of passing around the lists of outputs?
-      if used_output {
-        continuation(new_a, new_b, pool_quantity_lp, rest_outputs)
-      } else {
-        continuation(new_a, new_b, pool_quantity_lp, outputs)
-      }
-    }
-    order.Record(policy) -> {
+    order.Record { policy } -> {
       // Make sure the scooper can only take up to the max fee the user has agreed to
       expect [output, ..rest_outputs] = outputs
       let fee = amortized_base_fee + simple_fee
@@ -357,6 +341,9 @@ pub fn process_orders(
   // The simple and strategy fees from the settings datum
   simple_fee: Int,
   strategy_fee: Int,
+  // Stableswap Parameters
+  linear_amplification: Int,
+  sum_invariant: Int,
   // The previous order we processed, to check if we need to restart the loop; TODO: we actually pass +1 from this, and i'm not sure how to explain why we do this...
   prev_index: Int,
   // *all* inputs on the transaction, in case we need to start over from the beginning (i.e. wrap around)
@@ -371,7 +358,7 @@ pub fn process_orders(
   simple_count: Int,
   strategy_count: Int,
   // A continuation to call with the final pool state; more efficient than constructing tuples / objects
-  continuation: fn(Int, Int, Int, Int, Int) -> Bool,
+  continuation: fn(Int, Int, Int, Int, Int, Int) -> Bool,
 ) -> Bool {
   // Returns the final pool state, and the count of each order type
   // The main "pump" of the recursive loop is the input_order, which is a set of indices into the inputs list
@@ -385,8 +372,9 @@ pub fn process_orders(
         pool_quantity_lp,
         simple_count,
         strategy_count,
+        sum_invariant,
       )
-    [(idx, sse, _), ..rest] -> {
+    [(idx, sse, new_sum_invariant), ..rest] -> {
       // First, it's important to check that each order is processed only once;
       // This is quite subtle, so check InputSorting.md for a full explanation
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -426,7 +414,7 @@ pub fn process_orders(
       // Check whether this is a strategy, then increment the count appropriately
       let (next_simple_count, next_strategy_count) =
         when details is {
-          order.Strategy(..) -> (simple_count, strategy_count + 1)
+          order.Strategy { .. } -> (simple_count, strategy_count + 1)
           _ -> (simple_count + 1, strategy_count)
         }
       // And finally, process this one individual order and compute the next state
@@ -461,6 +449,9 @@ pub fn process_orders(
           amortized_base_fee,
           simple_fee,
           strategy_fee,
+          linear_amplification,
+          sum_invariant,
+          new_sum_invariant,
           outputs,
         )
 
@@ -486,6 +477,8 @@ pub fn process_orders(
         amortized_base_fee,
         simple_fee,
         strategy_fee,
+        linear_amplification,
+        sum_invariant,
         idx + 1,
         // This is the "previous index" within the input list; TODO: I'm not actually sure why we add 1?
         all_inputs,
@@ -528,11 +521,9 @@ test process_orders_test() {
       ),
       max_protocol_fee: 2_500_000,
       destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        ),
+      details: order.Swap {
+        offer: (ada.1st, ada.2nd, 1_000_000),
+        min_received: (rberry.1st, rberry.2nd, 1_000_000),
       },
       extension: Void,
     }
@@ -575,17 +566,15 @@ test process_orders_test() {
     }
   let valid_range = interval.between(1, 2)
 
-  let input_order =
-    [(0, None, 0)]
-  let inputs =
-    [input]
-  let outputs =
-    [output]
+  let input_order = [(0, None, 0)]
+  let inputs = [input]
+  let outputs = [output]
 
   let
     new_a,
     new_b,
     new_lp,
+    sum_invariant,
     simple,
     strategies,
   <-
@@ -609,6 +598,8 @@ test process_orders_test() {
       2_500_000,
       0,
       0,
+      10,
+      10,
       0,
       inputs,
       inputs,
@@ -618,12 +609,14 @@ test process_orders_test() {
       0,
     )
 
-  expect new_a == 1_001_000_000
-  expect new_b == 1_001_000_000
-  expect new_lp == 1_000_000_000
-  expect simple == 1
-  expect strategies == 0
-  True
+  and {
+    new_a == 1_001_000_000,
+    new_b == 1_001_000_000,
+    new_lp == 1_000_000_000,
+    simple == 1,
+    strategies == 0,
+    sum_invariant == 10,
+  }
 }
 
 test process_30_shuffled_orders_test() {
@@ -652,11 +645,9 @@ test process_30_shuffled_orders_test() {
       ),
       max_protocol_fee: 2_500_000,
       destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation {
-        assets: (
-          (ada.1st, ada.2nd, 1_000_000),
-          (rberry.1st, rberry.2nd, 1_000_000),
-        ),
+      details: order.Swap {
+        offer: (ada.1st, ada.2nd, 1_000_000),
+        min_received: (rberry.1st, rberry.2nd, 1_000_000),
       },
       extension: Void,
     }
@@ -715,13 +706,13 @@ test process_30_shuffled_orders_test() {
       (20, None, 0), (29, None, 0), (19, None, 0), (21, None, 0), (9, None, 0),
       (25, None, 0), (6, None, 0), (4, None, 0), (3, None, 0), (15, None, 0),
     ]
-  let outputs =
-    [output]
+  let outputs = [output]
 
   let
     new_a,
     new_b,
     new_lp,
+    new_sum_invariant,
     simple,
     strategies,
   <-
@@ -745,6 +736,8 @@ test process_30_shuffled_orders_test() {
       2_500_000,
       0,
       0,
+      10,
+      10,
       0,
       inputs,
       inputs,
@@ -754,5 +747,12 @@ test process_30_shuffled_orders_test() {
       0,
     )
 
-  new_a == 1_030_000_000 && new_b == 1_030_000_000 && new_lp == 1_000_000_000 && simple == 30 && strategies == 0
+  and {
+    new_a == 1_030_000_000,
+    new_b == 1_030_000_000,
+    new_lp == 1_000_000_000,
+    simple == 30,
+    strategies == 0,
+    new_sum_invariant == 10,
+  }
 }

@@ -1,5 +1,6 @@
 use aiken/math
 use calculation/shared.{PoolState} as calc_shared
+use calculation/stableswap
 use cardano/address.{Address, VerificationKey}
 use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use cardano/transaction.{InlineDatum, NoDatum, Output}
@@ -22,6 +23,9 @@ pub fn do_deposit(
   pool_policy_lp: PolicyId,
   pool_asset_name_lp: AssetName,
   pool_quantity_lp: Int,
+  linear_amplification: Int,
+  sum_invariant: Int,
+  next_sum_invariant: Int,
   input_utxo: Output,
   assets: (SingletonValue, SingletonValue),
   destination: Destination,
@@ -29,75 +33,58 @@ pub fn do_deposit(
   output: Output,
   continuation: fn(Int, Int, Int) -> Bool,
 ) -> Bool {
-  let (asset_a, asset_b) = assets
+  let (order_a, order_b) = assets
   let Output { value: input_value, .. } = input_utxo
 
   // Policy ID and token name of the assets must match the pool, otherwise someone
   // could load the pool with junk tokens and freeze the pool.
-  expect asset_a.1st == pool_policy_a
-  expect asset_a.2nd == pool_asset_name_a
-  expect asset_b.1st == pool_policy_b
-  expect asset_b.2nd == pool_asset_name_b
+  expect order_a.1st == pool_policy_a
+  expect order_a.2nd == pool_asset_name_a
+  expect order_b.1st == pool_policy_b
+  expect order_b.2nd == pool_asset_name_b
 
-  // A deposit is permitted to have lower funds than the datum claims, so that
-  // we can compose it as a step in a chain where the exact amount will be unknown.
-  // So we take either the datum value or the actual amount on the utxo, whichever is
-  // less.
-  let user_gives_a = {
-    // However, we need to leave some amount of ADA behind, to return as a deposit and the fee
-    // to ensure that the change can be returned to the user
-    // TODO: perhaps we should just let hte minUTXO fail, and go with what the user entered?
-    // that way we save on ex units, and don't need to worry about a weird constant
-    let extra_ada =
-      if asset_a.1st == "" {
-        // TODO: public constant for the deposit
-        2_000_000 + actual_protocol_fee
-      } else {
-        0
-      }
-    math.min(
-      asset_a.3rd,
-      assets.quantity_of(input_value, asset_a.1st, asset_a.2nd) - extra_ada,
-    )
-  }
-  // Because we subtract off the deposit and the actual protocol fee, this could end up negative
-  // in which case we should fail
-  expect user_gives_a > 0
-  // Similarly, take *up to* the the datum amount of assetB
-  let user_gives_b =
-    math.min(
-      asset_b.3rd,
-      assets.quantity_of(input_value, asset_b.1st, asset_b.2nd),
-    )
+  // Fetch the input and output quantities for A and B
+  let input_a = assets.quantity_of(input_value, order_a.1st, order_a.2nd)
+  let surplus_a = assets.quantity_of(output.value, order_a.1st, order_a.2nd)
+  let input_b = assets.quantity_of(input_value, order_b.1st, order_b.2nd)
+  let surplus_b = assets.quantity_of(output.value, order_b.1st, order_b.2nd)
 
-  // The ratio of a to b might have shifted since the user created their order amount
-  // So some small amount of a or b might be returned to the user
-  // So, calculate how much "b" do we have, in units of asset A, so we can check which is greater
-  let b_in_units_of_a = user_gives_b * pool_quantity_a / pool_quantity_b
+  // The difference between these amounts is the amount the user actually deposits into the pool
+  let deposited_a = surplus_a - input_a
+  let deposited_b = surplus_b - input_b
 
-  // Amount that user actually deposits in the pool, after giving back change.
-  let (deposited_a, deposited_b) =
-    // If we have more b than a, then we can only take up to an equivalent amount of b, and return the rest
-    // otherwise if we have more a than b, we can return some amount of `a` to the user instead
-    if b_in_units_of_a > user_gives_a {
-      // Make sure to do ceiling division here, to round in favor fo the protocol
-      // That is, when in doubt, take up to one more token from the user than the
-      // LP tokens we issue would entail
-      let give_b = ( pool_quantity_b * user_gives_a - 1 ) / pool_quantity_a + 1
-      (user_gives_a, give_b)
-    } else {
-      (b_in_units_of_a, user_gives_b)
+  // Check that the deposited amounts are ok; specifically:
+  // - we ensure that it's positive, so we don't accidentally withdraw tokens
+  // - we ensure that it's less than the users maximum deposit amount, so we can compose with other protocols
+  // - we ensure that the scooper doesn't under or over execute the deposit by ensuring we deposit the lesser of:
+  //   - the users maximum deposit amount, so we can compose with other protocols
+  //   - the amount of tokens on the input, to ensure the scooper doesn't under-execute the order
+  expect and {
+      deposited_a > 0,
+      deposited_a == math.min(order_a.3rd, input_a),
+      deposited_b > 0,
+      deposited_b == math.min(order_b.3rd, input_b),
     }
 
+  // Check the stableswap liquidity invariant; this ensures that either we provided a balanced amount of tokens,
+  // or we paid liquidity provider fees on whatever portion was "swapped"
+  let new_pool_a = pool_quantity_a + deposited_a
+  let new_pool_b = pool_quantity_b + deposited_b
+  expect
+    stableswap.liquidity_invariant(
+      new_pool_a,
+      new_pool_b,
+      linear_amplification,
+      next_sum_invariant,
+    )
+
   // We can then calculate how much LP tokens this user should get;
-  // This maintains the invariant that the minted LP tokens, as a percentage of the new circulating supply,
-  // is equal to the percentage of assets the user deposited in the pool.
-  // We can choose either asset A or asset B to compute this, since presumably, they're depositing equal value of each
-  //
-  // issued_lp_tokens / (pool_state.quantity_lp.3rd + issued_lp_tokens) = deposited_a / (pool_state.quantity_a.3rd + deposited_a)
-  //
-  // Solving for `issued_lp_tokens` gives:
-  let issued_lp_tokens = deposited_a * pool_quantity_lp / pool_quantity_a
+  // Because we check that `next_sum_invariant` is correct above,
+  // The LP tokens the user receives is a percentage share of the existing LP tokens
+  // where the percentage is the percent increase in the sum invariant!
+  // We calculate this here in a precision-safe manner.
+  let delta_d = next_sum_invariant - sum_invariant
+  let issued_lp_tokens = delta_d * pool_quantity_lp / sum_invariant
 
   // Make sure we don't ever allow this to round to zero, which would just eat some of the users assets
   expect issued_lp_tokens > 0
@@ -107,8 +94,8 @@ pub fn do_deposit(
   // plus the relevant LP tokens
   let out_value =
     input_value
-      |> assets.add(asset_a.1st, asset_a.2nd, -deposited_a)
-      |> assets.add(asset_b.1st, asset_b.2nd, -deposited_b)
+      |> assets.add(order_a.1st, order_a.2nd, -deposited_a)
+      |> assets.add(order_b.1st, order_b.2nd, -deposited_b)
       |> assets.add(ada_policy_id, ada_asset_name, -actual_protocol_fee)
       |> assets.add(pool_policy_lp, pool_asset_name_lp, issued_lp_tokens)
 
@@ -133,11 +120,7 @@ pub fn do_deposit(
     }
 
   // And construct the final pool state
-  continuation(
-    pool_quantity_a + deposited_a,
-    pool_quantity_b + deposited_b,
-    pool_quantity_lp + issued_lp_tokens,
-  )
+  continuation(new_pool_a, new_pool_b, pool_quantity_lp + issued_lp_tokens)
 }
 
 test deposit_test() {
@@ -204,6 +187,9 @@ test deposit_test() {
       pool_state.quantity_b.3rd,
       pool_state.quantity_lp.1st,
       pool_state.quantity_lp.2nd,
+      pool_state.quantity_lp.3rd,
+      0,
+      pool_state.quantity_lp.3rd,
       pool_state.quantity_lp.3rd,
       input,
       assets,

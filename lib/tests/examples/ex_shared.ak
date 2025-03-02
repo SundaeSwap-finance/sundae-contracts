@@ -1,4 +1,3 @@
-use aiken/cbor
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{Address, Credential, Script, VerificationKey}
@@ -8,9 +7,9 @@ use cardano/transaction.{
 
 pub const examples_enabled: Int = 1
 
-pub fn print_example(d: Data) -> Bool {
+pub fn print_example(_d: Data) -> Bool {
   if examples_enabled == 1 {
-    trace bytearray.to_hex(cbor.serialise(d))
+    trace bytearray.to_hex(cbor.serialise(_d))
     True
   } else {
     True
@@ -54,7 +53,10 @@ pub fn compare_stake(left: Credential, right: Credential) -> Ordering {
 pub fn compare_redeemer(left: ScriptPurpose, right: ScriptPurpose) -> Ordering {
   when (left, right) is {
     (Mint(p_a), Mint(p_b)) -> bytearray.compare(p_a, p_b)
-    (Spend(OutputReference(tx_a, idx_a)), Spend(OutputReference(tx_b, idx_b))) ->
+    (
+      Spend(OutputReference { transaction_id: tx_a, output_index: idx_a }),
+      Spend(OutputReference { transaction_id: tx_b, output_index: idx_b }),
+    ) ->
       when bytearray.compare(tx_a, tx_b) is {
         Less -> Less
         Greater -> Greater
