@@ -1,3 +1,4 @@
+use aiken/cbor
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{Address, Credential, Script, VerificationKey}
@@ -7,9 +8,9 @@ use cardano/transaction.{
 
 pub const examples_enabled: Int = 1
 
-pub fn print_example(_d: Data) -> Bool {
+pub fn print_example(d: Data) -> Bool {
   if examples_enabled == 1 {
-    trace bytearray.to_hex(cbor.serialise(_d))
+    trace cbor.serialise(d)
     True
   } else {
     True

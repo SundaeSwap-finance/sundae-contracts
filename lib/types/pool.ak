@@ -17,19 +17,19 @@ pub type StablePoolDatum {
   circulating_lp: Int,
   /// The basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders
   /// For example, a 1% fee would be represented as 100 (out of 10,000), and a 0.3% fee would be represented as 30
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
+  lp_fee_basis_points: (Int, Int),
+  // The percentage cut of the LP fees the protocol collects
+  protocol_fee_basis_points: (Int, Int),
   // An optional multisig condition under which the protocol fees can be updated
   fee_manager: Option<multisig.MultisigScript>,
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
   /// TODO: deposits and arguably withdrawals should be processed before the market open
   market_open: Int,
-  /// The amount of ADA on the UTXO that is set aside by collecting protocol fees
-  /// This should be increased on each scoop to represent collecting fees; deducted from the reserve amount (if one of the tokens in the pair is ADA)
-  /// to calculate the swap amounts, and decreased when some amount is withdrawn.
-  /// Note that this also allows us to conveniently sidestep minUTXO woes, because the creator of the pool can set the initial protocol fees to whatever minUTXO is needed
-  /// and withdrawals never have to be for the full amount.
-  protocol_fees: Int,
+  /// The amount of fees the protocol has collected from trading activity
+  /// The first element in the tuple is the ada collected from raw scooper fees
+  /// The second element in the tuple is asset A (which may also be ADA) collected as a percentage of LP fees
+  /// The third element in the tuple is asset B (which can never be ADA) collected as a percentage of LP fees
+  protocol_fees: (Int, Int, Int),
   /// `A` from the Curve stableswap formula
   ///
   /// It represents the dominance of the linear portion of the curve formula
@@ -102,7 +102,7 @@ pub type PoolMintRedeemer {
 /// Manage settings about a pool (used against the pool manage script)
 pub type ManageRedeemer {
   // Withdraw some subset of the fees in the pool, paid into the treasury
-  WithdrawFees { amount: Int, treasury_output: Int, pool_input: Int }
+  WithdrawFees { amount: (Int, Int, Int), treasury_output: Int, pool_input: Int }
   // Update the percentage fee the pool charges
   UpdatePoolFees { pool_input: Int }
 }

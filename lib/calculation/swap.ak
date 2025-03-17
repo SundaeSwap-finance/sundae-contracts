@@ -22,8 +22,11 @@ pub fn do_swap(
   /// Where the results of the swap need to be paid
   destination: Destination,
   /// The liquidity provider fee to charge for bid (A -> B) or ask (B -> A) orders
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
+  lp_bid_basis_points: Int,
+  lp_ask_basis_points: Int,
+  /// The protocol fee to charge for bid (A -> B) or ask (B -> A) orders
+  protocol_bid_basis_points: Int,
+  protocol_ask_basis_points: Int,
   actual_protocol_fee: Int,
   /// The amount of value from the UTXO that is "on offer" for the trade
   offer: SingletonValue,
@@ -32,7 +35,7 @@ pub fn do_swap(
   /// The output to compare against
   output: Output,
   // A continuation to call with the updated pool state
-  continuation: fn(Int, Int) -> Bool,
+  continuation: fn(Int, Int, Int, Int) -> Bool,
 ) -> Bool {
   let Output { value: input_value, .. } = input_utxo
   let Output {
@@ -50,15 +53,15 @@ pub fn do_swap(
   // We check the assets, rather than comparing the pool ident, so that orders can be "pool agnostic"
   // By convention we call an order a "bid" if it swaps asset A for asset B,
   // and an "ask" in the other direction
-  let (a_to_b, fee_rate) =
+  let (a_to_b, lp_fee_rate, protocol_fee_rate) =
     if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
       expect min_received_1st == pool_policy_b
       expect min_received_2nd == pool_asset_name_b
-      (True, bid_fees_per_10_thousand)
+      (True, lp_bid_basis_points, protocol_bid_basis_points)
     } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
       expect min_received_1st == pool_policy_a
       expect min_received_2nd == pool_asset_name_a
-      (True, ask_fees_per_10_thousand)
+      (False, lp_ask_basis_points, protocol_ask_basis_points)
     } else {
       // If neither is true, then this is just the wrong pool! fail the script
       fail @"wrong pool"
@@ -126,20 +129,26 @@ pub fn do_swap(
       order_takes >= min_received_3rd,
     }
 
-  // We calculate a percentage fee for liquidity providers, TODO: and for the protocol
-  // Note that we assume the LP fee has already been deducted from the output, so we're
+  // We calculate a percentage fee for liquidity providers and the protocol
+  // Note that we assume both fees have already been deducted from the output, so we're
   // calculating what the "pure" takes would have been; we do this in a way that is
   // algebraically safe from rounding errors
-  // if order_takes_minus_fees = order_takes * (1 - fee)
-  // order_takes = order_takes_minus_fees / (1 - fee)
-  // order_takes = order_takes_minus_fees / (1 - (fee_rate / 10000))
-  // order_takes = order_takes_minus_fees / (10000/10000 - (fee_rate / 10000))
-  // order_takes = order_takes_minus_fees / ((10000 - fee_rate) / 10000)
-  // order_takes = order_takes_minus_fees * 10000 / (10000 - fee_rate)
-  let difference = 10000 - fee_rate
+  // order_takes = swap_result * (1 - fee)
+  // swap_result = order_takes / (1 - fee)
+  // swap_result = order_takes / (1 - (fee_bp / 10000))
+  // swap_result = order_takes / (10000/10000 - (fee_bp / 10000))
+  // swap_result = order_takes / ((10000 - fee_bp) / 10000)
+  // swap_result = order_takes * 10000 / (10000 - (lp_fee_rate + protocol_fee_rate))
+  let total_fee_rate = lp_fee_rate + protocol_fee_rate
+  let difference = 10000 - total_fee_rate
   let swap_result = order_takes * 10000 / difference
 
-  let takes_fees = swap_result - order_takes
+  let total_fees = swap_result - order_takes
+  let lp_fees = total_fees * lp_fee_rate / total_fee_rate
+  let protocol_fees = total_fees * protocol_fee_rate / total_fee_rate
+
+  // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
+  let pool_deduction = order_takes + protocol_fees
 
   // Enforce that the stableswap invariant holds;
   // this ensures that:
@@ -149,23 +158,23 @@ pub fn do_swap(
     expect
       stableswap.swap_invariant(
         pool_quantity_a + order_give,
-        pool_quantity_b - order_takes,
-        takes_fees,
+        pool_quantity_b - pool_deduction,
+        lp_fees,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(pool_quantity_a + order_give, pool_quantity_b - order_takes)
+    continuation(pool_quantity_a + order_give, pool_quantity_b - pool_deduction, 0, protocol_fees)
   } else {
     expect
       stableswap.swap_invariant(
         pool_quantity_b + order_give,
-        pool_quantity_a - order_takes,
-        takes_fees,
+        pool_quantity_a - pool_deduction,
+        lp_fees,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(pool_quantity_a - order_takes, pool_quantity_b + order_give)
+    continuation(pool_quantity_a - pool_deduction, pool_quantity_b + order_give, protocol_fees, 0)
   }
 }

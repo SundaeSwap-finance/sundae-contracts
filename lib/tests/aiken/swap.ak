@@ -57,6 +57,8 @@ test swap_mintakes_too_high() fail {
   let
     new_a,
     new_b,
+    delta_fee_a,
+    delta_fee_b,
   <-
     do_swap(
       pool_state.quantity_a.1st,
@@ -72,6 +74,8 @@ test swap_mintakes_too_high() fail {
       order.destination,
       5,
       5,
+      0,
+      0,
       2_500_000,
       swap_offer,
       swap_min_received,
@@ -79,6 +83,8 @@ test swap_mintakes_too_high() fail {
     )
   expect new_a == 1_000_000_000 + 10_000_000
   expect new_b == 1_000_000_000 - 9_896_088
+  expect delta_fee_a == 0
+  expect delta_fee_b == 0
   True
 }
 
@@ -133,6 +139,8 @@ test swap_different_bid_ask() {
   let
     new_a,
     new_b,
+    delta_fee_a,
+    delta_fee_b,
   <-
     do_swap(
       pool_state.quantity_a.1st,
@@ -148,6 +156,8 @@ test swap_different_bid_ask() {
       order.destination,
       5,
       100,
+      0,
+      0,
       2_500_000,
       swap_offer,
       swap_min_received,
@@ -156,5 +166,7 @@ test swap_different_bid_ask() {
   // If we charged 5%, from the bid fee, it would be `- 9_896_088`, but because we charged a higher fee, the user got less in return
   expect new_a == 1_000_000_000 - 9_802_950
   expect new_b == 1_000_000_000 + 10_000_000
+  expect delta_fee_a == 0
+  expect delta_fee_b == 0
   True
 }

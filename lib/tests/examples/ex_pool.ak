@@ -15,11 +15,11 @@ fn mk_pool_datum() -> StablePoolDatum {
       ),
     ),
     circulating_lp: 20229488080013,
-    bid_fees_per_10_thousand: 2000,
-    ask_fees_per_10_thousand: 2000,
+    lp_fee_basis_points: (2000, 2000),
+    protocol_fee_basis_points: (2000, 2000),
     fee_manager: None,
     market_open: 100,
-    protocol_fees: 10000000,
+    protocol_fees: (10000000, 0, 0),
     linear_amplification: 10,
     sum_invariant: 10,
   }
@@ -42,7 +42,7 @@ test example_pool_scoop_redeemer() {
 }
 
 pub fn mk_withdraw_fees_redeemer() -> ManageRedeemer {
-  WithdrawFees { amount: 100, treasury_output: 1, pool_input: 0 }
+  WithdrawFees { amount: (100, 0, 0), treasury_output: 1, pool_input: 0 }
 }
 
 test example_pool_withdraw_fees_redeemer() {

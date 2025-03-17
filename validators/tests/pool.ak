@@ -345,13 +345,13 @@ fn scoop(options: ScoopTestOptions) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: fees.1st,
-      ask_fees_per_10_thousand: fees.2nd,
+      lp_fee_basis_points: (fees.1st, fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 2_000_000,
-      linear_amplification: 10,
-      sum_invariant: 10,
+      protocol_fees: (2_000_000, 0, 0),
+      linear_amplification: 0,
+      sum_invariant: 1,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -361,13 +361,13 @@ fn scoop(options: ScoopTestOptions) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: fees.1st,
-      ask_fees_per_10_thousand: fees.2nd,
+      lp_fee_basis_points: (fees.1st, fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 7_000_000,
-      linear_amplification: 10,
-      sum_invariant: 10,
+      protocol_fees: (7_000_000, 0, 0),
+      linear_amplification: 0,
+      sum_invariant: 1,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -536,7 +536,7 @@ fn scoop(options: ScoopTestOptions) {
       extra_signatories: [constants.scooper],
       id: mk_tx_hash(1),
     }
-  let pool_redeemer = PoolScoop(0, 0, [(1, None, 0), (2, None, 0)])
+  let pool_redeemer = PoolScoop(0, 0, [(1, None, 1), (2, None, 1)])
   let result =
     pool_validator.pool.spend(
       constants.manage_stake_script_hash,
@@ -561,11 +561,11 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }
@@ -577,11 +577,11 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_009_900_990,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 7_000_000,
+      protocol_fees: (7_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }
@@ -765,11 +765,15 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
 
 fn withdraw_fees_transaction(
   options: ScoopTestOptions,
-  withdraw_amount: Int,
+  withdraw_flat: Int,
   pool_input: Int,
 ) {
   let withdraw_fees_redeemer =
-    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input }
+    WithdrawFees {
+      amount: (withdraw_flat, 0, 0),
+      treasury_output: 1,
+      pool_input,
+    }
   // Note: check that we're looking at the right input by making it not the first input
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let default_pool_output_address =
@@ -783,7 +787,7 @@ fn withdraw_fees_transaction(
       default_pool_output_address,
     )
   let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
-  let protocol_fees = 2_000_000
+  let protocol_fees = (2_000_000, 0, 0)
   let pool_datum =
     StablePoolDatum {
       identifier: constants.pool_ident,
@@ -792,8 +796,8 @@ fn withdraw_fees_transaction(
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
       protocol_fees,
@@ -813,7 +817,7 @@ fn withdraw_fees_transaction(
     new_tx_input(
       mk_tx_hash(1),
       script_address(constants.pool_script_hash),
-      1_000_000_000 + protocol_fees,
+      1_000_000_000 + protocol_fees.1st,
       InlineDatum(pool_datum),
     )
       |> with_asset_of_tx_input(
@@ -830,13 +834,15 @@ fn withdraw_fees_transaction(
   let pool_out_datum =
     StablePoolDatum {
       ..pool_datum,
-      protocol_fees: pool_datum.protocol_fees - withdraw_amount,
+      protocol_fees: (protocol_fees.1st - withdraw_flat, 0, 0),
     }
 
   let pool_output =
     new_tx_output(pool_output_address, 0, InlineDatum(pool_out_datum))
       |> add_asset_to_tx_output(
-          assets.from_lovelace(1_000_000_000 + protocol_fees - withdraw_amount),
+          assets.from_lovelace(
+            1_000_000_000 + protocol_fees.1st - withdraw_flat,
+          ),
         )
       |> add_asset_to_tx_output(
           assets.from_asset(
@@ -855,7 +861,7 @@ fn withdraw_fees_transaction(
       0,
       InlineDatum(Void),
     )
-      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount))
+      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_flat))
 
   let settings_datum =
     option.or_else(
@@ -1039,11 +1045,11 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager,
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }
@@ -1073,8 +1079,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
   let pool_out_datum =
     StablePoolDatum {
       ..pool_datum,
-      bid_fees_per_10_thousand: new_pool_fees.1st,
-      ask_fees_per_10_thousand: new_pool_fees.2nd,
+      lp_fee_basis_points: (new_pool_fees.1st, new_pool_fees.2nd),
     }
 
   let pool_output =
@@ -1248,11 +1253,11 @@ fn mint_test_modify(
             (constants.rberry_policy, constants.rberry_asset_name),
           ),
           circulating_lp: 1_000_000_000,
-          bid_fees_per_10_thousand: 5,
-          ask_fees_per_10_thousand: 5,
+          lp_fee_basis_points: (5, 5),
+          protocol_fee_basis_points: (0, 0),
           fee_manager: None,
           market_open: 0,
-          protocol_fees: 2_000_000,
+          protocol_fees: (2_000_000, 0, 0),
           linear_amplification: 10,
           sum_invariant: 10,
         },
@@ -1439,7 +1444,7 @@ test has_expected_pool_value_test() {
         100_000_000,
       ),
     }
-  let protocol_fees = 2_000_000
+  let protocol_fees = (2_000_000, 0, 0)
 
   pool_validator.has_expected_pool_value(
     constants.pool_script_hash,
@@ -1486,7 +1491,7 @@ test has_expected_pool_value_test2() {
         100_000_000,
       ),
     }
-  let protocol_fees = 2_000_000
+  let protocol_fees = (2_000_000, 0, 0)
 
   pool_validator.has_expected_pool_value(
     constants.pool_script_hash,
@@ -1515,7 +1520,7 @@ test has_expected_pool_value_withdraw_all() {
       quantity_a: (constants.other_policy, constants.other_asset_name, 0),
       quantity_b: (constants.rberry_policy, constants.rberry_asset_name, 0),
     }
-  let protocol_fees = 3_000_000
+  let protocol_fees = (3_000_000, 0, 0)
 
   pool_validator.has_expected_pool_value(
     constants.pool_script_hash,
@@ -1532,9 +1537,13 @@ test has_expected_pool_value_withdraw_all() {
   )
 }
 
-fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
+fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_flat: Int) {
   let withdraw_fees_redeemer =
-    WithdrawFees { amount: withdraw_amount, treasury_output: 0, pool_input: 0 }
+    WithdrawFees {
+      amount: (withdraw_flat, 0, 0),
+      treasury_output: 0,
+      pool_input: 0,
+    }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_fees = option.or_else(options.edit_swap_fees, (5, 5))
   let pool_datum =
@@ -1545,11 +1554,11 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 0,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 18_000_000,
+      protocol_fees: (18_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }
@@ -1571,7 +1580,7 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_amount: Int) {
       0,
       InlineDatum(Void),
     )
-      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount))
+      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_flat))
 
   let settings_datum =
     option.or_else(
@@ -1619,7 +1628,11 @@ test dont_evaporate_pool_test() fail {
 
 test attempt_evaporate_pool_test() {
   let withdraw_fees_redeemer =
-    WithdrawFees { amount: 18_000_000, treasury_output: 0, pool_input: 0 }
+    WithdrawFees {
+      amount: (18_000_000, 0, 0),
+      treasury_output: 0,
+      pool_input: 0,
+    }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_fees = (5, 5)
   let pool_datum =
@@ -1630,11 +1643,11 @@ test attempt_evaporate_pool_test() {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 0,
-      bid_fees_per_10_thousand: pool_fees.1st,
-      ask_fees_per_10_thousand: pool_fees.2nd,
+      lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 18_000_000,
+      protocol_fees: (18_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }
@@ -1701,11 +1714,11 @@ test burn_pool() {
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
       circulating_lp: 0,
-      bid_fees_per_10_thousand: fees.1st,
-      ask_fees_per_10_thousand: fees.2nd,
+      lp_fee_basis_points: (fees.1st, fees.2nd),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
     }

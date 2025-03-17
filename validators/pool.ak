@@ -91,8 +91,8 @@ validator pool(
             circulating_lp: actual_circulating_lp,
             protocol_fees: actual_protocol_fees,
             assets: actual_assets,
-            bid_fees_per_10_thousand: actual_bid_fees_per_10_thousand,
-            ask_fees_per_10_thousand: actual_ask_fees_per_10_thousand,
+            lp_fee_basis_points: actual_lp_fee_basis_points,
+            protocol_fee_basis_points: actual_protocol_fee_basis_points,
             market_open: actual_market_open,
             linear_amplification: actual_linear_amplification,
             sum_invariant: actual_sum_invariant,
@@ -146,9 +146,13 @@ validator pool(
           pool_policy_lp,
           pool_asset_name_lp,
           pool_quantity_lp,
-          bid_fees,
-          ask_fees,
-          initial_protocol_fees,
+          lp_bid_fee,
+          lp_ask_fee,
+          protocol_bid_fee,
+          protocol_ask_fee,
+          initial_fee_ada,
+          initial_fee_a,
+          initial_fee_b,
           linear_amplification,
           initial_sum_invariant,
         <- pool_input_to_state(pool_script_hash, datum, pool_input)
@@ -162,6 +166,8 @@ validator pool(
           final_lp,
           simple_count,
           strategy_count,
+          delta_fee_a,
+          delta_fee_b,
           final_sum_invariant,
         <-
           process_orders(
@@ -186,9 +192,11 @@ validator pool(
             // The input ordering specified by the scooper
             input_order,
             // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
-            bid_fees,
+            lp_bid_fee,
             // ... for Ask (swap B -> A)
-            ask_fees,
+            lp_ask_fee,
+            protocol_bid_fee,
+            protocol_ask_fee,
             // The base fee split by the number of orders, paid for each user
             amortized_base_fee,
             // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
@@ -213,8 +221,11 @@ validator pool(
             0,
             // The accumulated count of "strategy" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
             0,
+            // The delta in collected fees for asset A; starts at 0, but gets accumulated on each order
+            0,
+            // The delta in collected fees for asset B; starts at 0, but gets accumulated on each order
+            0,
           )
-        // The accumulated count of "strategy" orders, see line above.
         // We need to make sure that the number of orders matches the amount that we processed
         // so the scooper doesn't "under-report" the orders and steal the funds on the order
         expect simple_count + strategy_count == real_order_count
@@ -226,8 +237,13 @@ validator pool(
           amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee
 
         // Make sure we actually increased the protocol fee by exactly this amount
-        expect
-          actual_protocol_fees == initial_protocol_fees + expected_fees_collected
+        let expected_protocol_fees =
+          (
+            initial_fee_ada + expected_fees_collected,
+            initial_fee_a + delta_fee_a,
+            initial_fee_b + delta_fee_b,
+          )
+        expect actual_protocol_fees == expected_protocol_fees
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
         // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
@@ -293,16 +309,12 @@ validator pool(
         // We also need to make sure the amplification is unchanged
         expect actual_linear_amplification == linear_amplification
 
-        // Make sure the protocol fees have been correctly updated
-        expect
-          actual_protocol_fees == initial_protocol_fees + expected_fees_collected
-
         // And make sure each of these fields is unchanged
         and {
           datum.identifier == actual_identifier,
           datum.assets == actual_assets,
-          datum.bid_fees_per_10_thousand == actual_bid_fees_per_10_thousand,
-          datum.ask_fees_per_10_thousand == actual_ask_fees_per_10_thousand,
+          datum.lp_fee_basis_points == actual_lp_fee_basis_points,
+          datum.protocol_fee_basis_points == actual_protocol_fee_basis_points,
           datum.market_open == actual_market_open,
           // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
           pool_input.address.stake_credential == pool_output_address.stake_credential,
@@ -410,22 +422,25 @@ validator pool(
           find_settings_datum(reference_inputs, settings_policy_id)
 
         // Grab the initial reserves of each token by looking at what's paid to the UTXO
-        let coin_a_amt =
+        let reserve_a =
           assets.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd)
-        let coin_b_amt =
+        let reserve_b =
           assets.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd)
 
         // Ensure that the pool pays the pool creation fee, if any, by ensuring that the initial protocol_fees value is greater than or equal to the fee
         expect
-          pool_output_datum.protocol_fees >= settings_datum.pool_creation_fee
+          pool_output_datum.protocol_fees.1st >= settings_datum.pool_creation_fee
+        // Ensure that the fees start at 0
+        expect pool_output_datum.protocol_fees.2nd == 0
+        expect pool_output_datum.protocol_fees.3rd == 0
 
         // Only ada has a null policy id. If coin A is ada, subtract the initial protocol_fees setting from the coin A amount
         // rider from the output to get the true amount in the pool.
-        let coin_a_amt_sans_protocol_fees =
+        let reserve_a =
           if bytearray.is_empty(asset_a.1st) {
-            coin_a_amt - pool_output_datum.protocol_fees
+            reserve_a - pool_output_datum.protocol_fees.1st
           } else {
-            coin_a_amt
+            reserve_a
           }
 
         // Check that the quantity of LP tokens is correct; In particular, we adopt Uniswaps convention of
@@ -435,8 +450,7 @@ validator pool(
         // In particular, though, we don't calculate the sqrt here, which is an expensive function; we instead verify that the
         // amount minted is valid by checking that it squares to the correct product
         let initial_lq = pool_output_datum.circulating_lp
-        expect
-          shared.is_sqrt(coin_a_amt_sans_protocol_fees * coin_b_amt, initial_lq)
+        expect shared.is_sqrt(reserve_a * reserve_b, initial_lq)
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
@@ -457,10 +471,10 @@ validator pool(
             pool_output.value,
             asset_a.1st,
             asset_a.2nd,
-            coin_a_amt_sans_protocol_fees,
+            reserve_a,
             asset_b.1st,
             asset_b.2nd,
-            coin_b_amt,
+            reserve_b,
             initial_lq,
             pool_output_datum.protocol_fees,
           )
@@ -498,10 +512,16 @@ validator pool(
             pool_output_datum.assets == (asset_a, asset_b),
             pool_output_datum.circulating_lp == initial_lq,
             shared.fees_in_legal_range(
-              pool_output_datum.bid_fees_per_10_thousand,
+              pool_output_datum.lp_fee_basis_points.1st,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.ask_fees_per_10_thousand,
+              pool_output_datum.lp_fee_basis_points.2nd,
+            ),
+            shared.fees_in_legal_range(
+              pool_output_datum.protocol_fee_basis_points.1st,
+            ),
+            shared.fees_in_legal_range(
+              pool_output_datum.protocol_fee_basis_points.2nd,
             ),
           }
 
@@ -618,8 +638,9 @@ pub fn has_expected_pool_value(
   pool_asset_name_b: AssetName,
   pool_quantity_b: Int,
   final_lp: Int,
-  final_protocol_fees: Int,
+  final_protocol_fees: (Int, Int, Int),
 ) -> Bool {
+  let (flat_fee, fee_a, fee_b) = final_protocol_fees
   // Asset A *could* be ADA; in which case there should be 3 tokens on the output
   // (ADA, Asset B, and the NFT)
   if pool_policy_a == ada_policy_id {
@@ -645,9 +666,14 @@ pub fn has_expected_pool_value(
       if final_lp == 0 {
         expect pool_quantity_a == 0
         expect pool_quantity_b == 0
-        (2, final_protocol_fees, 0, 1)
+        // If we never collected fee_b, then we should have 2 tokens leftover
+        if fee_b == 0 {
+          (2, flat_fee + fee_a, 0, 1)
+        } else {
+          (3, flat_fee + fee_a, fee_b, 1)
+        }
       } else {
-        (3, final_protocol_fees + pool_quantity_a, pool_quantity_b, 1)
+        (3, flat_fee + fee_a + pool_quantity_a, fee_b + pool_quantity_b, 1)
       }
     // Rather than constructing a value directly (which can be expensive)
     // we can just compare the expected token count and amounts with a single pass over the value
@@ -679,9 +705,21 @@ pub fn has_expected_pool_value(
       if final_lp == 0 {
         expect pool_quantity_a == 0
         expect pool_quantity_b == 0
-        (2, final_protocol_fees, 0, 0, 1)
+        let has_a =
+          if fee_a == 0 {
+            0
+          } else {
+            1
+          }
+        let has_b =
+          if fee_b == 0 {
+            0
+          } else {
+            1
+          }
+        (2 + has_a + has_b, flat_fee, fee_a, fee_b, 1)
       } else {
-        (4, final_protocol_fees, pool_quantity_a, pool_quantity_b, 1)
+        (4, flat_fee, fee_a + pool_quantity_a, fee_b + pool_quantity_b, 1)
       }
     expected == actual
   }
@@ -739,13 +777,18 @@ validator manage(settings_policy_id: PolicyId) {
         expect datum: StablePoolDatum = datum
         expect Script(pool_script_hash) = pool_input.address.payment_credential
         let StablePoolDatum {
+          assets: pool_assets,
           circulating_lp: initial_circulating_lp,
           protocol_fees: initial_protocol_fees,
           ..
         } = datum
+        let (initial_flat_fee, initial_fee_a, initial_fee_b) =
+          initial_protocol_fees
         // Make sure we withdraw *only* up to what we've earned
         // We allow less than, so that you can leave some behind for the minUTXO cost, or continuing to earn staking rewards, etc.
-        expect amount <= initial_protocol_fees
+        expect amount.1st <= initial_flat_fee
+        expect amount.2nd <= initial_fee_a
+        expect amount.3rd <= initial_fee_b
 
         // Only the treasury administrator is allowed to withdraw the fees, to prevent DDOS, and because of the allowance below
         expect
@@ -762,9 +805,15 @@ validator manage(settings_policy_id: PolicyId) {
         //
         // In particular, it's a percentage, to ensure that splitting up the withdrawals into multiple transactions doesn't
         // allow them to game that withdrawal.
-        let allowance =
-          amount * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
-        let to_treasury = amount - allowance
+        let allowance_flat =
+          amount.1st * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let allowance_a =
+          amount.2nd * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let allowance_b =
+          amount.3rd * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
+        let to_treasury_flat = amount.1st - allowance_flat
+        let to_treasury_a = amount.2nd - allowance_a
+        let to_treasury_b = amount.2nd - allowance_b
 
         // And, we must pay everything except the allowance amount to the treasury address
         // We use the `treasury_output` index to skip to it quickly, rather than scanning for the output
@@ -779,7 +828,30 @@ validator manage(settings_policy_id: PolicyId) {
         // TODO: should we just let the treasury admin specify the datum on the redeemer? Or include it in the settings?
         expect treasury_output.datum == InlineDatum(Void)
         // And make sure we pay at least that much in that output. It could be more, for example to donate other ADA from other sources to that address
-        expect assets.lovelace_of(treasury_output.value) >= to_treasury
+        if pool_assets.1st.1st == ada_policy_id {
+          expect
+            assets.lovelace_of(treasury_output.value) >= to_treasury_flat + to_treasury_a
+          expect
+            assets.quantity_of(
+              treasury_output.value,
+              pool_assets.2nd.1st,
+              pool_assets.2nd.2nd,
+            ) >= to_treasury_b
+        } else {
+          expect assets.lovelace_of(treasury_output.value) >= to_treasury_flat
+          expect
+            assets.quantity_of(
+              treasury_output.value,
+              pool_assets.1st.1st,
+              pool_assets.1st.2nd,
+            ) >= to_treasury_a
+          expect
+            assets.quantity_of(
+              treasury_output.value,
+              pool_assets.2nd.1st,
+              pool_assets.2nd.2nd,
+            ) >= to_treasury_b
+        }
 
         if initial_circulating_lp == 0 {
           // If there is no liquidity, just require the treasury admin to withdraw everything
@@ -807,13 +879,32 @@ validator manage(settings_policy_id: PolicyId) {
           let expected_datum =
             StablePoolDatum {
               ..datum,
-              protocol_fees: initial_protocol_fees - amount,
+              protocol_fees: (
+                initial_flat_fee - amount.1st,
+                initial_fee_a - amount.2nd,
+                initial_fee_b - amount.3rd,
+              ),
             }
           expect output_datum == expected_datum
 
           // Now, check that the pool output decreases *only* by the amount we're withdrawing, and not by fewer or greater ADA
           let expected_output_value =
-            assets.merge(pool_input.value, assets.from_lovelace(-amount))
+            pool_input.value
+              |> assets.merge(assets.from_lovelace(-amount.1st))
+              |> assets.merge(
+                  assets.from_asset(
+                    pool_assets.1st.1st,
+                    pool_assets.1st.2nd,
+                    -amount.2nd,
+                  ),
+                )
+              |> assets.merge(
+                  assets.from_asset(
+                    pool_assets.2nd.1st,
+                    pool_assets.2nd.2nd,
+                    -amount.3rd,
+                  ),
+                )
           expect pool_output_value == expected_output_value
           expect
             list.any(
@@ -841,21 +932,23 @@ validator manage(settings_policy_id: PolicyId) {
         ) = find_pool_output(outputs)
 
         let StablePoolDatum {
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
+          lp_fee_basis_points,
+          protocol_fee_basis_points,
           fee_manager: output_fee_manager,
           ..
         } = pool_output_datum
 
         // Make sure we don't update the fees to negative or above 100%
-        expect shared.fees_in_legal_range(bid_fees_per_10_thousand)
-        expect shared.fees_in_legal_range(ask_fees_per_10_thousand)
+        expect shared.fees_in_legal_range(lp_fee_basis_points.1st)
+        expect shared.fees_in_legal_range(lp_fee_basis_points.2nd)
+        expect shared.fees_in_legal_range(protocol_fee_basis_points.1st)
+        expect shared.fees_in_legal_range(protocol_fee_basis_points.2nd)
 
         let expected_datum =
           StablePoolDatum {
             ..datum,
-            bid_fees_per_10_thousand: bid_fees_per_10_thousand,
-            ask_fees_per_10_thousand: ask_fees_per_10_thousand,
+            lp_fee_basis_points: lp_fee_basis_points,
+            protocol_fee_basis_points: protocol_fee_basis_points,
             fee_manager: output_fee_manager,
           }
         expect pool_output_datum == expected_datum
