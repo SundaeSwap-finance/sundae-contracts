@@ -1,96 +1,112 @@
-import { Data } from "../../sundae-lucid/mod.ts";
+import { Data } from "https://deno.land/x/lucid@0.20.5/mod.ts";
 
 export const examplePkh: string = "6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513";
 
 // Incomplete, but sufficient for our use case
-export const MultiSigScriptSchema = Data.Object({
-  signature: Data.Bytes(),
-});
+export const MultiSigScriptSchema = Data.Enum(
+  { Signature: { keyHash: Data.Bytes() } },
+  { AllOf: { scripts: Data.Array(Data.Bytes()) } },
+);
+export type MultiSigScript = typeof MultiSigScriptSchema;
+export const MultiSigScript = MultiSigScriptSchema as unknown as MultiSigScript;
 
 export const SingletonValueSchema = Data.Tuple([
   Data.Bytes(),
   Data.Bytes(),
   Data.Integer(),
 ]);
-export type SingletonValue = Data.Static<typeof SingletonValueSchema>;
+export type SingletonValue = typeof SingletonValueSchema;
 export const SingletonValue = SingletonValueSchema as unknown as SingletonValue;
 
 // TODO: Implement
 export const StrategySchema = Data.Object({
-  DUMMY: Data.Integer(),
+  dummy: Data.Integer(),
 });
+export type Strategy = typeof StrategySchema;
+export const Strategy = StrategySchema as unknown as Strategy;
 
 export const SwapSchema = Data.Object({
-  offer: SingletonValueSchema,
-  minReceived: SingletonValueSchema,
+  offer: SingletonValue,
+  minReceived: SingletonValue,
 });
-export type Swap = Data.Static<typeof SwapSchema>;
+export type Swap = typeof SwapSchema;
 export const Swap = SwapSchema as unknown as Swap;
 
 export const DepositSchema = Data.Object({
-  assets: Data.Tuple([SingletonValueSchema, SingletonValueSchema]),
+  assets: Data.Tuple([SingletonValue, SingletonValue]),
 });
+export type Deposit = typeof DepositSchema;
+export const Deposit = DepositSchema as unknown as Deposit;
 
 export const WithdrawalSchema = Data.Object({
-  amount: SingletonValueSchema,
+  amount: SingletonValue,
 });
+export type Withdrawal = typeof WithdrawalSchema;
+export const Withdrawal = WithdrawalSchema as unknown as Withdrawal;
 
 export const DonationSchema = Data.Object({
-  assets: Data.Tuple([SingletonValueSchema, SingletonValueSchema]),
+  assets: Data.Tuple([SingletonValue, SingletonValue]),
 });
+export type Donation = typeof DonationSchema;
+export const Donation = DonationSchema as unknown as Donation;
 
-export const OrderSchema = Data.Enum([
-  Data.Object({ Strategy: StrategySchema }),
-  Data.Object({ Swap: SwapSchema }),
-  Data.Object({ Deposit: DepositSchema }),
-  Data.Object({ Withdrawal: WithdrawalSchema }),
-  Data.Object({ Donation: DonationSchema }),
-]);
-export const CredentialSchema = Data.Enum([
-  Data.Object({ VKeyCredential: Data.Object({ bytes: Data.Bytes(), }), }),
-  Data.Object({ SCredential: Data.Object({ bytes: Data.Bytes(), }), }),
-]);
-export type Credential = Data.Static<typeof CredentialSchema>;
+export const OrderSchema = Data.Enum(
+  { Strategy: Strategy },
+  { Swap: Swap },
+  { Deposit: Deposit },
+  { Withdrawal: Withdrawal },
+  { Donation: Donation },
+);
+export type Order = typeof OrderSchema;
+export const Order = OrderSchema as unknown as Order;
+
+export const CredentialSchema = Data.Enum(
+  { VerificationKeyCredential: [Data.Bytes()] },
+  { ScriptCredential: [Data.Bytes()] },
+);
+export type Credential = typeof CredentialSchema;
 export const Credential = CredentialSchema as unknown as Credential;
 
 export const AddressSchema = Data.Object({
-  paymentCredential: CredentialSchema,
-  stakeCredential: Data.Nullable(CredentialSchema),
+  paymentCredential: Credential,
+  stakeCredential: Data.Nullable(Credential),
 });
+export type Address = typeof AddressSchema;
+export const Address = AddressSchema as unknown as Address;
 
 export const SettingsDatumSchema = Data.Object({
-  settingsAdmin: MultiSigScriptSchema,
-  metadataAdmin: AddressSchema,
-  treasuryAdmin: MultiSigScriptSchema,
-  treasuryAddress: AddressSchema,
-  treasuryAllowance: Data.Array(Data.Integer()),
+  settingsAdmin: MultiSigScript,
+  metadataAdmin: Address,
+  treasuryAdmin: MultiSigScript,
+  treasuryAddress: Address,
+  treasuryAllowance: Data.Tuple([Data.Integer(), Data.Integer()]),
   authorizedScoopers: Data.Nullable(Data.Array(Data.Bytes())),
-  authorizedStakingKeys: Data.Array(CredentialSchema),
+  authorizedStakingKeys: Data.Array(Credential),
   baseFee: Data.Integer(),
   simpleFee: Data.Integer(),
   strategyFee: Data.Integer(),
   poolCreationFee: Data.Integer(),
-  extensions: Data.Integer(),
+  extensions: Data.Any(),
 });
-export type SettingsDatum = Data.Static<typeof SettingsDatumSchema>;
+export type SettingsDatum = typeof SettingsDatumSchema;
 export const SettingsDatum = SettingsDatumSchema as unknown as SettingsDatum;
 
 export const exampleSettingsDatum: SettingsDatum = {
   settingsAdmin: {
-    signature: examplePkh,
+    Signature: { keyHash: examplePkh},
   },
   metadataAdmin: {
     paymentCredential: {
-      VKeyCredential: { bytes: examplePkh },
+      VerificationKeyCredential: [examplePkh],
     },
     stakeCredential: null,
   },
   treasuryAdmin: {
-    signature: examplePkh,
+    Signature: { keyHash: examplePkh},
   },
   treasuryAddress: {
     paymentCredential: {
-      VKeyCredential: { bytes: examplePkh },
+      VerificationKeyCredential: [examplePkh],
     },
     stakeCredential: null,
   },
@@ -100,125 +116,148 @@ export const exampleSettingsDatum: SettingsDatum = {
   baseFee: 1000000n,
   simpleFee: 100000n,
   strategyFee: 200000n,
-  extensions: 0n,
+  poolCreationFee: 1000000n,
+  extensions: Data.void(),
 };
 
-export const DatumSchema = Data.Enum([
-  Data.Literal("NoDatum"),
-  Data.Literal("Foo"),
+export const DatumSchema = Data.Enum(
+  "NoDatum",
+  "Foo",
   //Data.Object({ DatumHash: Data.Bytes() }),
   //Data.Object({ InlineDatum: Data.Any() }),
-]);
+);
+export type Datum = typeof DatumSchema;
+export const Datum = DatumSchema as unknown as Datum;
 
-export const DestinationSchema = Data.Enum([
-  Data.Object({
+export const DestinationSchema = Data.Enum(
+  {
     Fixed: Data.Object({
-      address: AddressSchema,
-      datum: DatumSchema,
+      address: Address,
+      datum: Datum,
     }),
-  }),
-  Data.Object({
+  },
+  {
     Self: Data.Tuple([]),
-  }),
-]);
+  },
+);
+export type Destination = typeof DestinationSchema;
+export const Destination = DestinationSchema as unknown as Destination;
 
-export const ExtensionSchema = Data.Enum([
-  Data.Literal("NoExtension"),
-  Data.Literal("Foo"),
-]);
+export const ExtensionSchema = Data.Enum(
+  "NoExtension",
+  "Foo",
+);
+export type Extension = typeof ExtensionSchema;
+export const Extension = ExtensionSchema as unknown as Extension;
 
 export const IdentSchema = Data.Bytes();
+export type Ident = typeof IdentSchema;
+export const Ident = IdentSchema as unknown as Ident;
 
 export const OrderDatumSchema = Data.Object({
-  poolIdent: Data.Nullable(IdentSchema),
-  owner: MultiSigScriptSchema,
+  poolIdent: Data.Nullable(Ident),
+  owner: MultiSigScript,
   scooperFee: Data.Integer(),
-  destination: DestinationSchema,
-  order: OrderSchema,
-  extension: ExtensionSchema,
+  destination: Destination,
+  order: Order,
+  extension: Extension,
 });
-export type OrderDatum = Data.Static<typeof OrderDatumSchema>;
+export type OrderDatum = typeof OrderDatumSchema;
 export const OrderDatum = OrderDatumSchema as unknown as OrderDatum;
 
 export const AssetClassSchema = Data.Tuple([Data.Bytes(), Data.Bytes()]);
+export type AssetClass = typeof AssetClassSchema;
+export const AssetClass = AssetClassSchema as unknown as AssetClass;
 
 export const PoolDatumSchema = Data.Object({
-  identifier: IdentSchema,
-  assets: Data.Tuple([AssetClassSchema, AssetClassSchema]),
+  identifier: Ident,
+  assets: Data.Tuple([AssetClass, AssetClass]),
   circulatingLp: Data.Integer(),
   bidFeesPer10Thousand: Data.Tuple([Data.Integer(), Data.Integer()]),
   askFeesPer10Thousand: Data.Tuple([Data.Integer(), Data.Integer()]),
-  feeManager: Data.Nullable(MultiSigScriptSchema),
+  feeManager: Data.Nullable(MultiSigScript),
   marketOpen: Data.Integer(),
-  feeFinalized: Data.Integer(),
   protocolFees: Data.Integer(),
 });
-export type PoolDatum = Data.Static<typeof PoolDatumSchema>;
+export type PoolDatum = typeof PoolDatumSchema;
 export const PoolDatum = PoolDatumSchema as unknown as PoolDatum;
 
+export const TransactionIdSchema = Data.Object({
+  hash: Data.Bytes(),
+});
+export type TransactionId = typeof TransactionIdSchema;
+export const TransactionId = TransactionIdSchema as unknown as TransactionId;
+
 export const OutputReferenceSchema = Data.Object({
-  transactionId: Data.Bytes(),
+  transactionId: TransactionId,
   outputIndex: Data.Integer(),
 });
+export type OutputReference = typeof OutputReferenceSchema;
+export const OutputReference = OutputReferenceSchema as unknown as OutputReference;
 
-export const IntervalBoundTypeSchema = Data.Enum([
-  Data.Object({ NegativeInfinity: Data.Literal("NegativeInfinity") }),
-  Data.Object({ Finite: Data.Object ({ value: Data.Integer() }) }),
-  Data.Object({ PositiveInfinity: Data.Literal("PositiveInfinity") })
-]);
+export const IntervalBoundTypeSchema = Data.Enum(
+  { NegativeInfinity: "NegativeInfinity" },
+  { Finite: Data.Object ({ value: Data.Integer() }) },
+  { PositiveInfinity: "PositiveInfinity" }
+);
+export type IntervalBoundType = typeof IntervalBoundTypeSchema;
+export const IntervalBoundType = IntervalBoundTypeSchema as unknown as IntervalBoundType;
 
 export const ValidityRangeSchema = Data.Object({
   lowerBound: Data.Object({
-    boundType: IntervalBoundTypeSchema,
+    boundType: IntervalBoundType,
     isInclusive: Data.Boolean(),
   }),
   upperBound: Data.Object({
-    boundType: IntervalBoundTypeSchema,
+    boundType: IntervalBoundType,
     isInclusive: Data.Boolean(),
   }),
 });
+export type ValidityRange = typeof ValidityRangeSchema;
+export const ValidityRange = ValidityRangeSchema as unknown as ValidityRange;
 
 export const StrategyExecutionSchema = Data.Object({
-  txRef: OutputReferenceSchema,
-  validityRange: ValidityRangeSchema,
-  details: OrderSchema,
+  txRef: OutputReference,
+  validityRange: ValidityRange,
+  details: Order,
 });
-
-export type StrategyExecution = Data.Static<typeof StrategyExecutionSchema>;
+export type StrategyExecution = typeof StrategyExecutionSchema;
 export const StrategyExecution = StrategyExecutionSchema as unknown as StrategyExecution;
 
 export const SignedStrategyExecutionSchema = Data.Object({
-  strategy: StrategyExecutionSchema,
+  strategy: StrategyExecution,
   signature: Data.Bytes(),
 });
-
-export type SignedStrategyExecution = Data.Static<typeof SignedStrategyExecutionSchema>;
+export type SignedStrategyExecution = typeof SignedStrategyExecutionSchema;
 export const SignedStrategyExecution = SignedStrategyExecutionSchema as unknown as SignedStrategyExecution;
 
 export const InputOrderItemSchema = Data.Tuple([
   Data.Integer(),
-  Data.Nullable(SignedStrategyExecutionSchema),
+  Data.Nullable(SignedStrategyExecution),
   Data.Integer(),
 ]);
+export type InputOrderItem = typeof InputOrderItemSchema;
+export const InputOrderItem = InputOrderItemSchema as unknown as InputOrderItem;
 
-export const PoolSpendRedeemerSchema = Data.Enum([
-  Data.Object({
+export const PoolSpendRedeemerSchema = Data.Enum(
+  {
     PoolScoop: Data.Object({
       signatoryIndex: Data.Integer(),
       scooperIndex: Data.Integer(),
-      inputOrder: Data.Array(InputOrderItemSchema),
+      inputOrder: Data.Array(InputOrderItem),
     }),
-  }),
-  Data.Object({
+  },
+  {
     Manage: Data.Tuple([]),
-  }),
-]);
+  },
+);
+export type PoolSpendRedeemer = typeof PoolSpendRedeemerSchema;
+export const PoolSpendRedeemer = PoolSpendRedeemerSchema as unknown as PoolSpendRedeemer;
 
-export const PoolRedeemerSchema = Data.Enum([
-  Data.Object({ Spend: PoolSpendRedeemerSchema }),
-]);
-
-export type PoolRedeemer = Data.Static<typeof PoolRedeemerSchema>;
+export const PoolRedeemerSchema = Data.Enum(
+  { Spend: PoolSpendRedeemer },
+);
+export type PoolRedeemer = typeof PoolRedeemerSchema;
 export const PoolRedeemer = PoolRedeemerSchema as unknown as PoolRedeemer;
 
 export const examplePoolRedeemer = {
@@ -231,27 +270,32 @@ export const examplePoolRedeemer = {
   },
 };
 
-export const OrderRedeemerSchema = Data.Enum([
-  Data.Literal("Scoop"),
-  Data.Literal("Cancel"),
-]);
-export type OrderRedeemer = Data.Static<typeof OrderRedeemerSchema>;
+export const OrderRedeemerSchema = Data.Enum(
+  "Scoop",
+  "Cancel",
+);
+export type OrderRedeemer = typeof OrderRedeemerSchema;
 export const OrderRedeemer = OrderRedeemerSchema as unknown as OrderRedeemer;
 
-export const PoolMintRedeemerSchema = Data.Enum([
-  Data.Object({ MintLP: Data.Object({ identifier: Data.Bytes() }) }),
-  Data.Object({
-    CreatePool: Data.Object({
+export const PoolMintRedeemerSchema = Data.Enum(
+  { MintLP: { identifier: Data.Bytes() } },
+  {
+    CreatePool: {
       assets: Data.Tuple([
-        AssetClassSchema,
-        AssetClassSchema,
+        AssetClass,
+        AssetClass
       ]),
       poolOutput: Data.Integer(),
       metadataOutput: Data.Integer(),
-    }),
-  }),
-]);
-export type PoolMintRedeemer = Data.Static<typeof PoolMintRedeemerSchema>;
+    },
+  },
+  {
+    BurnPool: {
+      identifier: Data.Bytes(),
+    }
+  }
+);
+export type PoolMintRedeemer = typeof PoolMintRedeemerSchema;
 export const PoolMintRedeemer = PoolMintRedeemerSchema as unknown as PoolMintRedeemer;
 
 export const exampleSingletonValue: SingletonValue = ["99", "aa", 100n];
@@ -262,24 +306,24 @@ export const exampleSwap: Swap = {
 };
 
 export const exampleCredential: Credential = {
-  VKeyCredential: { bytes: "00" },
+  VerificationKeyCredential: ["00"],
 };
 
 export const exampleOrderDatum: OrderDatum = {
   poolIdent: null,
   owner: {
-    signature: examplePkh,
+    Signature: { keyHash: examplePkh},
   },
   scooperFee: 2_500_000n,
   destination: {
-    address: {
+    Fixed: {address: {
       paymentCredential: {
-        VKeyCredential: { bytes: examplePkh },
+        VerificationKeyCredential: [examplePkh],
       },
       stakeCredential: null,
     },
     datum: "NoDatum",
-  },
+  }},
   order: {
     Swap: {
       offer: ["", "", 10_000_000n],
@@ -296,8 +340,9 @@ export const examplePoolDatum: PoolDatum = {
     ["9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d77","53554e444145"],
   ],
   circulatingLp: 1_000_000_000n,
-  feesPer10Thousand: [3n, 3n],
+  bidFeesPer10Thousand: [3n, 3n],
+  askFeesPer10Thousand: [3n, 3n],
   marketOpen: 100n,
-  feeFinalized: 100n,
+  feeManager: null,
   protocolFees: 1_000_000n,
 };

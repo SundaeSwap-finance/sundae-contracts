@@ -185,6 +185,8 @@ test process_order_with_signed_data() {
       offer: (ada_policy_id, ada_asset_name, 10),
       min_received: (ada_policy_id, ada_asset_name, 10),
     }
+
+  trace order
   let oracle_key =
     #"49e7cc40f180809b4d9e05030a09127883151517d4ed40948ad9ada2c81820ea"
   let token_data =
@@ -196,6 +198,8 @@ test process_order_with_signed_data() {
       validity_range: token_validity,
       oracle_key,
     }
+
+  trace token_data
 
   // If the test case data changes use this trace to sign with the secret key commented above the test case
   trace serialise(token_data)

@@ -1,62 +1,54 @@
 import {
-  Address,
-  Assets,
   Blockfrost,
   Data,
-  Constr,
-  Credential,
-  Script,
-  ScriptHash,
-  PolicyId,
-  Emulator,
   fromText,
-  generatePrivateKey,
-  paymentCredentialOf,
-  getAddressDetails,
-  OutRef,
   Lucid,
   toUnit,
-  TxHash,
-  C,
-  Utils,
+  Hasher,
   fromHex,
   toHex,
   concat,
-  toPublicKey,
-  UTxO,
-  PROTOCOL_PARAMETERS_DEFAULT,
   Provider,
-} from "../../sundae-lucid/mod.ts";
-import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
-import { Args, parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
-import { ABL, Coin, SwapFees, doSwap, doDeposit, doWithdrawal } from "./cpp.ts";
+  Utxo,
+  Script,
+  Credential,
+  Addresses,
+  Assets,
+  Crypto,
+  NativeScript,
+  Codec,
+  AddressDetails,
+  Network,
+  applyParamsToScript
+} from "https://deno.land/x/lucid@0.20.5/mod.ts";
+import { parse } from "https://deno.land/std@0.184.0/flags/mod.ts";
+import { ABL, Coin, doSwap } from "./cpp.ts";
 import * as random from "https://deno.land/x/random@v1.1.2/Random.js";
 import * as types from "./types.ts";
-import { sleep } from "https://deno.land/x/sleep/mod.ts";
+import { EmulatorWithState, PROTOCOL_PARAMETERS_DEFAULT } from "./emulator.ts";
 
 const rand = new random.Random();
 
-let bootUtxoHash = "ebcee8dcdbd7312f5e04a0033472465003617abe9935a6e56f007961897cfabb";
-let bootUtxoIx = 1;
+const bootUtxoHash = "ebcee8dcdbd7312f5e04a0033472465003617abe9935a6e56f007961897cfabb";
+const bootUtxoIx = 1;
 
 function settingsDatum(poolStakeHash: string, userPkh: string): string {
-  let nobody = "00000000000000000000000000000000000000000000000000000000";
   const datum: types.SettingsDatum = {
     settingsAdmin: {
-      signature: userPkh,
+      Signature: { keyHash: userPkh},
     },
     metadataAdmin: {
       paymentCredential: {
-        VKeyCredential: { bytes: userPkh },
+        VerificationKeyCredential: [userPkh],
       },
       stakeCredential: null,
     },
     treasuryAdmin: {
-      signature: userPkh,
+      Signature: { keyHash: userPkh},
     },
     treasuryAddress: {
       paymentCredential: {
-        VKeyCredential: { bytes: userPkh },
+        VerificationKeyCredential: [userPkh],
       },
       stakeCredential: null,
     },
@@ -66,48 +58,49 @@ function settingsDatum(poolStakeHash: string, userPkh: string): string {
     ],
     authorizedStakingKeys: [
       {
-        SCredential: { bytes: poolStakeHash },
+        ScriptCredential: [poolStakeHash],
       }
     ],
     baseFee: 1000000n,
     simpleFee: 100000n,
     strategyFee: 200000n,
     poolCreationFee: 0n,
-    extensions: 0n,
+    extensions: Data.void(),
   };
-  return Data.to(datum, types.SettingsDatum);
+  console.log(datum);
+  console.log(Data.from(Data.to(datum, types.SettingsDatum), types.SettingsDatum));                    
+  return Data.to(datum, types.SettingsDatum).replaceAll("43" + Data.void() + "ff", Data.void() + "ff");
 }
 
 function settingsMintRedeemer() { return "d87980" };
 
-async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs?: UTxO[]): Promise<TxHash> {
+async function bootSettings(lucid: Lucid, scripts: Scripts, userPkh: string, inputs: Utxo[]): Promise<string> {
   const newSettingsDatum = settingsDatum(scripts.poolStakeHash, userPkh);
+  console.log(inputs);
   const tx = await lucid.newTx()
     .collectFrom(inputs)
-    .mintAssets({
-      [toUnit(scripts.settingsPolicyId, fromText("settings"))]: 1n,
+    .mint({
+      [toUnit(scripts.settingsScriptHash, fromText("settings"))]: 1n,
     }, settingsMintRedeemer())
-    .attachMintingPolicy(scripts.settingsMint)
-    .collectFrom(inputs || [])
-    .payToContract(scripts.settingsAddress, { inline: newSettingsDatum }, {
+    .attachScript(scripts.settingsValidator)
+    .payToContract(scripts.settingsAddress.address, { Inline: newSettingsDatum }, {
       "lovelace": 2_000_000n,
-      [toUnit(scripts.settingsPolicyId, fromText("settings"))]: 1n,
+      [toUnit(scripts.settingsScriptHash, fromText("settings"))]: 1n,
     })
-    .complete({
-      coinSelection: false,
-    });
-  const signedTx = await tx.sign().complete();
+    .withChangeTo({ address: userAddress.address })
+    .withoutCoinSelection().commit();
+  const signedTx = await tx.sign().commit();
   return signedTx.submit();
 }
 
-async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets: CoinPair, gives: bigint, scooperFee: bigint, changeUtxo: UTxO, count: bigint, targetPoolId?: string): Promise<TxHash> {
+async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets: CoinPair, gives: bigint, scooperFee: bigint, changeUtxo: Utxo, count: bigint, targetPoolId: string | null): Promise<{ listedHash: string, utxos: Utxo[] }> {
   const rider = 2_000_000n;
   const tx = lucid.newTx();
   tx.collectFrom([changeUtxo]);
   for (let i = 0n; i < count; i++) {
-    let flip = flags.random && rand.pick(true, false);
+    const flip = flags.random && rand.pick(true, false);
     if (flip) {
-      let [tmpPolicyId, tmpTokenName] = assets[0];
+      const [tmpPolicyId, tmpTokenName] = assets[0];
       assets[0][0] = assets[1][0];
       assets[0][1] = assets[1][1];
       assets[1][0] = tmpPolicyId;
@@ -116,14 +109,14 @@ async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets
     const newOrderDatum: types.OrderDatum = {
       poolIdent: targetPoolId,
       owner: {
-        signature: userPkh,
+        Signature: { keyHash: userPkh},
       },
       scooperFee: scooperFee,
       destination: {
         Fixed: {
           address: {
             paymentCredential: {
-              VKeyCredential: { bytes: userPkh },
+              VerificationKeyCredential: [userPkh],
             },
             stakeCredential: null,
           },
@@ -138,7 +131,7 @@ async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets
       },
       extension: "NoExtension",
     };
-    let value = {
+    const value: Assets = {
       "lovelace": rider + scooperFee,
     };
     if (assets[0][0] == "") {
@@ -148,17 +141,15 @@ async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets
     }
     console.log("value out: ");
     console.log(value);
-    tx.payToContract(scripts.orderAddress, { inline: Data.to(newOrderDatum, types.OrderDatum) }, value);
+    tx.payToContract(scripts.orderAddress.address, { Inline: Data.to(newOrderDatum, types.OrderDatum) }, value);
   }
-  const completed = await tx.complete({
-    coinSelection: false,
-  });
-  const signedTx = await completed.sign().complete();
+  const completed = await tx.withChangeTo({ address: userAddress.address }).withoutCoinSelection().commit();
+  const signedTx = await completed.sign().commit();
   const signedStr = await signedTx.toString();
   console.log("signed tx for listOrder: " + signedStr);
   const listedHash = await signedTx.submit();
   await emulator.awaitTx(listedHash);
-  let refs = [];
+  const refs = [];
   for (let i = 0; i < count; i++) {
     refs.push({
       txHash: listedHash,
@@ -172,99 +163,102 @@ async function listOrder(lucid: Lucid, scripts: Scripts, userPkh: string, assets
   };
 }
 
-async function cancelOrder(lucid: Lucid, scripts: Scripts, userAddress: string, userPkh: string, orderUtxo: UTxO, changeUtxo: UTxO): Promise<TxHash> {
-  const rider = 2_000_000n;
+async function cancelOrder(lucid: Lucid, scripts: Scripts, userAddress: AddressDetails, orderUtxo: Utxo, changeUtxo: Utxo): Promise<string> {
+  const _rider = 2_000_000n;
   const tx = lucid.newTx();
   tx.collectFrom([changeUtxo]);
   console.log("Cancel redeemer: ");
   console.log(Data.to("Cancel", types.OrderRedeemer));
   tx.collectFrom([orderUtxo], Data.to("Cancel", types.OrderRedeemer));
-  tx.attachSpendingValidator(scripts.orderValidator);
-  tx.addSigner(userAddress);
-  const completed = await tx.complete({
-    coinSelection: false,
-  });
-  const signedTx = await completed.sign().complete();
+  tx.attachScript(scripts.orderValidator);
+  tx.addSigner(userAddress.payment!.hash);
+  const completed = await tx.withChangeTo({ address: userAddress.address }).withoutCoinSelection().commit();
+  const signedTx = await completed.sign().commit();
   return signedTx.submit();
 }
 
-function fakeAddress(lucid: Lucid): [Address, C.Ed25519KeyHash, string] {
+function fakeAddress(network: Network): [AddressDetails, string, string] {
   const userPrivateKey = "ed25519_sk1zxsfsl8ehspny4750jeydt5she7dzstrj7za5vgxl6929kr9d33quqkgp3";
-  const userPublicKey = toPublicKey(userPrivateKey);
-  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
-  const userAddress = (new Utils(lucid)).credentialToAddress({
-    type: "Key",
-    hash: userPkh.to_hex(),
-  });
-  return [userAddress, userPkh, userPrivateKey];
+  const keyDetails = Crypto.privateKeyToDetails(userPrivateKey);
+
+  const address_string = Addresses.credentialToAddress(network, keyDetails.credential, keyDetails.credential);
+
+  const address: AddressDetails = Addresses.inspect(address_string);
+
+  return [address, keyDetails.credential.hash, userPrivateKey];
 }
 interface Scripts {
   poolValidator: Script;
-  poolScriptHash: ScriptHash;
-  poolAddress: Address;
+  poolScriptHash: string;
+  poolAddress: AddressDetails;
   settingsValidator: Script;
-  settingsScriptHash: ScriptHash;
-  settingsAddress: Address;
+  settingsScriptHash: string;
+  settingsAddress: AddressDetails;
   orderValidator: Script;
-  orderScriptHash: ScriptHash;
-  orderAddress: Address;
+  orderScriptHash: string;
+  orderAddress: AddressDetails;
   steakValidator: Script;
-  steakScriptHash: ScriptHash;
-  steakAddress: Address;
+  steakScriptHash: string;
+  steakAddress: AddressDetails;
   poolMint: Script;
-  poolPolicyId: PolicyId;
-  poolStakeHash: ScriptHash;
-  poolStakeAddress: Address;
+  poolPolicyId: string;
+  poolStakeHash: string;
+  poolStakeAddress: AddressDetails;
 };
 
 function bytesToScript(bytes: string) {
   return { type: "PlutusV2", script: bytes };
 }
 
-function getScriptsAiken(lucid: Lucid, json: any): Scripts {
-  let validator = json["validators"];
-  let out: any = {};
-  for (let v of validator) {
-    if (v.title == "order.spend") {
-      out.orderValidator = bytesToScript(v.compiledCode);
-      out.orderScriptHash = lucid.utils.validatorToScriptHash(out.orderValidator);
-      out.orderAddress = lucid.utils.validatorToAddress(out.orderValidator);
-    }
-    if (v.title == "settings.spend") {
-      out.settingsValidator = bytesToScript(v.compiledCode);
-      out.settingsScriptHash = lucid.utils.validatorToScriptHash(out.settingsValidator);
-      out.settingsAddress = lucid.utils.validatorToAddress(out.settingsValidator);
-    }
-    if (v.title == "pool.spend") {
-      out.poolValidator = bytesToScript(v.compiledCode);
-      out.poolScriptHash = lucid.utils.validatorToScriptHash(out.poolValidator);
-      out.poolAddress = lucid.utils.validatorToAddress(out.poolValidator);
-    }
-    if (v.title == "stake.stake") {
-      out.steakValidator = bytesToScript(v.compiledCode);
-      out.steakScriptHash = lucid.utils.validatorToScriptHash(out.steakValidator);
-      out.steakAddress = lucid.utils.validatorToRewardAddress(out.steakValidator);
-    }
-    if (v.title == "pool.mint") {
-      out.poolMint = bytesToScript(v.compiledCode);
-      out.poolPolicyId = lucid.utils.mintingPolicyToId(out.poolMint);
-    }
-    if (v.title == "settings.mint") {
-      out.settingsMint = bytesToScript(v.compiledCode);
-      out.settingsPolicyId = lucid.utils.mintingPolicyToId(out.settingsMint);
-    }
-    if (v.title == "pool_stake.stake") {
-      out.poolStakeValidator = bytesToScript(v.compiledCode);
-      out.poolStakeHash = lucid.utils.validatorToScriptHash(out.poolStakeValidator);
-      out.poolStakeAddress = lucid.utils.validatorToRewardAddress(out.poolStakeValidator);
-    }
-  }
+// deno-lint-ignore no-explicit-any
+function getScriptsAiken(json: any, protocol_boot_utxo: types.OutputReference, network: Network): Scripts {
+  const validator = json["validators"];
+  // deno-lint-ignore no-explicit-any
+  const out: any = {};
+
+  console.log("protocol_boot_utxo: ");
+  console.log(Data.to(protocol_boot_utxo, types.OutputReference));
+
+  // deno-lint-ignore no-explicit-any
+  const settingsSpendValidator = validator.find((v: any) => v.title == "settings.spend");
+  out.settingsValidator = bytesToScript(applyParamsToScript([Data.to(protocol_boot_utxo, types.OutputReference)], settingsSpendValidator.compiledCode));
+  out.settingsAddress = Addresses.inspect(Addresses.scriptToAddress(network, out.settingsValidator));
+  out.settingsScriptHash = out.settingsAddress.payment!.hash;
+
+  // deno-lint-ignore no-explicit-any
+  const settingsMintValidator = validator.find((v: any) => v.title == "settings.mint");
+  out.settingsMint = bytesToScript(applyParamsToScript([Data.to(protocol_boot_utxo, types.OutputReference)], settingsMintValidator.compiledCode));
+  out.settingsPolicyId = Addresses.inspect(Addresses.scriptToAddress(network, out.settingsMint)).payment!.hash;
+
+  const poolStakeValidator = validator.find((v: any) => v.title == "pool_stake.stake");
+  out.poolStakeValidator = bytesToScript(applyParamsToScript([Data.to(out.settingsPolicyId)], poolStakeValidator.compiledCode));
+  out.poolStakeAddress = Addresses.inspect(Addresses.scriptToAddress(network, out.poolStakeValidator));
+  out.poolStakeHash = out.poolStakeAddress.payment!.hash;
+
+  const poolSpendValidator = validator.find((v: any) => v.title == "pool.spend");
+  out.poolValidator = bytesToScript(applyParamsToScript([Data.to(out.poolStakeHash),Data.to(out.settingsPolicyId)], poolSpendValidator.compiledCode));
+  out.poolAddress = Addresses.inspect(Addresses.scriptToAddress(network, out.poolValidator));
+  out.poolScriptHash = out.poolAddress.payment!.hash;
+
+  const poolMintValidator = validator.find((v: any) => v.title == "pool.mint");
+  out.poolMint = bytesToScript(applyParamsToScript([Data.to(out.poolStakeHash), Data.to(out.settingsPolicyId)], poolMintValidator.compiledCode));
+  out.poolPolicyId = Addresses.inspect(Addresses.scriptToAddress(network, out.poolMint)).payment!.hash;
+
+  const steakValidator = validator.find((v: any) => v.title == "stake.stake");
+  out.steakValidator = bytesToScript(applyParamsToScript([Data.to(out.poolScriptHash)], steakValidator.compiledCode));
+  out.steakAddress = Addresses.inspect(Addresses.scriptToAddress(network, out.steakValidator));
+  out.steakScriptHash = out.steakAddress.payment!.hash;
+
+  const orderValidator = validator.find((v: any) => v.title == "order.spend");
+  out.orderValidator = bytesToScript(applyParamsToScript([Data.to(out.steakScriptHash)], orderValidator.compiledCode));
+  out.orderAddress = Addresses.inspect(Addresses.scriptToAddress(network, out.orderValidator));
+  out.orderScriptHash = out.orderAddress.payment!.hash;
+
   return out;
 }
 
-async function testSettingsBoot(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
+async function testSettingsBoot(lucid: Lucid, emulator: EmulatorWithState, scripts: Scripts) {
+  const [_userAddress, userPkh, userPrivateKey] = fakeAddress(lucid.network);
 
   const bootUtxo = (await emulator.getUtxosByOutRef([{
     txHash: bootUtxoHash,
@@ -274,36 +268,34 @@ async function testSettingsBoot(lucid: Lucid, emulator: Emulator, scripts: Scrip
   console.log(bootUtxo);
 
   lucid.selectWalletFromPrivateKey(userPrivateKey);
-  const bootedHash = await bootSettings(lucid, scripts, userPkh.to_hex(), [bootUtxo]);
+  const bootedHash = await bootSettings(lucid, scripts, userPkh, [bootUtxo]);
   console.log("bootedHash: " + bootedHash);
   await emulator.awaitTx(bootedHash);
   return bootedHash;
 }
 
+// deno-lint-ignore no-unused-vars
 async function realSettingsBoot(scripts: Scripts, privateKeyFile: string) {
   const sk = await Deno.readTextFile(privateKeyFile);
   const skCborHex = JSON.parse(sk).cborHex;
-  const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
-  const userPublicKey = toPublicKey(skBech32);
-  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
-  const userAddress = (new Utils(dummy)).credentialToAddress({
-    type: "Key",
-    hash: userPkh.to_hex(),
-  });
+  const keyDetails = Crypto.privateKeyToDetails(skCborHex);
+  const userPublicKey = keyDetails.publicKey;
+  const userPkh = keyDetails.credential.hash;
+  const userAddress =  keyDetails.credential;
 
-  console.log("private key: " + skBech32);
+  console.log("private key: " + skCborHex);
   console.log("public key: " + userPublicKey);
-  console.log("public key hash: " + userPkh.to_hex());
+  console.log("public key hash: " + userPkh);
   console.log("address: " + userAddress);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId as string);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = new Lucid({provider: blockfrost, network: "Preview" });
 
-  lucid.selectWalletFromPrivateKey(skBech32);
+  lucid.selectWalletFromPrivateKey(keyDetails.privateKey);
 
-  let walletUtxos = await lucid.wallet.getUtxos();
+  const walletUtxos = await lucid.wallet.getUtxos();
   let toSpend = undefined;
-  for (let utxo of walletUtxos) {
+  for (const utxo of walletUtxos) {
     if (utxo.txHash == bootUtxoHash && utxo.outputIndex == bootUtxoIx) {
       toSpend = utxo;
       break;
@@ -314,30 +306,28 @@ async function realSettingsBoot(scripts: Scripts, privateKeyFile: string) {
     throw new Error("the boot utxo was not found in the wallet");
   }
 
-  const bootedHash = await bootSettings(lucid, scripts, userPkh.to_hex(), [toSpend]);
+  const bootedHash = await bootSettings(lucid, scripts, userPkh, [toSpend]);
   console.log("bootedHash: " + bootedHash);
 }
 
+// deno-lint-ignore no-unused-vars
 async function doCancelOrder(scripts: Scripts, privateKeyFile: string, order: string, change: string) {
   const sk = await Deno.readTextFile(privateKeyFile);
   const skCborHex = JSON.parse(sk).cborHex;
-  const skBech32 = C.PrivateKey.from_bytes(fromHex(skCborHex)).to_bech32();
-  const userPublicKey = toPublicKey(skBech32);
-  const userPkh = C.PublicKey.from_bech32(userPublicKey).hash();
-  const userAddress = (new Utils(dummy)).credentialToAddress({
-    type: "Key",
-    hash: userPkh.to_hex(),
-  });
+  const keyDetails = Crypto.privateKeyToDetails(skCborHex);
+  const userPublicKey = keyDetails.publicKey;
+  const userPkh = keyDetails.credential.hash;
+  const userAddress = Addresses.inspect(Addresses.credentialToAddress("Preview", keyDetails.credential, keyDetails.credential));
 
-  console.log("private key: " + skBech32);
+  console.log("private key: " + skCborHex);
   console.log("public key: " + userPublicKey);
-  console.log("public key hash: " + userPkh.to_hex());
+  console.log("public key hash: " + userPkh);
   console.log("address: " + userAddress);
 
   const blockfrost = new Blockfrost(flags.blockfrostUrl as string, flags.blockfrostProjectId);
-  const lucid = await Lucid.new(blockfrost, "Preview");
+  const lucid = new Lucid({provider: blockfrost, network: "Preview" });
 
-  lucid.selectWalletFromPrivateKey(skBech32);
+  lucid.selectWalletFromPrivateKey(skCborHex);
 
   const [orderHash, orderIx] = order.split("#");
   const [orderUtxo] = await blockfrost.getUtxosByOutRef([{
@@ -355,15 +345,14 @@ async function doCancelOrder(scripts: Scripts, privateKeyFile: string, order: st
     lucid,
     scripts,
     userAddress,
-    userPkh.to_hex(),
     orderUtxo,
     changeUtxo
   );
   console.log("canceledHash: " + canceledHash);
 }
 
-async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts, coinA: string, coinB: string, change: UTxO, poolIdent: string, orderCount: bigint) {
-  let assets: CoinPair = [
+async function testListOrder(lucid: Lucid, emulator: EmulatorWithState, scripts: Scripts, coinA: string, coinB: string, change: Utxo, poolIdent: string, orderCount: bigint) {
+  const assets: CoinPair = [
     assetFromString(coinA),
     assetFromString(coinB),
   ];
@@ -380,7 +369,7 @@ async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   const listed = await listOrder(
     lucid,
     scripts,
-    userPkh.to_hex(),
+    userPkh,
     assets,
     1_000_000n,
     1_100_000n,
@@ -393,30 +382,27 @@ async function testListOrder(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   return listed;
 }
 
-function computePoolId(utxo: UTxO) {
+function computePoolId(utxo: Utxo) {
   const poolInputTxHash = fromHex(utxo.txHash);
   const numberSign = new Uint8Array([0x23]);
   const poolInputTxIx = new Uint8Array([utxo.outputIndex]); // ident encoding for output index 1
-  let poolInputRef = new Uint8Array([]);
-  poolInputRef = concat(poolInputRef, poolInputTxHash);
-  poolInputRef = concat(poolInputRef, numberSign);
-  poolInputRef = concat(poolInputRef, poolInputTxIx);
-  return C.hash_blake2b256(poolInputRef).slice(4); // Truncate first four bytes
+  const poolInputRef = concat([poolInputTxHash, numberSign, poolInputTxIx]);
+  return fromHex(Hasher.hashWithBlake2b256(toHex(poolInputRef))).slice(4); // Truncate first four bytes
 }
 
 function computePoolNftName(poolId: Uint8Array) {
   const prefix = new Uint8Array([0x00, 0x0d, 0xe1, 0x40]);
-  return toHex(concat(prefix, poolId));
+  return toHex(concat([prefix, poolId]));
 }
 
 function computePoolLqName(poolId: Uint8Array) {
   const prefix = new Uint8Array([0x00, 0x14, 0xdf, 0x10]);
-  return toHex(concat(prefix, poolId));
+  return toHex(concat([prefix, poolId]));
 }
 
 function computePoolRefName(poolId: Uint8Array) {
   const prefix = new Uint8Array([0x00, 0x06, 0x43, 0xb0]);
-  return toHex(concat(prefix, poolId));
+  return toHex(concat([prefix, poolId]));
 }
 
 type Asset = [string, string];
@@ -446,64 +432,66 @@ function initialLiquidity(coinA: bigint, coinB: bigint): bigint {
   return isqrt(coinA * coinB);
 }
 
-async function getRberryPolicyId(): Promise<[Script, string]> {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const rberryMintingPolicy: Script = dummy.utils.nativeScriptFromJson({
-    type: "all",
-    scripts: [],
-  });
-  return [rberryMintingPolicy, dummy.utils.mintingPolicyToId(rberryMintingPolicy)];
+function getRberryPolicyId(): [Script, string] {
+  const rberryMintingPolicyNative: NativeScript = { "type": "All", "scripts": [] };
+  const rberryMintingPolicy: Script = { "type": "Native", "script": Codec.encodeNativeScript(rberryMintingPolicyNative) };
+  return [rberryMintingPolicy, Hasher.hashScript(rberryMintingPolicy)];
 }
 
-async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: Address, scriptName: string, changeUtxo: UTxO, settings: UTxO): Promise<TxHash> {
+async function postReferenceScript(scripts: Scripts, lucid: Lucid, userAddress: AddressDetails, scriptName: string, changeUtxo: Utxo, settings: Utxo): Promise<string> {
   if (scriptName in scripts) {
     let signedTx;
-    let retry = true;
+    const retry = true;
     let nonce = 0n;
     while (retry) {
       const tx = await lucid.newTx()
         .collectFrom([changeUtxo])
-        .payToAddressWithData(userAddress, {
+        .payToWithData(userAddress.address, {
           scriptRef: scripts[scriptName as keyof Scripts] as Script,
         }, {
           "lovelace": 2_000_000n,
         })
-        .payToAddress(userAddress, { "lovelace": 2_000_000n + nonce })
-        .complete({
-          coinSelection: false,
-        });
-      signedTx = await tx.sign().complete();
+        .payTo(userAddress.address, { "lovelace": 2_000_000n + nonce })
+        .withoutCoinSelection()
+        .withChangeTo({ address: userAddress.address })
+        .commit();
+      signedTx = await tx.sign().commit();
       const hash = signedTx.toHash();
       if (hash > settings.txHash) {
         break;
       }
       nonce += 1n;
     }
-    console.log("post reference script: ", signedTx.toString());
-    return signedTx.submit();
+    console.log("post reference script: ", signedTx?.toString());
+    if (signedTx == undefined) {
+      throw new Error("post reference script failed");
+    } else {
+      return signedTx.submit();
+    }
   } else {
     throw new Error("script does not exist: " + scriptName);
   }
 }
 
-async function mintRberry(scripts: Scripts, lucid: Lucid, userAddress: Address): Promise<TxHash> {
+async function mintRberry(lucid: Lucid, userAddress: AddressDetails): Promise<string> {
   const [rberryMintingPolicy, rberryPolicyId]: [Script, string] = await getRberryPolicyId();
   const tx = await lucid.newTx()
-    .mintAssets({
+    .mint({
       [toUnit(rberryPolicyId, fromText("RBERRY"))]: 10_000_000_000n,
     })
-    .attachMintingPolicy(rberryMintingPolicy)
-    .payToAddress(userAddress, {
+    .attachScript(rberryMintingPolicy)
+    .payTo(userAddress.address, {
       "lovelace": 2_000_000n,
       [toUnit(rberryPolicyId, fromText("RBERRY"))]: 10_000_000_000n,
     })
-    .complete();
+    .withChangeTo({ address: userAddress.address })
+    .commit();
   console.log("mintRberry: ", tx.toString());
-  const signedTx = await tx.sign().complete();
+  const signedTx = await tx.sign().commit();
   return signedTx.submit();
 }
 
-async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, references: UTxO[], assets: CoinPair, seed: UTxO, amountA: bigint, amountB: bigint, fees: bigint[], marketOpen?: bigint): Promise<TxHash> {
+async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: AddressDetails, settings: Utxo, references: Utxo[], assets: CoinPair, seed: Utxo, amountA: bigint, amountB: bigint, fees: [bigint,bigint], marketOpen?: bigint): Promise<{ poolMintedHash: string, poolId: string }> {
   const poolId = computePoolId(seed);
   const liq = initialLiquidity(amountA, amountB);
   const newPoolDatum: types.PoolDatum = {
@@ -514,7 +502,6 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
     askFeesPer10Thousand: fees,
     feeManager: null,
     marketOpen: marketOpen || 0n,
-    feeFinalized: marketOpen || 0n,
     protocolFees: 2_000_000n,
   };
   const poolMintRedeemer: types.PoolMintRedeemer = {
@@ -527,7 +514,7 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   const poolNftNameHex = computePoolNftName(poolId);
   const poolLqNameHex = computePoolLqName(poolId);
   const poolRefNameHex = computePoolRefName(poolId);
-  let poolValue = {
+  const poolValue = {
     [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
     [toUnit(assets[1][0], assets[1][1])]: amountB,
   };
@@ -538,9 +525,15 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   }
 
   const poolMintRedeemerBytes = Data.to(poolMintRedeemer, types.PoolMintRedeemer);
+  const _poolMintTest = Data.from(poolMintRedeemerBytes, types.PoolMintRedeemer);
+  console.log("poolMintTest: ");
+  console.log(_poolMintTest);
   const poolDatumBytes = Data.to(newPoolDatum, types.PoolDatum);
+  const poolDatumTest = Data.from(poolDatumBytes, types.PoolDatum);
+  console.log("poolDatumTest: ");
+  console.log(poolDatumTest);
 
-  const poolAddress = (new Utils(lucid)).credentialToAddress(
+  const poolAddress = Addresses.credentialToAddress(lucid.network,
     {
       type: "Script",
       hash: scripts.poolScriptHash,
@@ -564,33 +557,32 @@ async function mintPool(scripts: Scripts, lucid: Lucid, userAddress: Address, se
   console.log("-------");
   console.log("seed: ", seed);
   const tx = lucid.newTx()
-    .mintAssets({
+    .mint({
       [toUnit(scripts.poolPolicyId, poolNftNameHex)]: 1n,
       [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
     }, poolMintRedeemerBytes)
     .readFrom([...references, settings])
     .collectFrom([seed])
-    .payToContract(poolAddress, { inline: poolDatumBytes }, poolValue)
-    .payToAddress(userAddress, {
+    .payToContract(poolAddress, { Inline: poolDatumBytes }, poolValue)
+    .payTo(userAddress.address, {
       "lovelace": 2_000_000n,
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: liq,
     })
-    .payToAddressWithData(
-      userAddress,
-      { inline: "d87980" },
+    .payToWithData(
+      userAddress.address,
+      { Inline: "d87980" },
       {
         "lovelace": 2_000_000n,
         [toUnit(scripts.poolPolicyId, poolRefNameHex)]: 1n,
       }
-    );
+    )
+    .withChangeTo({ address: userAddress.address });
 
   const str = await tx.toString();
   console.log("building tx: " + str);
-  const completed = await tx.complete({
-    coinSelection: false,
-  });
-  const signedTx = await completed.sign().complete();
+  const completed = await tx.withoutCoinSelection().commit();
+  const signedTx = await completed.sign().commit();
   const signedStr = await signedTx.toString()
   console.log("signed tx: " + signedStr);
   const hash = await signedTx.submit();
@@ -604,7 +596,7 @@ function assetFromString(s: string): Asset {
   if (s == "lovelace") {
     return ["", ""];
   }
-  let chunks = s.split(".");
+  const chunks = s.split(".");
   if (chunks.length != 2) {
     throw new Error("Asset format is wrong: " + s);
   }
@@ -644,16 +636,15 @@ function assetFromString(s: string): Asset {
 //
 //}
 
-async function testMintPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, coinA: string, coinB: string, refUtxo: UTxO, seed: UTxO) {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
+async function testMintPool(lucid: Lucid, emulator: EmulatorWithState, scripts: Scripts, coinA: string, coinB: string, refUtxo: Utxo, seed: Utxo) {
+  const [userAddress, _userPkh, _userPrivateKey] = fakeAddress(lucid.network);
 
-  let assets: CoinPair = [
+  const assets: CoinPair = [
     assetFromString(coinA),
     assetFromString(coinB),
   ];
 
-  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
+  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress.payment!);
 
   if (settingsUtxos.length == 0) {
     throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
@@ -670,26 +661,25 @@ async function testMintPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, 
   return minted;
 }
 
-function computeIndexingSet(scripts: Scripts, changeUtxo: UTxO, targetPool: UTxO, orderUtxos: UTxO[]): [bigint, null, bigint][] {
-  let toSpend = [];
+function computeIndexingSet(scripts: Scripts, changeUtxo: Utxo, targetPool: Utxo, orderUtxos: Utxo[]): [bigint, null, bigint][] {
+  const toSpend = [];
   toSpend.push(changeUtxo);
   toSpend.push(targetPool);
   toSpend.push(...orderUtxos);
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
-  let i = 0n;
-  let indexingSet = [];
+  const indexingSet: [bigint, null, bigint][] = [];
   for (let i = 0n; i < toSpend.length; i++) {
-    let e = toSpend[Number(i)];
-    if (e.address == scripts.orderAddress) {
+    const e = toSpend[Number(i)];
+    if (e.address == scripts.orderAddress.address) {
       indexingSet.push([i, null, 0n]);
     }
   }
   return indexingSet;
 }
 
-function getPoolABL(targetPool: UTxO, datum: types.PoolDatum): ABL {
+function getPoolABL(targetPool: Utxo, datum: types.PoolDatum): ABL {
   let poolCoinA = datum.assets[0][0] + datum.assets[0][1];
-  let poolCoinB = datum.assets[1][0] + datum.assets[1][1];
+  const poolCoinB = datum.assets[1][0] + datum.assets[1][1];
   if (datum.assets[0][0] == "") {
     poolCoinA = "lovelace";
   }
@@ -699,7 +689,7 @@ function getPoolABL(targetPool: UTxO, datum: types.PoolDatum): ABL {
     poolAmountA -= datum.protocolFees;
   }
 
-  let poolAmountB = targetPool.assets[poolCoinB];
+  const poolAmountB = targetPool.assets[poolCoinB];
 
   console.log("getPoolABL: poolAmountA: ");
   console.log(poolAmountA);
@@ -714,49 +704,49 @@ function getPoolABL(targetPool: UTxO, datum: types.PoolDatum): ABL {
 
 type EscrowTakes = {
   abl: ABL,
-  destination: Address,
+  destination: AddressDetails,
 };
 
-async function fromOrderDatumAddress(addr: any): Promise<Address> {
+// deno-lint-ignore no-explicit-any
+function fromOrderDatumAddress(addr: any): AddressDetails {
   let paymentCred: Credential | null = null;
-  if (addr.paymentCredential.VKeyCredential) {
-    paymentCred = { type: "Key", hash: addr.paymentCredential.VKeyCredential.bytes };
-  } else if (addr.paymentCredential.SCredential) {
-    paymentCred = { type: "Script", hash: addr.paymentCredential.SCredential.bytes };
+  if (addr.Fixed.address.paymentCredential.VKeyCredential) {
+    paymentCred = { type: "Key", hash: addr.Fixed.address.paymentCredential.VKeyCredential.bytes };
+  } else if (addr.Fixed.address.paymentCredential.SCredential) {
+    paymentCred = { type: "Script", hash: addr.Fixed.address.paymentCredential.SCredential.bytes };
   } else {
     throw new Error("couldn't convert order datum address for lucid");
   }
 
   let stakingCred: Credential | null = null;
-  if (addr.stakeCredential == null) {
+  if (addr.Fixed.address.stakeCredential == null) {
     // That's ok 
-  } else if (addr.stakeCredential.VKeyCredential) {
-    stakingCred = { type: "Key", hash: addr.stakeCredential.VKeyCredential.bytes };
-  } else if (addr.stakeCredential.SCredential) {
-    stakingCred = { type: "Script", hash: addr.stakeCredential.SCredential.bytes };
+  } else if (addr.Fixed.address.stakeCredential.VKeyCredential) {
+    stakingCred = { type: "Key", hash: addr.Fixed.address.stakeCredential.VKeyCredential.bytes };
+  } else if (addr.Fixed.address.stakeCredential.SCredential) {
+    stakingCred = { type: "Script", hash: addr.Fixed.address.stakeCredential.SCredential.bytes };
   } else {
     throw new Error("couldn't convert order datum address for lucid: stake cred invalid");
   }
   console.log("debug: ");
   console.log(paymentCred);
   console.log(stakingCred);
-  const dummy = await Lucid.new(undefined, "Custom");
   if (stakingCred) {
-    return (new Utils(dummy)).credentialToAddress(paymentCred, stakingCred);
+    return Addresses.inspect(Addresses.credentialToAddress("Preview", paymentCred, stakingCred));
   } else {
-    return (new Utils(dummy)).credentialToAddress(paymentCred);
+    return Addresses.inspect(Addresses.credentialToAddress("Preview", paymentCred));
   }
 }
 
-async function executeOrder(poolABL: ABL, poolDatum: types.PoolDatum, order: UTxO): Promise<[ABL, EscrowTakes]> {
+async function executeOrder(poolABL: ABL, poolDatum: types.PoolDatum, order: Utxo): Promise<[ABL, EscrowTakes]> {
   console.log("poolABL is: ");
   console.log(poolABL);
-  let poolCoinA = poolDatum.assets[0][0] + poolDatum.assets[0][1];
-  let poolCoinB = poolDatum.assets[1][0] + poolDatum.assets[1][1];
+  const poolCoinA = poolDatum.assets[0][0] + poolDatum.assets[0][1];
+  const poolCoinB = poolDatum.assets[1][0] + poolDatum.assets[1][1];
   if (!order.datum) {
     throw new Error("executeOrder: order utxo had no datum");
   }
-  let orderDatum: types.OrderDatum = Data.from(order.datum, types.OrderDatum);
+  const orderDatum: types.OrderDatum = Data.from(order.datum, types.OrderDatum);
   let res: ABL = { a: 0n, b: 0n, liq: 0n };
   if ("Swap" in orderDatum.order) {
     if (orderDatum.order.Swap.offer[0] + orderDatum.order.Swap.offer[1] == poolCoinA) {
@@ -769,37 +759,37 @@ async function executeOrder(poolABL: ABL, poolDatum: types.PoolDatum, order: UTx
       throw new Error("Order does not appear to match the pool");
     }
   }
-  const dest = await fromOrderDatumAddress(orderDatum.destination.Fixed.address);
+  const dest = await fromOrderDatumAddress(orderDatum.destination);
   return [poolABL, {
     abl: res,
     destination: dest,
   }];
 }
 
-async function updateABL(poolABL: ABL, poolDatum: types.PoolDatum, orders: UTxO[]): Promise<[ABL, EscrowTakes[]]> {
+async function updateABL(poolABL: ABL, poolDatum: types.PoolDatum, orders: Utxo[]): Promise<[ABL, EscrowTakes[]]> {
   orders.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
-  let takes: EscrowTakes[] = [];
+  const takes: EscrowTakes[] = [];
   let currentPoolABL: ABL = {
     a: poolABL.a,
     b: poolABL.b,
     liq: poolABL.liq,
   };
   let take = null;
-  for (let o of orders) {
+  for (const o of orders) {
     [currentPoolABL, take] = await executeOrder(currentPoolABL, poolDatum, o);
     takes.push(take);
   }
   return [currentPoolABL, takes];
 }
 
-async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, settings: UTxO, orderUtxos: UTxO[], targetPool: UTxO, references: UTxO[], changeUtxo: UTxO): Promise<TxHash> {
+async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: AddressDetails, settings: Utxo, orderUtxos: Utxo[], targetPool: Utxo, references: Utxo[], changeUtxo: Utxo): Promise<string> {
   console.log("settings: ");
   console.log(settings);
 
   console.log("targetPool: ");
   console.log(targetPool);
 
-  const settingsDatum = Data.from(settings.datum, types.SettingsDatum);
+  const settingsDatum = Data.from(settings.datum!, types.SettingsDatum);
   const protocolBaseFee = settingsDatum.baseFee;
   const simpleFee = settingsDatum.simpleFee;
   const ordersCount: bigint = BigInt(orderUtxos.length);
@@ -808,11 +798,11 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log("indexingSet: ");
   console.log(indexingSet);
   const amortizedBaseFee = (protocolBaseFee + ordersCount - 1n) / ordersCount;
-  const scoopPoolRedeemer: types.PoolRedeemer = {
+  const scoopPoolRedeemer: types.PoolRedeemer = { Spend: {PoolScoop: {
     signatoryIndex: 0n,
     scooperIndex: 0n,
     inputOrder: indexingSet,
-  };
+  }}};
   let redeemerData = Data.to(scoopPoolRedeemer, types.PoolRedeemer);
   redeemerData = "d87a9f" + redeemerData + "ff"; // Have to do redeemer wrapper trick here
   console.log("pool redeemer: ", redeemerData);
@@ -824,7 +814,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   }
   console.log("old pool datum: ");
   console.log(targetPool.datum);
-  let poolDatum = Data.from(targetPool.datum, types.PoolDatum);
+  const poolDatum = Data.from(targetPool.datum, types.PoolDatum);
   const poolCoinA = poolDatum.assets[0][0] + poolDatum.assets[0][1];
   const poolCoinB = poolDatum.assets[1][0] + poolDatum.assets[1][1];
   console.log("pool coins: ", poolCoinA, poolCoinB);
@@ -837,21 +827,21 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   const mintedLiq = newPoolABL.liq - poolABL.liq;
   console.log("mintedLiq: ");
   console.log(mintedLiq);
-  const oldRewards = poolDatum.protocolFees;
+  const _oldRewards = poolDatum.protocolFees;
   poolDatum.protocolFees += totalProtocolFees;
   poolDatum.circulatingLp = newPoolABL.liq;
   const poolNftNameHex = computePoolNftName(fromHex(poolDatum.identifier));
   const poolLqNameHex = computePoolLqName(fromHex(poolDatum.identifier));
-  let tx = await lucid.newTx();
-  let toSpend = [];
+  const tx = await lucid.newTx();
+  const toSpend = [];
   toSpend.push(changeUtxo);
   toSpend.push(targetPool);
   toSpend.push(...orderUtxos);
   toSpend.sort((a, b) => a.txHash == b.txHash ? a.outputIndex - b.outputIndex : (a.txHash < b.txHash ? -1 : 1));
-  for (let e of toSpend) {
-    if (getAddressDetails(e.address).paymentCredential.hash == scripts.poolScriptHash) {
+  for (const e of toSpend) {
+    if (Addresses.inspect(e.address).payment!.hash == scripts.poolScriptHash) {
       tx.collectFrom([e], redeemerData);
-    } else if (getAddressDetails(e.address).paymentCredential.hash == scripts.orderScriptHash) {
+    } else if (Addresses.inspect(e.address).payment!.hash == scripts.orderScriptHash) {
       tx.collectFrom([e], Data.to(orderScoopRedeemer, types.OrderRedeemer));
     } else {
       tx.collectFrom([e]);
@@ -860,7 +850,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
 
   const currentTime = emulator.now();
   console.log("new pool datum: ");
-  let newPoolDatum = Data.to(poolDatum, types.PoolDatum);
+  const newPoolDatum = Data.to(poolDatum, types.PoolDatum);
   console.log(newPoolDatum);
   console.log("references: ");
   console.log(references);
@@ -870,14 +860,13 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     .validFrom(currentTime - 10000)
     .validTo(currentTime + 1000000)
     .readFrom([settings, ...references])
-     // Reference utxos should carry scriptRefs for these scripts
-     // .attachSpendingValidator(scripts.orderValidator)
-     // .attachSpendingValidator(scripts.poolValidator)
-    .attachSpendingValidator(scripts.steakValidator)
-    .addSigner(userAddress)
-    .withdraw(scripts.steakAddress, 0n, "00")
-
-    .payToContract(targetPool.address, { inline: newPoolDatum }, {
+    // Reference utxos should carry scriptRefs for these scripts
+    // .attachSpendingValidator(scripts.orderValidator)
+    // .attachSpendingValidator(scripts.poolValidator)
+    .attachScript(scripts.steakValidator)
+    .addSigner(userAddress.payment!.hash)
+    .withdraw(scripts.steakAddress.address, 0n, "00")
+    .payToContract(targetPool.address, { Inline: newPoolDatum }, {
       "lovelace":
         newPoolABL.a +
         poolDatum.protocolFees,
@@ -886,7 +875,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     });
 
   if (mintedLiq != 0n) {
-    tx.attachMintingPolicy(scripts.poolMint);
+    tx.attachScript(scripts.poolMint);
     const poolMintRedeemer: types.PoolMintRedeemer = {
       MintLP: {
         identifier: poolDatum.identifier,
@@ -894,7 +883,7 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
     };
     console.log("poolMintRedeemer: ");
     console.log(poolMintRedeemer);
-    tx.mintAssets({
+    tx.mint({
       [toUnit(scripts.poolPolicyId, poolLqNameHex)]: mintedLiq,
     }, Data.to(poolMintRedeemer, types.PoolMintRedeemer));
   }
@@ -903,36 +892,31 @@ async function scoopPool(scripts: Scripts, lucid: Lucid, userAddress: Address, s
   console.log(Data.to(poolDatum, types.PoolDatum));
 
   // We add the escrows to the order in reverse, because in the script, prepending to the list is cheaper
-  for (let e of escrowTakes) {
-    let valueOut: Assets = { "lovelace": rider + (1_000_000n - amortizedBaseFee) + e.abl.a };
+  for (const e of escrowTakes) {
+    const valueOut: Assets = { "lovelace": rider + (1_000_000n - amortizedBaseFee) + e.abl.a };
     if (e.abl.b > 0n) {
       valueOut[poolCoinB] = e.abl.b;
     }
     if (e.abl.liq > 0n) {
       valueOut[toUnit(scripts.poolPolicyId, poolLqNameHex)] = e.abl.liq;
     }
-    tx.payToAddress(e.destination, valueOut);
+    tx.payTo(e.destination.address, valueOut);
   }
   const str = await tx.toString();
   console.log("building tx: " + str);
-  const completed = await tx.complete({
-    coinSelection: false, // We don't want extra inputs screwing up the indexing set
-    //nativeUplc: false, // "Lucid breaks with stake scripts"?
-  });
-  const signedTx = await completed.sign().complete();
-  const exUnits = completed.exUnits;
+  const completed = await tx.withoutCoinSelection().commit();
+  const signedTx = await completed.sign().commit();
   const signedStr = await signedTx.toString();
   console.log("signed tx: " + signedStr);
-  const scoopedHash = signedTx.submit();
-  await emulator.awaitTx(scoopedHash);
-  return exUnits;
+  signedTx.submit();
+  await emulator.awaitTx(signedTx.tx);
+  return signedTx.tx;
 }
 
-async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts, poolIdentHex: string, change: UTxO, references: UTxO[], orders: UTxO[]) {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
+async function testScoopPool(lucid: Lucid, emulator: EmulatorWithState, scripts: Scripts, poolIdentHex: string, change: Utxo, references: Utxo[], orders: Utxo[]) {
+  const [userAddress, _userPkh, _userPrivateKey] = fakeAddress(lucid.network);
 
-  let settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
+  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress.address);
   if (settingsUtxos.length == 0) {
     throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
   }
@@ -941,7 +925,7 @@ async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   }
   const settings = settingsUtxos[0];
 
-  const poolAddress = (new Utils(lucid)).credentialToAddress(
+  const poolAddress = Addresses.credentialToAddress(emulator.network!,
     {
       type: "Script",
       hash: scripts.poolScriptHash,
@@ -952,14 +936,14 @@ async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts,
     }
   );
 
-  let knownPools = await emulator.getUtxos(poolAddress);
+  const knownPools = await emulator.getUtxos(poolAddress);
 
   let targetPool = null;
-  for (let knownPool of knownPools) {
-    let targetAssetName = computePoolNftName(fromHex(poolIdentHex));
-    let targetPolicyId = scripts.poolScriptHash;
-    let targetNftUnit = targetPolicyId + targetAssetName;
-    let amountOfTargetNft = knownPool.assets[targetNftUnit];
+  for (const knownPool of knownPools) {
+    const targetAssetName = computePoolNftName(fromHex(poolIdentHex));
+    const targetPolicyId = scripts.poolScriptHash;
+    const targetNftUnit = targetPolicyId + targetAssetName;
+    const amountOfTargetNft = knownPool.assets[targetNftUnit];
     if (amountOfTargetNft == 1n) {
       targetPool = knownPool;
     } else if (amountOfTargetNft > 1n) {
@@ -973,10 +957,9 @@ async function testScoopPool(lucid: Lucid, emulator: Emulator, scripts: Scripts,
   return exUnits;
 }
 
-async function testMintRberry(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
-  const mintedHash = await mintRberry(scripts, lucid, userAddress);
+async function testMintRberry(lucid: Lucid, emulator: EmulatorWithState) {
+  const [userAddress, _userPkh, _userPrivateKey] = fakeAddress(lucid.network);
+  const mintedHash = await mintRberry(lucid, userAddress);
   await emulator.awaitTx(mintedHash);
   console.log("minted rberry, hash: " + mintedHash);
   const mintedUtxos = await emulator.getUtxosByOutRef([{
@@ -986,16 +969,15 @@ async function testMintRberry(lucid: Lucid, emulator: Emulator, scripts: Scripts
   return mintedUtxos[0];
 }
 
-async function fundUserAddress(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
- // const dummy = await 
-}
+//async function fundUserAddress(lucid: Lucid, emulator: Emulator, scripts: Scripts) {
+  // const dummy = await 
+//}
 
-async function testPostReferenceScript(lucid: Lucid, emulator: Emulator, scripts: Scripts, scriptName: string) {
-  const dummy = await Lucid.new(undefined, "Custom");
-  const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
-  const change = await findChange(emulator, userAddress);
+async function testPostReferenceScript(lucid: Lucid, emulator: EmulatorWithState, scripts: Scripts, scriptName: string) {
+  const [userAddress, _userPkh, _userPrivateKey] = fakeAddress(lucid.network);
+  const change = await findChange(emulator, userAddress.address);
 
-  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress);
+  const settingsUtxos = await emulator.getUtxos(scripts.settingsAddress.address);
 
   if (settingsUtxos.length == 0) {
     throw new Error("Couldn't find any settings utxos: " + scripts.settingsAddress);
@@ -1018,12 +1000,12 @@ async function testPostReferenceScript(lucid: Lucid, emulator: Emulator, scripts
 }
 
 
-async function findChange(provider: Provider, userAddress: string): Promise<UTxO> {
-  let startTime = Date.now();
-  let changeUtxos = await provider.getUtxos(userAddress);
-  let endTime = Date.now();
+async function findChange(provider: Provider, userAddress: string): Promise<Utxo> {
+  const startTime = Date.now();
+  const changeUtxos = await provider.getUtxos(userAddress);
+  const endTime = Date.now();
   console.log(`Fetched utxos from wallet, time elapsed: ${endTime - startTime}ms`);
-  for (let changeUtxo of changeUtxos) {
+  for (const changeUtxo of changeUtxos) {
     if (changeUtxo.datum != null && changeUtxo.datumHash != null) {
       continue;
     }
@@ -1036,12 +1018,15 @@ async function findChange(provider: Provider, userAddress: string): Promise<UTxO
       return changeUtxo;
     }
   }
+  console.log("changeUtxos:");
+  console.log(changeUtxos);
   throw new Error("findChange: Couldn't find a UTxO without a datum or script ref in the user wallet with over 200 ADA.");
 }
 
-async function findSettings(provider: Provider, settingsAddress: string, settingsPolicyId: string): Promise<UTxO> {
-  let settingsUtxos = await provider.getUtxos(settingsAddress);
-  for (let settingsUtxo of settingsUtxos) {
+// deno-lint-ignore no-unused-vars
+async function findSettings(provider: Provider, settingsAddress: string, settingsPolicyId: string): Promise<Utxo> {
+  const settingsUtxos = await provider.getUtxos(settingsAddress);
+  for (const settingsUtxo of settingsUtxos) {
     // Verify that it's a real settings
     if (settingsUtxo.assets[settingsPolicyId + fromText("settings")] != 1n) {
       console.log(`settings utxo is missing the nft (${settingsPolicyId}${fromText("settings")}):`);
@@ -1053,14 +1038,15 @@ async function findSettings(provider: Provider, settingsAddress: string, setting
   throw new Error("findSettings: Couldn't find a UTxO with the settings NFT at the settings address.");
 }
 
-async function findOrders(provider: Provider, orderAddress: string): Promise<UTxO[]> {
-  let orderUtxos = await provider.getUtxos(orderAddress);
-  let result: UTxO[] = [];
-  for (let orderUtxo of orderUtxos) {
-    let orderDatum: types.OrderDatum | null = null;
+// deno-lint-ignore no-unused-vars
+async function findOrders(provider: Provider, orderAddress: string): Promise<Utxo[]> {
+  const orderUtxos = await provider.getUtxos(orderAddress);
+  const result: Utxo[] = [];
+  for (const orderUtxo of orderUtxos) {
+    let _orderDatum: types.OrderDatum | null = null;
     try {
-      orderDatum = Data.from(orderUtxo.datum as string, types.OrderDatum);
-    } catch (e) {
+      _orderDatum = Data.from(orderUtxo.datum as string, types.OrderDatum);
+    } catch (_e) {
       console.log("findOrders: UTxO at order address had invalid datum (skipping)");
       continue;
     }
@@ -1076,96 +1062,126 @@ if (flags.scriptsFile == undefined) {
   throw "no scripts file";
 }
 
-let s = await Deno.readTextFile(flags.scriptsFile);
-let scriptsJson = JSON.parse(s);
-const dummy = await Lucid.new(undefined, "Custom");
-const scripts = getScriptsAiken(dummy, scriptsJson);
-const [userAddress, userPkh, userPrivateKey] = fakeAddress(dummy);
+const example_settings_admin =
+  "6313a1d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
 
-const accounts: any[] = [
-  {
-    address: userAddress,
-    assets: {
-      "lovelace": 1_000_000_000_000n,
-    }
-  }
-];
-let emulator = new Emulator(accounts, {
+const example_metadata_admin =
+  "7b143ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+
+const example_treasury_admin =
+  "17bbd2d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
+
+const example_treasury_address =
+  "6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
+
+const testDatum: types.SettingsDatum = {
+  settingsAdmin: { Signature: { keyHash: example_settings_admin} },
+  metadataAdmin: { paymentCredential: { VerificationKeyCredential: [example_metadata_admin]}, stakeCredential: null},
+  treasuryAdmin: { Signature: { keyHash: example_treasury_admin} },
+  treasuryAddress: { paymentCredential: { VerificationKeyCredential: [example_treasury_address]}, stakeCredential: null},
+  treasuryAllowance: [1n, 10n],
+  authorizedScoopers: [example_settings_admin],
+  authorizedStakingKeys: [{ VerificationKeyCredential: [example_settings_admin] }],
+  baseFee: 0n,
+  simpleFee: 2_500_000n,
+  strategyFee: 5_000_000n,
+  poolCreationFee: 0n,
+  extensions: Data.void()
+};
+
+const testDatumCbor = Data.to(testDatum, types.SettingsDatum);
+console.log("testDatumCbor: ");
+console.log(testDatumCbor);
+
+const s = await Deno.readTextFile(flags.scriptsFile);
+const scriptsJson = JSON.parse(s);
+
+let emulator = new EmulatorWithState([], {
   ...PROTOCOL_PARAMETERS_DEFAULT,
-  maxTxSize: 999999999999,
-  maxTxExMem: 999999999999999n,
+  maxTxSize: 999999999,
 });
-let lucid = await Lucid.new(emulator);
 
-emulator.ledger[bootUtxoHash + bootUtxoIx] = {
-  utxo: {
+const lucid = new Lucid({provider: emulator});
+
+const scripts = getScriptsAiken(scriptsJson, { transactionId: { hash: bootUtxoHash }, outputIndex: BigInt(bootUtxoIx) }, lucid.network);
+
+const [userAddress, userPkh, _userPrivateKey] = fakeAddress(lucid.network);
+
+// const accounts: {address: string, assets: Assets, outputData?: OutputData}[] = [
+//   {
+//     address: userAddress.address,
+//     assets: {
+//       "lovelace": 1_000_000_000_000n,
+//     }
+//   }
+// ];
+// let emulator = new Emulator(accounts, {
+//   ...PROTOCOL_PARAMETERS_DEFAULT,
+//   maxTxSize: 999999999999,
+//   maxTxExMem: 999999999999999n,
+// });
+
+
+emulator.pushUtxo({
     txHash: bootUtxoHash,
     outputIndex: bootUtxoIx,
-    address: userAddress,
-    assets: { lovelace: 1_000_000_000n },
+    address: userAddress.address,
+    assets: { lovelace: 1_000_000_000_000n },
     datumHash: undefined,
     datum: undefined,
     scriptRef: undefined
-  },
-  spent: false
-};
+});
 
 await testSettingsBoot(lucid, emulator, scripts);
-const mintedUtxo = await testMintRberry(lucid, emulator, scripts);
+const _mintedUtxo = await testMintRberry(lucid, emulator);
 const poolMintRef = await testPostReferenceScript(lucid, emulator, scripts, "poolMint");
 const poolValidatorRef = await testPostReferenceScript(lucid, emulator, scripts, "poolValidator");
 const orderValidatorRef = await testPostReferenceScript(lucid, emulator, scripts, "orderValidator");
-const [rberryMintingPolicy, rberryPolicyId]: [Script, string] = await getRberryPolicyId();
+const [_rberryMintingPolicy, rberryPolicyId]: [Script, string] = await getRberryPolicyId();
 const rberry = rberryPolicyId + "." + fromText("RBERRY");
 //await testMakePoolFunds(lucid, emulator, scripts, "lovelace", 1_020_000_000n, rberry, 1_000_000_000n);
 
-emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"] = {
-  utxo: {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 0,
-    assets: {
-      lovelace: 100_000_000_000n,
-      [toUnit(rberryPolicyId, fromText("RBERRY"))]: 100_000_000_000n,
-    },
-    address: userAddress,
-    datumHash: undefined,
-    datum: undefined,
-    scriptRef: undefined
+const fakeChange = {
+  txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+  outputIndex: 0,
+  assets: {
+    lovelace: 100_000_000_000n,
+    [toUnit(rberryPolicyId, fromText("RBERRY"))]: 100_000_000_000n,
   },
-  spent: false
+  address: userAddress.address,
+  datumHash: undefined,
+  datum: undefined,
+  scriptRef: undefined
 };
 
-const fakeChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000000"].utxo;
+emulator.pushUtxo(fakeChange);
 
-const { poolMintedHash, poolId } =
+const { poolId } =
   await testMintPool(lucid, emulator, scripts, "lovelace", rberry, poolMintRef, fakeChange);
 
 console.log("pool id: ", poolId);
 
-emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"] = {
-  utxo: {
-    txHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    outputIndex: 1,
-    assets: {
-      lovelace: 100_000_000_000n,
-      [toUnit(rberryPolicyId, fromText("RBERRY"))]: 100_000_000_000n,
-    },
-    address: userAddress,
-    datumHash: undefined,
-    datum: undefined,
-    scriptRef: undefined
+const listOrdersChange = {
+  txHash: "0000000000000000000000000000000000000000000000000000000000000000",
+  outputIndex: 1,
+  assets: {
+    lovelace: 100_000_000_000n,
+    [toUnit(rberryPolicyId, fromText("RBERRY"))]: 100_000_000_000n,
   },
-  spent: false
+  address: userAddress.address,
+  datumHash: undefined,
+  datum: undefined,
+  scriptRef: undefined
 };
 
-const listOrdersChange = emulator.ledger["00000000000000000000000000000000000000000000000000000000000000001"].utxo;
+emulator.pushUtxo(listOrdersChange);
 
-const { listedHash, utxos: orders } =
+const { utxos: orders } =
   await testListOrder(lucid, emulator, scripts, "lovelace", rberry, listOrdersChange, poolId, 40n);
 
-const scoopPoolChange = await findChange(emulator, userAddress);
+const scoopPoolChange = await findChange(emulator, userAddress.address);
 
-const savedLedger = structuredClone(emulator.ledger);
+const savedLedger = structuredClone(emulator);
 console.log("savedLedger");
 console.log(savedLedger);
 console.log("ok");
@@ -1173,7 +1189,7 @@ console.log("ok");
 const runs = new Map();
 
 for (let i = 37; i <= 45; i++) {
-  emulator.ledger = structuredClone(savedLedger);
+  emulator = structuredClone(savedLedger);
   try {
     const exUnits = await testScoopPool(lucid, emulator, scripts, poolId, scoopPoolChange, [orderValidatorRef, poolValidatorRef], orders.slice(0, i));
     runs.set(i, exUnits);

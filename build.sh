@@ -57,50 +57,42 @@ aiken build &> /dev/null
 
 PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
 PROTOCOL_BOOT_IX="01"
-PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
+PROTOCOL_BOOT_UTXO="d8799f5820${PROTOCOL_BOOT_TX}${PROTOCOL_BOOT_IX}ff"
 
-aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
-mv tmp plutus.json
+echo "Applying protocol boot utxo: ${PROTOCOL_BOOT_UTXO}"
 
-aiken blueprint apply -v settings.mint $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
-mv tmp plutus.json
-
-SETTINGS_SCRIPT_HASH="$(aiken blueprint policy -v settings.mint 2> /dev/null)"
-aiken blueprint apply -v pool.manage "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
+aiken blueprint apply -v settings $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
 mv tmp plutus.json
 
-MANAGE_STAKE_SCRIPT_HASH="$(aiken blueprint policy -v pool.manage 2> /dev/null)"
-aiken blueprint apply -v pool.spend "581c${MANAGE_STAKE_SCRIPT_HASH}" 2> /dev/null > tmp
-mv tmp plutus.json
-aiken blueprint apply -v pool.spend "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
+SETTINGS_SCRIPT_HASH="85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76"
+aiken blueprint apply -v manage "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
-aiken blueprint apply -v pool.mint "581c${MANAGE_STAKE_SCRIPT_HASH}" 2> /dev/null > tmp
+MANAGE_STAKE_SCRIPT_HASH="$(aiken blueprint policy -v manage 2> /dev/null)"
+aiken blueprint apply -v pool "581c${MANAGE_STAKE_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
-aiken blueprint apply -v pool.mint "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
-mv tmp plutus.json
-
-POOL_SCRIPT_HASH="$(aiken blueprint policy -v pool.mint 2> /dev/null)"
-aiken blueprint apply -v stake.stake "581c${POOL_SCRIPT_HASH}" 2> /dev/null > tmp
+aiken blueprint apply -v pool "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
-aiken blueprint apply -v pool_stake.stake "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
-mv tmp plutus.json
-aiken blueprint apply -v pool_stake.stake "00" 2> /dev/null > tmp
-mv tmp plutus.json
-
-aiken blueprint apply -v oracle.spend "581c${POOL_SCRIPT_HASH}" 2> /dev/null > tmp
-mv tmp plutus.json
-aiken blueprint apply -v oracle.mint "581c${POOL_SCRIPT_HASH}" 2> /dev/null > tmp
+POOL_SCRIPT_HASH="$(aiken blueprint policy -v pool 2> /dev/null)"
+aiken blueprint apply -v stake "581c${POOL_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
-STAKE_SCRIPT_HASH="$(aiken blueprint policy -v stake.stake 2> /dev/null)"
-aiken blueprint apply -v order.spend "581c${STAKE_SCRIPT_HASH}" 2> /dev/null > tmp
+aiken blueprint apply -v pool_stake "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
+mv tmp plutus.json
+aiken blueprint apply -v pool_stake "00" 2> /dev/null > tmp
 mv tmp plutus.json
 
-ORACLE_SCRIPT_HASH="$(aiken blueprint policy -v oracle.mint 2> /dev/null)"
-POOL_STAKE_SCRIPT_HASH="$(aiken blueprint policy -v pool_stake.stake 2> /dev/null)"
-ORDER_SCRIPT_HASH="$(aiken blueprint hash -v order.spend 2> /dev/null)"
+aiken blueprint apply -v oracle "581c${POOL_SCRIPT_HASH}" 2> /dev/null > tmp
+mv tmp plutus.json
+
+STAKE_SCRIPT_HASH="$(aiken blueprint policy -v stake 2> /dev/null)"
+aiken blueprint apply -v order "581c${STAKE_SCRIPT_HASH}" 2> /dev/null > tmp
+mv tmp plutus.json
+
+ORACLE_SCRIPT_HASH="$(aiken blueprint policy -v oracle 2> /dev/null)"
+POOL_STAKE_SCRIPT_HASH="$(aiken blueprint policy -v pool_stake 2> /dev/null)"
+ORDER_SCRIPT_HASH="$(aiken blueprint hash -v order 2> /dev/null)"
 
 echo
 echo "Parameters:"
