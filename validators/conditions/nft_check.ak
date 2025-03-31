@@ -1,3 +1,4 @@
+use aiken/cbor.{serialise}
 use aiken/collection/dict.{Dict}
 use aiken/collection/list
 use aiken/crypto.{Blake2b_256, Hash}
@@ -107,23 +108,25 @@ fn scoop_nft_check(
       expect Some(datum) = datum_of(datums, order)
       expect datum: OrderDatum = datum
 
-      process_order(datum, nft_check_value, nft_check, reference_inputs)
+      process_order(order, datum, nft_check_value, nft_check, reference_inputs)
     },
   )
 }
 
 /// Process a single order, ensuring that the provided order datum has a valid ComplianceToken
 fn process_order(
+  order: Output,
   // The details of the order to execute, such as whether it's a swap, the limit, etc.
-  order: OrderDatum,
+  order_datum: OrderDatum,
   nft_check_value: Value,
   nft_check: Check,
   reference_inputs: List<Output>,
 ) -> Bool {
   // The owner of an order is the same as the public key in the token
-  expect multisig.Signature { key_hash: owner } = order.owner
+  expect multisig.Signature { key_hash: owner } = order_datum.owner
 
-  let owner_value = owner_value(find_owner_outputs(reference_inputs, owner))
+  let owner_reference_inputs = find_owner_outputs(reference_inputs, owner)
+  let owner_value = owner_value([order, ..owner_reference_inputs])
 
   when nft_check is {
     All ->
@@ -172,6 +175,43 @@ test test_scoop_nft_check() {
     )
 
   let nft_check = Any
+
+  let conditionDatum: NftCheckDatum =
+    NftCheckDatum {
+      value: [
+        Pair(
+          #"99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15",
+          [Pair(#"534245525259", 1000)],
+        ),
+      ],
+      check: All,
+    }
+
+  trace serialise(conditionDatum)
+
+  let conditionData: Data = conditionDatum
+
+  let poolDatum: PoolDatum =
+    PoolDatum(
+      #"b16724e74e64f4b9e317fa14552fc0024914c318e312ff72e5fcb577",
+      (
+        (#"", #""),
+        (
+          #"99b071ce8580d6a3a11b4902145adb8bfd0d2a03935af8cf66403e15",
+          #"524245525259",
+        ),
+      ),
+      1000000,
+      10,
+      10,
+      None,
+      0,
+      3000000,
+      Some(#"0358d04d0cdf795df06718b87b57f3428b77c7444a05fa094e17ab04"),
+      Some(conditionData),
+    )
+
+  trace serialise(poolDatum)
 
   let reference_inputs =
     [

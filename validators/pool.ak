@@ -534,10 +534,10 @@ validator pool(
 
         // And then check each of the conditions above as the condition for minting
         and {
-          coin_pair_ordering_is_canonical,
-          mint_is_correct,
-          funds_spent_to_pool,
-          pool_output_datum_correct,
+          coin_pair_ordering_is_canonical?,
+          mint_is_correct?,
+          funds_spent_to_pool?,
+          pool_output_datum_correct?,
         }
       }
       // When minting an LP token, we just need to make sure the pool script is being spent, as it will enforce the correct
