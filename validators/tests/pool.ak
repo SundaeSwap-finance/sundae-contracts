@@ -350,8 +350,8 @@ fn scoop(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: (2_000_000, 0, 0),
-      linear_amplification: 0,
-      sum_invariant: 1,
+      linear_amplification: 200,
+      sum_invariant: 2000000000,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -366,8 +366,8 @@ fn scoop(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: (7_000_000, 0, 0),
-      linear_amplification: 0,
-      sum_invariant: 1,
+      linear_amplification: 200,
+      sum_invariant: 2000010000,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -481,7 +481,7 @@ fn scoop(options: ScoopTestOptions) {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              9_896_088,
+              9_994_750,
             ),
       ),
       datum: order1_out_datum,
@@ -503,7 +503,7 @@ fn scoop(options: ScoopTestOptions) {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              9_702_095,
+              9_994_252,
             ),
       ),
       datum: order2_out_datum,
@@ -518,7 +518,7 @@ fn scoop(options: ScoopTestOptions) {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              1_000_000_000 - ( 9_896_088 + 9_702_095 ),
+              1_000_000_000 - ( 9_994_750 + 9_994_252 ),
             )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
@@ -536,7 +536,8 @@ fn scoop(options: ScoopTestOptions) {
       extra_signatories: [constants.scooper],
       id: mk_tx_hash(1),
     }
-  let pool_redeemer = PoolScoop(0, 0, [(1, None, 1), (2, None, 1)])
+  let pool_redeemer =
+    PoolScoop(0, 0, [(1, None, 2_000_005_000), (2, None, 2_000_010_000)])
   let result =
     pool_validator.pool.spend(
       constants.manage_stake_script_hash,

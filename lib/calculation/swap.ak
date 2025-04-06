@@ -144,8 +144,18 @@ pub fn do_swap(
   let swap_result = order_takes * 10000 / difference
 
   let total_fees = swap_result - order_takes
-  let lp_fees = total_fees * lp_fee_rate / total_fee_rate
-  let protocol_fees = total_fees * protocol_fee_rate / total_fee_rate
+  let lp_fees =
+    if total_fee_rate > 0 {
+      total_fees * lp_fee_rate / total_fee_rate
+    } else {
+      0
+    }
+  let protocol_fees =
+    if total_fee_rate > 0 {
+      total_fees * protocol_fee_rate / total_fee_rate
+    } else {
+      0
+    }
 
   // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
   let pool_deduction = order_takes + protocol_fees
@@ -164,7 +174,12 @@ pub fn do_swap(
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(pool_quantity_a + order_give, pool_quantity_b - pool_deduction, 0, protocol_fees)
+    continuation(
+      pool_quantity_a + order_give,
+      pool_quantity_b - pool_deduction,
+      0,
+      protocol_fees,
+    )
   } else {
     expect
       stableswap.swap_invariant(
@@ -175,6 +190,11 @@ pub fn do_swap(
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(pool_quantity_a - pool_deduction, pool_quantity_b + order_give, protocol_fees, 0)
+    continuation(
+      pool_quantity_a - pool_deduction,
+      pool_quantity_b + order_give,
+      protocol_fees,
+      0,
+    )
   }
 }

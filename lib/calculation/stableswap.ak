@@ -15,7 +15,7 @@ pub fn swap_invariant(
     ),
     exchange_invariant(
       new_pool_gives,
-      new_pool_takes - takes_fees,
+      new_pool_takes - takes_fees - 1,
       linear_amplification,
       old_sum_invariant,
     ),
@@ -29,8 +29,8 @@ pub fn liquidity_invariant(
   new_sum_invariant: Int,
 ) {
   // 4 * A * 4 * (x*y) * D + D^3 - (4(x*y) * (4A(x + y) + D))
-  // 4A * 4xy * D + D^3 - (4xy * 4a * (x + y) + D)
-  // 16Axy * D + D^3 - (16Axy * (x + y) + D)
+  // 4A * 4xy * D + D^3 - (4xy * 4a * (x + y) + 4xy * D)
+  // 16Axy * D + D^3 - (16Axy * (x + y) + 4xy * D)
   let four_a = 4 * linear_amplification
   let four_x_y = 4 * new_pool_gives * new_pool_takes
   let d_plus_one = new_sum_invariant + 1
@@ -40,9 +40,13 @@ pub fn liquidity_invariant(
   let sixteen_a_x_y = four_a * four_x_y
   let sixteen_a_x_y_x_plus_y = sixteen_a_x_y * x_plus_y
   let f1 =
-    sixteen_a_x_y * new_sum_invariant + d_cubed - (sixteen_a_x_y_x_plus_y + new_sum_invariant)
+    sixteen_a_x_y * new_sum_invariant + d_cubed - (
+      sixteen_a_x_y_x_plus_y + four_x_y * new_sum_invariant
+    )
   let f2 =
-    sixteen_a_x_y * d_plus_one + d_plus_one_cubed - (sixteen_a_x_y_x_plus_y + d_plus_one)
+    sixteen_a_x_y * d_plus_one + d_plus_one_cubed - (
+      sixteen_a_x_y_x_plus_y + four_x_y * d_plus_one
+    )
   and {
     f1 <= 0,
     f2 > 0,

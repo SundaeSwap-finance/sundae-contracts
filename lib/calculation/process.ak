@@ -534,7 +534,8 @@ pub fn process_orders(
         simple_fee,
         strategy_fee,
         linear_amplification,
-        sum_invariant,
+        // In the next swap, the current new_sum_invariant becomes the old_sum_invariant
+        new_sum_invariant,
         idx + 1,
         // This is the "previous index" within the input list; TODO: I'm not actually sure why we add 1?
         all_inputs,
