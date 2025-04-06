@@ -567,8 +567,8 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       fee_manager: None,
       market_open: 0,
       protocol_fees: (2_000_000, 0, 0),
-      linear_amplification: 10,
-      sum_invariant: 10,
+      linear_amplification: 200,
+      sum_invariant: 2000000000,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -577,14 +577,14 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         (ada_policy_id, ada_asset_name),
         (constants.rberry_policy, constants.rberry_asset_name),
       ),
-      circulating_lp: 1_009_900_990,
+      circulating_lp: 1_009_999_976,
       lp_fee_basis_points: (pool_fees.1st, pool_fees.2nd),
       protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
       protocol_fees: (7_000_000, 0, 0),
-      linear_amplification: 10,
-      sum_invariant: 10,
+      linear_amplification: 200,
+      sum_invariant: 2020005003,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -688,7 +688,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              9_896_088,
+              9_994_750,
             ),
       ),
       datum: order1_out_datum,
@@ -707,12 +707,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         |> assets.add(
             constants.pool_script_hash,
             pool_lp_name(constants.pool_ident),
-            9_900_990,
-          )
-        |> assets.add(
-            constants.rberry_policy,
-            constants.rberry_asset_name,
-            196_990,
+            9_999_976,
           ),
       datum: order2_out_datum,
       reference_script: None,
@@ -726,7 +721,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              1_000_000_000 - 9_896_088 + 10_000_000 - 196_990,
+              1_000_000_000 - 9_994_750 + 10_000_000,
             )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
@@ -745,13 +740,14 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         |> assets.add(
             constants.pool_script_hash,
             pool_lp_name(constants.pool_ident),
-            9_900_990,
+            9_999_976,
           ),
       validity_range: interval.between(1, 2),
       extra_signatories: [constants.scooper],
       id: mk_tx_hash(1),
     }
-  let pool_redeemer = PoolScoop(0, 0, [(1, None, 0), (2, None, 0)])
+  let pool_redeemer =
+    PoolScoop(0, 0, [(1, None, 2_000_005_000), (2, None, 2_020_005_003)])
   let result =
     pool_validator.pool.spend(
       constants.manage_stake_script_hash,
