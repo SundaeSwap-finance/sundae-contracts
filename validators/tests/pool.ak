@@ -568,7 +568,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       market_open: 0,
       protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 200,
-      sum_invariant: 2000000000,
+      sum_invariant: 2_000_000_000,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -584,7 +584,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       market_open: 0,
       protocol_fees: (7_000_000, 0, 0),
       linear_amplification: 200,
-      sum_invariant: 2020005003,
+      sum_invariant: 2_020_005_003,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)

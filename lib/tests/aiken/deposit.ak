@@ -16,6 +16,8 @@ test deposit_test() {
     50_000_000,
     200_000_000,
     500_000_000,
+    2_000_000_000,
+    2_100_000_000,
     assets.from_lovelace(47_500_000)
       |> assets.add(lp.1st, lp.2nd, 50_000_000),
   )
@@ -29,6 +31,8 @@ test deposit_test_minimum() fail {
     150,
     151_171_875,
     150,
+    2_000_000_000,
+    2_020_000_000,
     assets.from_lovelace(152_000_000),
   )
 }
@@ -40,6 +44,8 @@ fn deposit_test_schema(
   has_b: Int,
   gives_a: Int,
   gives_b: Int,
+  sum_invariant: Int,
+  next_sum_invariant: Int,
   out_value: assets.Value,
 ) {
   let addr =
@@ -104,9 +110,9 @@ fn deposit_test_schema(
       pool_state.quantity_lp.1st,
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd,
-      0,
-      pool_state.quantity_lp.3rd,
-      pool_state.quantity_lp.3rd,
+      200,
+      sum_invariant,
+      next_sum_invariant,
       input,
       assets,
       order.destination,
