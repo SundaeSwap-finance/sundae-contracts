@@ -169,7 +169,7 @@ pub fn do_swap(
       stableswap.swap_invariant(
         pool_quantity_a + order_give,
         pool_quantity_b - pool_deduction,
-        lp_fees,
+        lp_fees + 1,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
