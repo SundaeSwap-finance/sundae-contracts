@@ -49,9 +49,15 @@ pub fn do_deposit(
   let input_b = assets.quantity_of(input_value, order_b.1st, order_b.2nd)
   let surplus_b = assets.quantity_of(output.value, order_b.1st, order_b.2nd)
 
-  // The difference between these amounts is the amount the user actually deposits into the pool
-  let deposited_a = surplus_a - input_a
-  let deposited_b = surplus_b - input_b
+  // The difference between the input and surplus (output) is the amount the user actually deposits into the pool
+  let (deposited_a, deposited_b) =
+    if order_a.1st == ada_policy_id {
+      (input_a - actual_protocol_fee - surplus_a, input_b - surplus_b)
+    } else if order_b.1st == ada_policy_id {
+      (input_a - surplus_a, input_b - actual_protocol_fee - surplus_b)
+    } else {
+      (input_a - surplus_a, input_b - surplus_b)
+    }
 
   // Check that the deposited amounts are ok; specifically:
   // - we ensure that it's positive, so we don't accidentally withdraw tokens
@@ -188,9 +194,9 @@ test deposit_test() {
       pool_state.quantity_lp.1st,
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd,
-      0,
-      pool_state.quantity_lp.3rd,
-      pool_state.quantity_lp.3rd,
+      200,
+      2_000_000_000,
+      2_020_000_000,
       input,
       assets,
       order.destination,

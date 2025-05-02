@@ -534,7 +534,8 @@ pub fn process_orders(
         simple_fee,
         strategy_fee,
         linear_amplification,
-        sum_invariant,
+        // In the next swap, the current new_sum_invariant becomes the old_sum_invariant
+        new_sum_invariant,
         idx + 1,
         // This is the "previous index" within the input list; TODO: I'm not actually sure why we add 1?
         all_inputs,
@@ -577,11 +578,11 @@ test process_orders_test() {
       owner: multisig.Signature(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
-      max_protocol_fee: 2_500_000,
+      max_protocol_fee: 3_000_000,
       destination: Fixed { address: addr, datum: NoDatum },
       details: order.Swap {
         offer: (ada.1st, ada.2nd, 1_000_000),
-        min_received: (rberry.1st, rberry.2nd, 1_000_000),
+        min_received: (rberry.1st, rberry.2nd, 999_000),
       },
       extension: Void,
     }
@@ -589,7 +590,8 @@ test process_orders_test() {
   let output =
     Output {
       address: addr,
-      value: assets.from_lovelace(999_999_999_999_999_999),
+      value: assets.from_lovelace(2_000_000)
+        |> assets.add(rberry.1st, rberry.2nd, 999_497),
       datum: NoDatum,
       reference_script: None,
     }
@@ -600,8 +602,7 @@ test process_orders_test() {
         Script(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
         None,
       ),
-      value: assets.from_lovelace(3_500_000)
-        |> assets.add(rberry.1st, rberry.2nd, 1_000_000),
+      value: assets.from_lovelace(5_500_010),
       datum: InlineDatum(order_datum),
       reference_script: None,
     }
@@ -624,7 +625,7 @@ test process_orders_test() {
     }
   let valid_range = interval.between(1, 2)
 
-  let input_order = [(0, None, 0)]
+  let input_order = [(0, None, 2_000_000_500)]
   let inputs = [input]
   let outputs = [output]
 
@@ -655,13 +656,13 @@ test process_orders_test() {
       input_order,
       5,
       5,
+      0,
+      0,
       2_500_000,
-      0,
-      0,
       10,
       10,
-      20,
-      20,
+      200,
+      2_000_000_000,
       0,
       inputs,
       inputs,
@@ -672,16 +673,15 @@ test process_orders_test() {
       0,
       0,
     )
-
   and {
     new_a == 1_001_000_000,
-    new_b == 1_001_000_000,
+    new_b == 1_000_000_000 - 999_497,
     new_lp == 1_000_000_000,
     simple == 1,
     strategies == 0,
     delta_fee_a == 0,
     delta_fee_b == 0,
-    sum_invariant == 10,
+    sum_invariant == 2_000_000_500,
   }
 }
 
@@ -801,13 +801,13 @@ test process_30_shuffled_orders_test() {
       input_order,
       5,
       5,
+      0,
+      0,
       2_500_000,
-      0,
-      0,
       10,
       10,
-      0,
-      0,
+      200,
+      2_000_000_000,
       0,
       inputs,
       inputs,

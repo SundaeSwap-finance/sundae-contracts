@@ -14,22 +14,26 @@ test deposit_test() {
     1_000_000_000,
     100_000_000,
     50_000_000,
-    200_000_000,
-    500_000_000,
-    assets.from_lovelace(47_500_000)
-      |> assets.add(lp.1st, lp.2nd, 50_000_000),
+    20_000_000,
+    50_000_000,
+    2_000_000_000,
+    2_069_999_457,
+    assets.from_lovelace(100_000_000 - 20_000_000 - 2_500_000)
+      |> assets.add(lp.1st, lp.2nd, 34_999_728),
   )
 }
 
 test deposit_test_minimum() fail {
   deposit_test_schema(
-    661_278_808_416,
+    661_278_808_416_999,
     188_253_559_159_646,
     153_000_000,
-    150,
-    151_171_875,
-    150,
-    assets.from_lovelace(152_000_000),
+    1,
+    1,
+    1,
+    849_057_187_348_704,
+    849_057_187_348_706,
+    assets.from_lovelace(153_000_000 - 1 - 2_500_000),
   )
 }
 
@@ -40,6 +44,8 @@ fn deposit_test_schema(
   has_b: Int,
   gives_a: Int,
   gives_b: Int,
+  sum_invariant: Int,
+  next_sum_invariant: Int,
   out_value: assets.Value,
 ) {
   let addr =
@@ -104,9 +110,9 @@ fn deposit_test_schema(
       pool_state.quantity_lp.1st,
       pool_state.quantity_lp.2nd,
       pool_state.quantity_lp.3rd,
-      0,
-      pool_state.quantity_lp.3rd,
-      pool_state.quantity_lp.3rd,
+      200,
+      sum_invariant,
+      next_sum_invariant,
       input,
       assets,
       order.destination,
