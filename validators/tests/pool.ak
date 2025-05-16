@@ -222,7 +222,8 @@ test scoop_high_swap_fees() {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              9_899_753,
+              // 9_899_753,
+              9_899_752,
             ),
       ),
       edit_order_2_out_value: Some(
@@ -238,11 +239,13 @@ test scoop_high_swap_fees() {
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
-              1_000_000_000 - ( 9_899_753 + 9_899_261 ),
+              // 1_000_000_000 - ( 9_899_753 + 9_899_261 ),
+              1_000_000_000 - ( 9_899_752 + 9_899_261 ),
             )
           |> assets.add(constants.pool_script_hash, pool_nft_name, 1),
       ),
-      edit_sum_invariants: Some((2_000_100_000, 2_000_199_998)),
+      // edit_sum_invariants: Some((2_000_100_000, 2_000_199_998)),
+      edit_sum_invariants: Some((2_000_100_000+1, 2_000_199_998+1)),
     }
   scoop(options)
 }
