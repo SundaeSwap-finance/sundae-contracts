@@ -1,5 +1,5 @@
 use aiken/math
-use calculation/stableswap
+use calculation/stableswap.{precision}
 use cardano/assets.{AssetName, PolicyId, ada_policy_id}
 use cardano/transaction.{Output}
 use shared.{SingletonValue}
@@ -17,7 +17,7 @@ pub fn do_swap(
   linear_amplification: Int,
   sum_invariant: Int,
   next_sum_invariant: Int,
-  swap_result: Int,
+  raw_swap_result: Int,
   /// The full UTXO for this swap
   input_utxo: Output,
   /// Where the results of the swap need to be paid
@@ -141,6 +141,8 @@ pub fn do_swap(
   // swap_result = order_takes * 10000 / (10000 - (lp_fee_rate + protocol_fee_rate))
   let total_fee_rate = lp_fee_rate + protocol_fee_rate
 
+  let swap_result = raw_swap_result / precision
+
   // let difference = 10000 - total_fee_rate
   // let swap_result = order_takes * 10000 / difference
   // We add precision - 1 to the numerator to ensure that we round up
@@ -174,7 +176,8 @@ pub fn do_swap(
       stableswap.swap_invariant(
         pool_quantity_a + order_give,
         pool_quantity_b - pool_deduction,
-        lp_fees,
+        pool_quantity_b,
+        raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
@@ -190,7 +193,8 @@ pub fn do_swap(
       stableswap.swap_invariant(
         pool_quantity_b + order_give,
         pool_quantity_a - pool_deduction,
-        lp_fees,
+        pool_quantity_a,
+        raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
