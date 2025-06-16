@@ -12,13 +12,13 @@ pub fn swap_invariant(
       new_pool_takes,
       linear_amplification,
       new_sum_invariant,
-    ),
+    )?,
     exchange_invariant(
       new_pool_gives,
       new_pool_takes - takes_fees,
       linear_amplification,
       old_sum_invariant,
-    ),
+    )?,
   }
 }
 

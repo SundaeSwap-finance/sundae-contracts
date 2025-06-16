@@ -33,7 +33,7 @@ fn mk_pool_scoop() -> PoolRedeemer {
   PoolScoop {
     signatory_index: 0,
     scooper_index: 0,
-    input_order: [(1, None, 0)],
+    input_order: [(1, None, 0, 1)],
   }
 }
 

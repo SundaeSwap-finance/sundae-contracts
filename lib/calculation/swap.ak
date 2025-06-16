@@ -17,6 +17,7 @@ pub fn do_swap(
   linear_amplification: Int,
   sum_invariant: Int,
   next_sum_invariant: Int,
+  swap_result: Int,
   /// The full UTXO for this swap
   input_utxo: Output,
   /// Where the results of the swap need to be paid
@@ -110,7 +111,6 @@ pub fn do_swap(
     } else {
       (given_input, taken_surplus)
     }
-
   // The amount the user gave up is the amount on the input, minus the surplus,
   let order_give = given_input - given_surplus
   // And the amount the user received is the amount on the output, minus the surplus that was already on the input
@@ -123,10 +123,10 @@ pub fn do_swap(
   // NOTE: we *give up* the rounding protection we added in the base pool; this is partly because stableswaps aren't likely to be
   // used with semi-fungible tokens, and partly because users generally complained about the dust they would get on these swaps
   expect and {
-      order_give > 0,
-      order_give == math.min(offer_amt, given_input),
-      order_takes > 0,
-      order_takes >= min_received_3rd,
+      (order_give > 0)?,
+      (order_give == math.min(offer_amt, given_input))?,
+      (order_takes > 0)?,
+      (order_takes >= min_received_3rd)?,
     }
 
   // We calculate a percentage fee for liquidity providers and the protocol
@@ -140,23 +140,28 @@ pub fn do_swap(
   // swap_result = order_takes / ((10000 - fee_bp) / 10000)
   // swap_result = order_takes * 10000 / (10000 - (lp_fee_rate + protocol_fee_rate))
   let total_fee_rate = lp_fee_rate + protocol_fee_rate
-  let difference = 10000 - total_fee_rate
-  let swap_result = order_takes * 10000 / difference
+
+  // let difference = 10000 - total_fee_rate
+  // let swap_result = order_takes * 10000 / difference
+  // We add precision - 1 to the numerator to ensure that we round up
+  let calculated_fees = ( swap_result * total_fee_rate + 9999 ) / 10000
 
   let total_fees = swap_result - order_takes
-  let lp_fees =
-    if total_fee_rate > 0 {
-      total_fees * lp_fee_rate / total_fee_rate
-    } else {
-      0
-    }
+
+  expect (calculated_fees == total_fees)?
+
   let protocol_fees =
     if total_fee_rate > 0 {
       total_fees * protocol_fee_rate / total_fee_rate
     } else {
       0
     }
-
+  let lp_fees =
+    if total_fee_rate > 0 {
+      total_fees - protocol_fees
+    } else {
+      0
+    }
   // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
   let pool_deduction = order_takes + protocol_fees
 
@@ -169,7 +174,7 @@ pub fn do_swap(
       stableswap.swap_invariant(
         pool_quantity_a + order_give,
         pool_quantity_b - pool_deduction,
-        lp_fees + 1,
+        lp_fees,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,

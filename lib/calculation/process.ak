@@ -172,6 +172,7 @@ pub fn process_order(
   linear_amplification: Int,
   sum_invariant: Int,
   next_sum_invariant: Int,
+  swap_result: Int,
   // A list of outputs, so we can destructure the next output
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
@@ -223,6 +224,7 @@ pub fn process_order(
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
+        swap_result,
         outputs,
         continuation,
       )
@@ -249,6 +251,7 @@ pub fn process_order(
           linear_amplification,
           sum_invariant,
           next_sum_invariant,
+          swap_result,
           input,
           destination,
           lp_bid_basis_points,
@@ -375,7 +378,7 @@ pub fn process_orders(
   pool_asset_name_lp: AssetName,
   pool_quantity_lp: Int,
   // The list of remaining indices into the inputs, specifying which orders to process
-  input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
+  input_order: List<(Int, Option<SignedStrategyExecution>, Int, Int)>,
   // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders, expressed as parts per 10,000
   lp_bid_basis_points: Int,
   lp_ask_basis_points: Int,
@@ -424,7 +427,7 @@ pub fn process_orders(
         delta_fee_b,
         sum_invariant,
       )
-    [(idx, sse, new_sum_invariant), ..rest] -> {
+    [(idx, sse, new_sum_invariant, swap_result), ..rest] -> {
       // First, it's important to check that each order is processed only once;
       // This is quite subtle, so check InputSorting.md for a full explanation
       let next_uniqueness_flag = check_and_set_unique(uniqueness_flag, idx)
@@ -506,6 +509,7 @@ pub fn process_orders(
           linear_amplification,
           sum_invariant,
           new_sum_invariant,
+          swap_result,
           outputs,
         )
 
@@ -625,7 +629,7 @@ test process_orders_test() {
     }
   let valid_range = interval.between(1, 2)
 
-  let input_order = [(0, None, 2_000_000_500)]
+  let input_order = [(0, None, 2_000_000_500, 999_997)]
   let inputs = [input]
   let outputs = [output]
 
@@ -709,7 +713,7 @@ test process_30_shuffled_orders_test() {
       owner: multisig.Signature(
         #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
       ),
-      max_protocol_fee: 2_500_000,
+      max_protocol_fee: 3_000_000,
       destination: Fixed { address: addr, datum: NoDatum },
       details: order.Swap {
         offer: (ada.1st, ada.2nd, 1_000_000),
@@ -732,7 +736,7 @@ test process_30_shuffled_orders_test() {
         Script(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
         None,
       ),
-      value: assets.from_lovelace(3_500_000)
+      value: assets.from_lovelace(4_000_000)
         |> assets.add(rberry.1st, rberry.2nd, 1_000_000),
       datum: InlineDatum(order_datum),
       reference_script: None,
@@ -765,12 +769,14 @@ test process_30_shuffled_orders_test() {
   // shuffled order processing:
   let input_order =
     [
-      (11, None, 0), (26, None, 0), (18, None, 0), (2, None, 0), (28, None, 0),
-      (13, None, 0), (16, None, 0), (1, None, 0), (8, None, 0), (27, None, 0),
-      (12, None, 0), (23, None, 0), (22, None, 0), (14, None, 0), (10, None, 0),
-      (0, None, 0), (24, None, 0), (5, None, 0), (7, None, 0), (17, None, 0),
-      (20, None, 0), (29, None, 0), (19, None, 0), (21, None, 0), (9, None, 0),
-      (25, None, 0), (6, None, 0), (4, None, 0), (3, None, 0), (15, None, 0),
+      (11, None, 0, 0), (26, None, 0, 0), (18, None, 0, 0), (2, None, 0, 0),
+      (28, None, 0, 0), (13, None, 0, 0), (16, None, 0, 0), (1, None, 0, 0),
+      (8, None, 0, 0), (27, None, 0, 0), (12, None, 0, 0), (23, None, 0, 0),
+      (22, None, 0, 0), (14, None, 0, 0), (10, None, 0, 0), (0, None, 0, 0),
+      (24, None, 0, 0), (5, None, 0, 0), (7, None, 0, 0), (17, None, 0, 0),
+      (20, None, 0, 0), (29, None, 0, 0), (19, None, 0, 0), (21, None, 0, 0),
+      (9, None, 0, 0), (25, None, 0, 0), (6, None, 0, 0), (4, None, 0, 0),
+      (3, None, 0, 0), (15, None, 0, 0),
     ]
   let outputs = [output]
 

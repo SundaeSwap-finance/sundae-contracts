@@ -62,10 +62,11 @@ pub type PoolRedeemer {
     /// users orders out of order, and open the protocol to sandwich attacks and line-cutting.
     /// Much of the complexity of the protocol comes from ensuring this list is processed both efficiently and safely.
     ///
-    /// In the base AMM, the last integer in this tuple was ignored, and just a quirk of Plutus / Aiken;
+    /// In the base AMM, the third integer in this tuple was ignored, and just a quirk of Plutus / Aiken;
     /// We repurpose it here to represent the intermediate `D` value *after* processing this order.
     /// We do so after a very careful review, keeping [this cautionary tale](https://dougseven.com/2014/04/17/knightmare-a-devops-cautionary-tale/) close to our hearts.
-    input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
+    /// The last integer represents the swap result (including any fees) for that order
+    input_order: List<(Int, Option<SignedStrategyExecution>, Int, Int)>,
   }
   /// Withdraw the earned protocol fees into the treasury, or update the pool
   /// fees
@@ -102,7 +103,11 @@ pub type PoolMintRedeemer {
 /// Manage settings about a pool (used against the pool manage script)
 pub type ManageRedeemer {
   // Withdraw some subset of the fees in the pool, paid into the treasury
-  WithdrawFees { amount: (Int, Int, Int), treasury_output: Int, pool_input: Int }
+  WithdrawFees {
+    amount: (Int, Int, Int),
+    treasury_output: Int,
+    pool_input: Int,
+  }
   // Update the percentage fee the pool charges
   UpdatePoolFees { pool_input: Int }
 }
