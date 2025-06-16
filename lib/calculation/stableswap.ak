@@ -1,3 +1,5 @@
+const precision = 1_000_000_000_000
+
 pub fn swap_invariant(
   new_pool_gives: Int,
   new_pool_takes: Int,
@@ -14,7 +16,7 @@ pub fn swap_invariant(
       new_sum_invariant,
     )?,
     exchange_invariant(
-      new_pool_gives,
+      new_pool_gives * precision,
       new_pool_takes - takes_fees,
       linear_amplification,
       old_sum_invariant,
@@ -66,14 +68,75 @@ pub fn exchange_invariant(
   let four_xy = 4 * new_pool_gives * new_pool_takes
   let x_plus_y = new_pool_gives + new_pool_takes
   let four_a = 4 * linear_amplification
+  //let g1 =
+  //  four_xy * ( four_a * x_plus_y + old_sum_invariant ) - four_xy * four_a * old_sum_invariant - d_cubed
+  // We introduce a small extra tolerance for error here. By feeding the function precise data the impact is mitigated.
   let g1 =
-    four_xy * ( four_a * x_plus_y + old_sum_invariant ) - four_xy * four_a * old_sum_invariant - d_cubed
+    ( four_xy - 4 * new_pool_gives ) * (
+      four_a * ( x_plus_y + 1 ) + old_sum_invariant
+    ) - ( four_xy - 4 * new_pool_gives ) * four_a * old_sum_invariant - d_cubed
   let g2 =
     ( four_xy - 4 * new_pool_gives ) * (
       four_a * ( x_plus_y - 1 ) + old_sum_invariant
     ) - ( four_xy - 4 * new_pool_gives ) * four_a * old_sum_invariant - d_cubed
+  trace g1
+  trace g2
   and {
-    g1 >= 0,
+    g1 > 0,
     g2 < 0,
   }
+}
+
+// Test with the precise dY from the off chain calculation
+test exchange_invariant_test() {
+  let new_pool_gives = 1010000000 * precision
+  let new_pool_takes = 1000000000 * precision - 9999750604846068207
+  let linear_amplification = 200
+  let old_sum_invariant = 2000000000 * precision
+
+  trace new_pool_gives
+  trace new_pool_takes
+
+  exchange_invariant(
+    new_pool_gives,
+    new_pool_takes,
+    linear_amplification,
+    old_sum_invariant,
+  )?
+}
+
+// Test with the dY from the off chain calculation with the second most insignificant digit increased
+test exchange_invariant_test_1() {
+  let new_pool_gives = 1010000000 * precision
+  let new_pool_takes = 1000000000 * precision - 9999750604846068217
+  let linear_amplification = 200
+  let old_sum_invariant = 2000000000 * precision
+
+  trace new_pool_gives
+  trace new_pool_takes
+
+  !exchange_invariant(
+    new_pool_gives,
+    new_pool_takes,
+    linear_amplification,
+    old_sum_invariant,
+  )?
+}
+
+// Test with the dY from the off chain calculation with the second most insignificant digit decreased
+test exchange_invariant_test_2() {
+  let new_pool_gives = 1010000000 * precision
+  let new_pool_takes = 1000000000 * precision - 9999750604846068197
+  let linear_amplification = 200
+  let old_sum_invariant = 2000000000 * precision
+
+  trace new_pool_gives
+  trace new_pool_takes
+
+  !exchange_invariant(
+    new_pool_gives,
+    new_pool_takes,
+    linear_amplification,
+    old_sum_invariant,
+  )?
 }
