@@ -22,6 +22,7 @@ fn mk_pool_datum() -> StablePoolDatum {
     protocol_fees: (10000000, 0, 0),
     linear_amplification: 10,
     sum_invariant: 10,
+    linear_amplification_manager: None,
   }
 }
 

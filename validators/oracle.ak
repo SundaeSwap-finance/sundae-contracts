@@ -241,6 +241,7 @@ fn mint_oracle(
           protocol_fees: (2_000_000, 0, 0),
           linear_amplification: 10,
           sum_invariant: 10,
+          linear_amplification_manager: None,
         },
       ),
       reference_script: None,

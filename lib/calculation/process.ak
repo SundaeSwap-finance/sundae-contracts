@@ -15,10 +15,35 @@ use cardano/assets.{AssetName, PolicyId, Value, ada_policy_id}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ValidityRange,
 }
-use shared.{Ident, datum_of, is_script, pool_lp_name}
+use shared.{AssetClass, Ident, datum_of, is_script, pool_lp_name}
 use sundae/multisig
 use types/order.{Destination, Fixed, Order, OrderDatum, SignedStrategyExecution}
 use types/pool.{StablePoolDatum}
+
+pub fn pool_input_to_asset_reserves(
+  assets: (AssetClass, AssetClass),
+  protocol_fees: (Int, Int, Int),
+  input: Output,
+  continuation: fn(Int, Int) -> Bool,
+) -> Bool {
+  let (asset_a, asset_b) = assets
+  let (asset_a_policy_id, asset_a_name) = asset_a
+  let (asset_b_policy_id, asset_b_name) = asset_b
+  // If asset_a is ADA, then we need to not consider the protocol fees as part of this
+  // We don't have to check asset_b, because assets are guaranteed to be in lexicographical order.
+  let (fees_ada, fees_a, fees_b) = protocol_fees
+  let reserve_a =
+    assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - fees_a
+  let reserve_b =
+    assets.quantity_of(input.value, asset_b_policy_id, asset_b_name) - fees_b
+  let reserve_a =
+    if asset_a_policy_id == ada_policy_id {
+      reserve_a - fees_ada
+    } else {
+      reserve_a
+    }
+  continuation(reserve_a, reserve_b)
+}
 
 /// Construct the initial pool state for processing a set of orders
 pub fn pool_input_to_state(

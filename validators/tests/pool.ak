@@ -377,6 +377,7 @@ fn scoop(options: ScoopTestOptions) {
         options.edit_initial_sum_invariant,
         2000000000000000000000,
       ),
+      linear_amplification_manager: None,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -393,6 +394,7 @@ fn scoop(options: ScoopTestOptions) {
       protocol_fees: (7_000_000, 0, 0),
       linear_amplification: 200,
       sum_invariant: sum_invariants.2nd,
+      linear_amplification_manager: None,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -601,6 +603,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 200,
       sum_invariant: 2_000_000_000,
+      linear_amplification_manager: None,
     }
   let pool_out_datum =
     StablePoolDatum {
@@ -617,6 +620,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       protocol_fees: (7_000_000, 0, 0),
       linear_amplification: 200,
       sum_invariant: 2_020_005_002,
+      linear_amplification_manager: None,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
@@ -832,6 +836,7 @@ fn withdraw_fees_transaction(
       protocol_fees,
       linear_amplification: 10,
       sum_invariant: 10,
+      linear_amplification_manager: None,
     }
   let normal_input =
     new_tx_input(
@@ -1081,6 +1086,7 @@ fn update_pool_fees_transaction(options: ScoopTestOptions) {
       protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
+      linear_amplification_manager: None,
     }
   let pool_rider = 2_000_000
   // pool_test_tx_input deduplicate?
@@ -1289,6 +1295,7 @@ fn mint_test_modify(
           protocol_fees: (2_000_000, 0, 0),
           linear_amplification: 10,
           sum_invariant: 10,
+          linear_amplification_manager: None,
         },
       ),
     )
@@ -1590,6 +1597,7 @@ fn evaporate_pool_tx(options: ScoopTestOptions, withdraw_flat: Int) {
       protocol_fees: (18_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
+      linear_amplification_manager: None,
     }
   // pool_test_tx_input deduplicate?
   let pool_input =
@@ -1679,6 +1687,7 @@ test attempt_evaporate_pool_test() {
       protocol_fees: (18_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
+      linear_amplification_manager: None,
     }
   // pool_test_tx_input deduplicate?
   let pool_input =
@@ -1750,6 +1759,7 @@ test burn_pool() {
       protocol_fees: (2_000_000, 0, 0),
       linear_amplification: 10,
       sum_invariant: 10,
+      linear_amplification_manager: None,
     }
   let pool_nft_name = shared.pool_nft_name(constants.pool_ident)
   let pool_address = script_address(constants.pool_script_hash)
