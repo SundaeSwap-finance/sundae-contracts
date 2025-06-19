@@ -1,5 +1,6 @@
 use aiken/cbor
 use aiken/collection/dict.{Dict}
+use aiken/collection/list
 use aiken/crypto.{Blake2b_256, Hash}
 use aiken/interval
 use calculation/deposit
@@ -629,7 +630,7 @@ test process_orders_test() {
     }
   let valid_range = interval.between(1, 2)
 
-  let input_order = [(0, None, 2_000_000_500, 999_997)]
+  let input_order = [(0, None, 2000000500507486765233, 999997506238151489)]
   let inputs = [input]
   let outputs = [output]
 
@@ -666,7 +667,7 @@ test process_orders_test() {
       10,
       10,
       200,
-      2_000_000_000,
+      2000000000000000000000,
       0,
       inputs,
       inputs,
@@ -685,7 +686,7 @@ test process_orders_test() {
     strategies == 0,
     delta_fee_a == 0,
     delta_fee_b == 0,
-    sum_invariant == 2_000_000_500,
+    sum_invariant == 2000000500507486765233,
   }
 }
 
@@ -717,18 +718,63 @@ test process_30_shuffled_orders_test() {
       destination: Fixed { address: addr, datum: NoDatum },
       details: order.Swap {
         offer: (ada.1st, ada.2nd, 1_000_000),
-        min_received: (rberry.1st, rberry.2nd, 1_000_000),
+        min_received: (rberry.1st, rberry.2nd, 0),
       },
       extension: Void,
     }
-  // There's no remainder so do_donation totally ignores this Output record
-  let output =
-    Output {
-      address: addr,
-      value: assets.from_lovelace(999_999_999_999_999_999),
-      datum: NoDatum,
-      reference_script: None,
-    }
+
+  let orderdata =
+    [
+      (2000000500507486765233, 999997506238151489, 999497),
+      (2000001001029944741378, 999992519959577641, 999492),
+      (2000001501567325830177, 999987533631563664, 999487),
+      (2000002002119522440490, 999982547194602531, 999482),
+      (2000002502686367485570, 999977560589185042, 999477),
+      (2000003003267634378570, 999972573755798055, 999472),
+      (2000003503863037026279, 999967586634922717, 999467),
+      (2000004004472229821084, 999962599167032686, 999462),
+      (2000004505094807631152, 999957611292592361, 999457),
+      (2000005005730305788844, 999952622952055111, 999452),
+      (2000005506378200077356, 999947634085861500, 999447),
+      (2000006007037906715575, 999942644634437510, 999442),
+      (2000006507708782341165, 999937654538192769, 999437),
+      (2000007008390123991877, 999932663737518777, 999432),
+      (2000007509081169085071, 999927672172787123, 999427),
+      (2000008009781095395474, 999922679784347714, 999422),
+      (2000008510489021031140, 999917686512526989, 999417),
+      (2000009011204004407636, 999912692297626143, 999412),
+      (2000009511925044220449, 999907697079919348, 999407),
+      (2000010012651079415598, 999902700799651963, 999402),
+      (2000010513380989158466, 999897703397038752, 999397),
+      (2000011014113592800837, 999892704812262099, 999392),
+      (2000011514847649846153, 999887704985470221, 999387),
+      (2000012015581859912968, 999882703856775374, 999382),
+      (2000012516314862696614, 999877701366252062, 999377),
+      (2000013017045237929065, 999872697453935247, 999372),
+      (2000013517771505337013, 999867692059818548, 999367),
+      (2000014018492124598129, 999862685123852444, 999362),
+      (2000014519205495295529, 999857676585942474, 999357),
+      (2000015019909956870435, 999852666385947436, 999352),
+    ]
+
+  let total_given =
+    orderdata
+      |> list.map(fn(n) { n.3rd })
+      |> list.reduce(0, fn(a, b) { a + b })
+
+  let outputs =
+    orderdata
+      |> list.map(
+          fn(n) {
+            Output {
+              address: addr,
+              value: assets.from_lovelace(2_000_000)
+                |> assets.add(rberry.1st, rberry.2nd, n.3rd),
+              datum: NoDatum,
+              reference_script: None,
+            }
+          },
+        )
 
   let order_output =
     Output {
@@ -736,8 +782,7 @@ test process_30_shuffled_orders_test() {
         Script(#"4af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"),
         None,
       ),
-      value: assets.from_lovelace(4_000_000)
-        |> assets.add(rberry.1st, rberry.2nd, 1_000_000),
+      value: assets.from_lovelace(5_500_010),
       datum: InlineDatum(order_datum),
       reference_script: None,
     }
@@ -778,7 +823,13 @@ test process_30_shuffled_orders_test() {
       (9, None, 0, 0), (25, None, 0, 0), (6, None, 0, 0), (4, None, 0, 0),
       (3, None, 0, 0), (15, None, 0, 0),
     ]
-  let outputs = [output]
+      |> list.indexed_map(
+          fn(i, x) {
+            // We use the order index as the swap result, so we can check that the swap result is correct
+            expect Some(orderd) = orderdata |> list.at(i)
+            (x.1st, x.2nd, orderd.1st, orderd.2nd)
+          },
+        )
 
   let
     new_a,
@@ -813,7 +864,7 @@ test process_30_shuffled_orders_test() {
       10,
       10,
       200,
-      2_000_000_000,
+      2000000000000000000000,
       0,
       inputs,
       inputs,
@@ -826,13 +877,13 @@ test process_30_shuffled_orders_test() {
     )
 
   and {
-    new_a == 1_030_000_000,
-    new_b == 1_030_000_000,
-    new_lp == 1_000_000_000,
-    simple == 30,
-    strategies == 0,
-    delta_fee_a == 0,
-    delta_fee_b == 0,
-    new_sum_invariant == 10,
+    (new_a == 1_030_000_000)?,
+    (new_b == 1_000_000_000 - total_given)?,
+    (new_lp == 1_000_000_000)?,
+    (simple == 30)?,
+    (strategies == 0)?,
+    (delta_fee_a == 0)?,
+    (delta_fee_b == 0)?,
+    (new_sum_invariant == 2000015019909956870435)?,
   }
 }

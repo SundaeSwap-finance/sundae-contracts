@@ -126,7 +126,7 @@ test swap_different_bid_ask() {
   let output =
     Output {
       address: addr,
-      value: assets.from_lovelace(2_000_000 + 9_899_753),
+      value: assets.from_lovelace(2_000_000 + 9_899_752),
       datum: NoDatum,
       reference_script: None,
     }
@@ -151,9 +151,9 @@ test swap_different_bid_ask() {
       pool_state.quantity_b.2nd,
       pool_state.quantity_b.3rd,
       200,
-      2_000_000_000,
-      2_000_100_000,
-      0,
+      2000000000000000000000,
+      2000100001105151443245,
+      9999750604846068206,
       input,
       order.destination,
       5,
@@ -166,7 +166,7 @@ test swap_different_bid_ask() {
       output,
     )
   // If we charged 5%, from the bid fee, it would be `9_994_750`, but because we charged a higher fee, the user got less in return
-  expect new_a == 1_000_000_000 - 9_899_753
+  expect new_a == 1_000_000_000 - 9_899_752
   expect new_b == 1_000_000_000 + 10_000_000
   expect delta_fee_a == 0
   expect delta_fee_b == 0
