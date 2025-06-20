@@ -61,6 +61,8 @@ type ScoopTestOptions {
   edit_sum_invariants: Option<(Int, Int)>,
   edit_initial_sum_invariant: Option<Int>,
   edit_raw_swap_result: Option<(Int, Int)>,
+  edit_protocol_fee_basis_points: Option<(Int, Int)>,
+  edit_accrued_protocol_fees: Option<(Int, Int, Int)>,
 }
 
 fn default_scoop_test_options() -> ScoopTestOptions {
@@ -87,11 +89,52 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_sum_invariants: None,
     edit_initial_sum_invariant: None,
     edit_raw_swap_result: None,
+    edit_protocol_fee_basis_points: None,
+    edit_accrued_protocol_fees: None,
   }
 }
 
 test ok_scoop_swap_swap() {
   let options = default_scoop_test_options()
+  scoop(options)
+}
+
+test ok_scoop_swap_protocol_fees() {
+  let options =
+    ScoopTestOptions {
+      ..default_scoop_test_options(),
+      edit_protocol_fee_basis_points: Some((10, 10)),
+      edit_accrued_protocol_fees: Some((7_000_000, 0, 19_999)),
+      edit_order_1_out_value: Some(
+        assets.from_lovelace(2_000_000)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              9_984_750,
+            ),
+      ),
+      edit_order_2_out_value: Some(
+        assets.from_lovelace(2_000_000)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              9_984_252,
+            ),
+      ),
+      edit_pool_output_value: Some(
+        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+          |> assets.add(
+              constants.rberry_policy,
+              constants.rberry_asset_name,
+              1_000_000_000 - ( 9_994_750 + 9_994_251 ) + 19_999,
+            )
+          |> assets.add(
+              constants.pool_script_hash,
+              shared.pool_nft_name(constants.pool_ident),
+              1,
+            ),
+      ),
+    }
   scoop(options)
 }
 
@@ -350,6 +393,10 @@ fn scoop(options: ScoopTestOptions) {
   let user_addr = wallet_address(constants.payment_key)
   let owner = multisig.Signature(constants.payment_key)
   let fees = option.or_else(options.edit_swap_fees, (5, 5))
+  let protocol_fee_basis_points =
+    option.or_else(options.edit_protocol_fee_basis_points, (0, 0))
+  let accrued_protocol_fees =
+    option.or_else(options.edit_accrued_protocol_fees, (7_000_000, 0, 0))
   let sum_invariants =
     option.or_else(
       options.edit_sum_invariants,
@@ -369,7 +416,7 @@ fn scoop(options: ScoopTestOptions) {
       ),
       circulating_lp: 1_000_000_000,
       lp_fee_basis_points: (fees.1st, fees.2nd),
-      protocol_fee_basis_points: (0, 0),
+      protocol_fee_basis_points,
       fee_manager: None,
       market_open: 0,
       protocol_fees: (2_000_000, 0, 0),
@@ -389,10 +436,10 @@ fn scoop(options: ScoopTestOptions) {
       ),
       circulating_lp: 1_000_000_000,
       lp_fee_basis_points: (fees.1st, fees.2nd),
-      protocol_fee_basis_points: (0, 0),
+      protocol_fee_basis_points,
       fee_manager: None,
       market_open: 0,
-      protocol_fees: (7_000_000, 0, 0),
+      protocol_fees: accrued_protocol_fees,
       linear_amplification: 200,
       sum_invariant: sum_invariants.2nd,
       linear_amplification_manager: None,

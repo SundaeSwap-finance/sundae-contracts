@@ -247,6 +247,8 @@ validator pool(
             initial_fee_a + delta_fee_a,
             initial_fee_b + delta_fee_b,
           )
+        trace actual_protocol_fees
+        trace expected_protocol_fees
         expect actual_protocol_fees == expected_protocol_fees
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
