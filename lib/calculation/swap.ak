@@ -99,7 +99,6 @@ pub fn do_swap(
     assets.quantity_of(input_value, min_received_1st, min_received_2nd)
   let taken_output =
     assets.quantity_of(output_value, min_received_1st, min_received_2nd)
-
   // Now, if one of the assets is ADA, we need to account for the fact
   // that this value isn't taking part in the trade, so we subtract it
   // from the order gives, or add it to the order takes
@@ -115,7 +114,6 @@ pub fn do_swap(
   let order_give = given_input - given_surplus
   // And the amount the user received is the amount on the output, minus the surplus that was already on the input
   let order_takes = taken_output - taken_surplus
-
   // Make sure the amount given is at most the users offer limit, and the amount taken is greater than the users order minimum
   // Note that we check that the order give amount is the minimum of the offer amount and the given input
   // This ensures that the scooper doesn't "under-execute" the swap; we can swap *less* than the offer amount,
@@ -140,16 +138,13 @@ pub fn do_swap(
   // swap_result = order_takes / ((10000 - fee_bp) / 10000)
   // swap_result = order_takes * 10000 / (10000 - (lp_fee_rate + protocol_fee_rate))
   let total_fee_rate = lp_fee_rate + protocol_fee_rate
-
   let swap_result = raw_swap_result / precision
-
   // let difference = 10000 - total_fee_rate
   // let swap_result = order_takes * 10000 / difference
   // We add precision - 1 to the numerator to ensure that we round up
   let calculated_fees = ( swap_result * total_fee_rate + 9999 ) / 10000
 
   let total_fees = swap_result - order_takes
-
   expect (calculated_fees == total_fees)?
 
   let protocol_fees =
@@ -158,12 +153,12 @@ pub fn do_swap(
     } else {
       0
     }
-  let lp_fees =
-    if total_fee_rate > 0 {
-      total_fees - protocol_fees
-    } else {
-      0
-    }
+  // let _lp_fees =
+  //   if total_fee_rate > 0 {
+  //     total_fees - protocol_fees
+  //   } else {
+  //     0
+  //   }
   // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
   let pool_deduction = order_takes + protocol_fees
 
