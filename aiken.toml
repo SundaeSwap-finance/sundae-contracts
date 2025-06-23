@@ -1,6 +1,6 @@
 name = "sundae/contracts"
 version = "0.0.0"
-compiler = "v1.1.13"
+compiler = "v1.1.17"
 plutus = "v3"
 license = "Apache-2.0"
 description = "Experimental port of SundaeSwap to Aiken"
@@ -12,7 +12,7 @@ platform = "github"
 
 [[dependencies]]
 name = "aiken-lang/stdlib"
-version = "v2"
+version = "v2.2.0"
 source = "github"
 
 [[dependencies]]
@@ -27,7 +27,7 @@ source = "github"
 
 [[dependencies]]
 name = "aiken-lang/fuzz"
-version = "v2"
+version = "main"
 source = "github"
 
 [config]
