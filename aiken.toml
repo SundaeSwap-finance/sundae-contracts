@@ -1,5 +1,7 @@
 name = "sundae/contracts"
 version = "0.0.0"
+compiler = "v1.1.13"
+plutus = "v3"
 license = "Apache-2.0"
 description = "Experimental port of SundaeSwap to Aiken"
 
@@ -22,3 +24,10 @@ source = "github"
 name = "KtorZ/tx_util"
 version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
 source = "github"
+
+[[dependencies]]
+name = "aiken-lang/fuzz"
+version = "v2"
+source = "github"
+
+[config]
