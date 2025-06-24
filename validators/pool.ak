@@ -1006,6 +1006,10 @@ validator manage(settings_policy_id: PolicyId) {
           pool_quantity_b,
         <- pool_input_to_asset_reserves(assets, protocol_fees, pool_input)
 
+        trace pool_quantity_a
+        trace pool_quantity_b
+        trace linear_amplification
+        trace sum_invariant
         expect
           liquidity_invariant(
             pool_quantity_a,

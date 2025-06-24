@@ -25,8 +25,8 @@ pub fn pool_input_to_asset_reserves(
   assets: (AssetClass, AssetClass),
   protocol_fees: (Int, Int, Int),
   input: Output,
-  continuation: fn(Int, Int) -> Bool,
-) -> Bool {
+  continuation: fn(Int, Int) -> a,
+) -> a {
   let (asset_a, asset_b) = assets
   let (asset_a_policy_id, asset_a_name) = asset_a
   let (asset_b_policy_id, asset_b_name) = asset_b

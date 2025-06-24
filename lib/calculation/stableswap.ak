@@ -53,6 +53,8 @@ pub fn liquidity_invariant(
     sixteen_a_x_y * d_plus_one + d_plus_one_cubed - (
       sixteen_a_x_y_x_plus_y + four_x_y * d_plus_one
     )
+  trace f1
+  trace f2
   and {
     f1 <= 0,
     f2 > 0,
