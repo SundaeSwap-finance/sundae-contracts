@@ -2,6 +2,7 @@ use aiken/collection/list.{for_each}
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
 use aiken/fuzz.{and_then, constant}
 use aiken/fuzz/scenario.{Label, Scenario}
+use aiken/primitive/string
 use calculation/process.{pool_input_to_asset_reserves}
 use calculation/stableswap.{liquidity_invariant, precision}
 use cardano/address.{Credential}
@@ -16,6 +17,7 @@ use sundae/multisig.{MultisigScript}
 use tests/constants
 use tests/examples/ex_settings.{mk_valid_settings_input}
 use types/pool.{ManageRedeemer, StablePoolDatum}
+use types/settings.{SettingsDatum}
 
 const settings_policy_id: PolicyId =
   #"00000000000000000000000000000000000000000000000000000000"
@@ -45,16 +47,32 @@ fn run_as(txs: List<Transaction>) {
 
 type State {
   labels: List<Label>,
+  action: ManageRedeemer,
   done: Bool,
 }
 
-fn default_state() -> State {
-  State { labels: [], done: False }
+fn default_state(action: ManageRedeemer) -> State {
+  State { labels: [], action, done: False }
 }
 
-test prop_pool_manage_ok(ok via scenario.ok(default_state(), step)) {
+test prop_pool_manage_adjust_linear_ok(
+  ok via scenario.ok(
+    default_state(ManageRedeemer.AdjustLinearAmplification(0)),
+    step,
+  ),
+) {
   run_as(ok)
   for_each(ok, post_conditions)
+}
+
+test prop_pool_manage_adjust_linear_ko(
+  (labels, ko) via scenario.ko(
+    default_state(ManageRedeemer.AdjustLinearAmplification(0)),
+    step,
+  ),
+) fail {
+  for_each(list.unique(labels), fuzz.label)
+  run_as(ko)
 }
 
 fn post_conditions(scenario: Transaction) {
@@ -91,12 +109,47 @@ fn step(st: State) -> Fuzzer<Scenario<State>> {
   if st.done {
     constant(Scenario.Done)
   } else {
-    let action <- and_then(manage_redeemer())
+    let action <- and_then(manage_redeemer(st.action))
+
+    let pool_input_index =
+      when action is {
+        ManageRedeemer.AdjustLinearAmplification { pool_input } -> pool_input
+        ManageRedeemer.UpdatePoolFees { pool_input } -> pool_input
+        ManageRedeemer.WithdrawFees { pool_input, .. } -> pool_input
+      }
+
+    let (st, dummy_inputs) <-
+      scenario.fork_and_then(
+        128,
+        fn() {
+          fuzz.both(
+            constant(st),
+            fuzz.list_between(
+              cardano.input(),
+              pool_input_index,
+              pool_input_index,
+            ),
+          )
+        },
+        fn() {
+          fuzz.both(
+            constant(
+              State { ..st, labels: [@"Wrong pool input index", ..st.labels] },
+            ),
+            fuzz.list_between(
+              cardano.input(),
+              pool_input_index + 1,
+              pool_input_index + 1,
+            ),
+          )
+        },
+      )
 
     let (st, pool_input, pool_datum) <-
       and_then(scenario_pool_input_baseline(st, action))
 
-    let (st, settings_input) <- and_then(scenario_settings_input_baseline(st))
+    let (st, settings_input, settings_datum) <-
+      and_then(scenario_settings_input_baseline(st))
 
     let withdrawals <- and_then(scenario_withdrawals_baseline())
 
@@ -106,15 +159,17 @@ fn step(st: State) -> Fuzzer<Scenario<State>> {
       and_then(scenario_pool_output_baseline(st, pool_input, action))
 
     let (st, extra_signatories) <-
-      and_then(scenario_signatories_baseline(st, action, pool_datum))
+      and_then(
+        scenario_signatories_baseline(st, action, pool_datum, settings_datum),
+      )
 
     constant(
       Scenario.Step(
         st.labels,
-        State { done: True, labels: [] },
+        State { done: True, action, labels: [] },
         Transaction {
           ..transaction.placeholder,
-          inputs: [pool_input],
+          inputs: list.concat(dummy_inputs, [pool_input]),
           reference_inputs: [settings_input],
           outputs: [pool_output],
           withdrawals: withdrawals,
@@ -155,43 +210,51 @@ fn scenario_signatories_baseline(
   st: State,
   action: ManageRedeemer,
   pool_datum: StablePoolDatum,
+  settings_datum: SettingsDatum,
 ) -> Fuzzer<(State, List<VerificationKeyHash>)> {
   let signatories =
     when action is {
       ManageRedeemer.AdjustLinearAmplification { .. } ->
         multisig_signatories(pool_datum.linear_amplification_manager)
-      _ -> fuzz.list_between(cardano.verification_key_hash(), 1, 5)
+      ManageRedeemer.UpdatePoolFees { .. } ->
+        multisig_signatories(pool_datum.fee_manager)
+      ManageRedeemer.WithdrawFees { .. } ->
+        multisig_signatories(Some(settings_datum.treasury_admin))
     }
 
   fuzz.both(constant(st), signatories)
 }
 
 fn get_D_recursive(d: Int, x: Int, y: Int, sum: Int, ann: Int, i: Int) -> Int {
-  expect i < 255
-  let d_p = d * d * d / ( 4 * x * y )
-  let d_prev = d
-  let d =
-    ( ann * sum / 100 + d_p * 2 ) * d / ( ( ann - 100 ) * d / 100 + 3 * d_p )
-  if d > d_prev {
-    if d - d_prev <= 1 {
-      if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
-        d
+  if i < 255 {
+    let d_p = d * d * d / ( 4 * x * y )
+    let d_prev = d
+    let d =
+      ( ann * sum / 100 + d_p * 2 ) * d / ( ( ann - 100 ) * d / 100 + 3 * d_p )
+    if d > d_prev {
+      if d - d_prev <= 1 {
+        if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
+          d
+        } else {
+          d - 1
+        }
       } else {
-        d - 1
+        get_D_recursive(d, x, y, sum, ann, i + 1)
       }
     } else {
-      get_D_recursive(d, x, y, sum, ann, i + 1)
+      if d_prev - d <= 1 {
+        if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
+          d
+        } else {
+          d - 1
+        }
+      } else {
+        get_D_recursive(d, x, y, sum, ann, i + 1)
+      }
     }
   } else {
-    if d_prev - d <= 1 {
-      if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
-        d
-      } else {
-        d - 1
-      }
-    } else {
-      get_D_recursive(d, x, y, sum, ann, i + 1)
-    }
+    trace @"get_D_recursive: reached max iterations"
+    d
   }
 }
 
@@ -227,10 +290,58 @@ fn scenario_pool_output_baseline(
       input_datum.protocol_fees,
       pool_input.output,
     )
-  let sum_invariant =
-    get_D(input_datum.linear_amplification, reserve_a, reserve_b)
+  let (st, new_linear_amplification) <-
+    and_then(
+      when action is {
+        ManageRedeemer.AdjustLinearAmplification { .. } ->
+          scenario.fork(
+            128,
+            fn() { fuzz.both(constant(st), fuzz.int_at_least(1)) },
+            fn() {
+              fuzz.both(
+                constant(
+                  State {
+                    ..st,
+                    labels: [
+                      @"Linear Amplification set to 0 or lower",
+                      ..st.labels
+                    ],
+                  },
+                ),
+                fuzz.int_at_most(0),
+              )
+            },
+          )
+        _ ->
+          scenario.fork(
+            128,
+            fn() {
+              fuzz.both(
+                constant(st),
+                constant(input_datum.linear_amplification),
+              )
+            },
+            fn() {
+              fuzz.both(
+                constant(
+                  State {
+                    ..st,
+                    labels: [@"Linear Amplification changed", ..st.labels],
+                  },
+                ),
+                fuzz.int(),
+              )
+            },
+          )
+      },
+    )
+  let sum_invariant = get_D(new_linear_amplification, reserve_a, reserve_b)
   let output_datum =
-    StablePoolDatum { ..input_datum, sum_invariant: sum_invariant }
+    StablePoolDatum {
+      ..input_datum,
+      linear_amplification: new_linear_amplification,
+      sum_invariant: sum_invariant,
+    }
 
   let output =
     cardano.output_with(
@@ -297,10 +408,68 @@ fn asset_class() -> Fuzzer<(PolicyId, AssetName)> {
 }
 
 //TODO: fuzzify
-fn scenario_settings_input_baseline(st: State) -> Fuzzer<(State, Input)> {
-  fuzz.both(
+fn scenario_settings_input_baseline(
+  st: State,
+) -> Fuzzer<(State, Input, SettingsDatum)> {
+  let settings_datum =
+    fuzz.map5(
+      multisig(),
+      cardano.address_with(cardano.verification_key(), constant(None)),
+      multisig(),
+      cardano.address_with(cardano.verification_key(), constant(None)),
+      fuzz.list(cardano.verification_key()),
+      fn(
+        settings_admin,
+        metadata_admin,
+        treasury_admin,
+        treasury_address,
+        authorized_staking_keys,
+      ) {
+        SettingsDatum {
+          settings_admin,
+          metadata_admin,
+          treasury_admin,
+          treasury_address,
+          treasury_allowance: (1, 10),
+          authorized_scoopers: Some([constants.scooper]),
+          authorized_staking_keys,
+          base_fee: 0,
+          simple_fee: 2_500_000,
+          strategy_fee: 5_000_000,
+          pool_creation_fee: 0,
+          extensions: Void,
+        }
+      },
+    )
+
+  fuzz.tuple3(
     constant(st),
     constant(mk_valid_settings_input([constants.scooper], 1)),
+    settings_datum,
+  )
+}
+
+fn scenario_multisig_baseline(
+  st: State,
+) -> Fuzzer<(State, Option<MultisigScript>)> {
+  fuzz.both(constant(st), fuzz.map(multisig(), fn(ms) { Some(ms) }))
+}
+
+fn scenario_none_multisig(
+  st: State,
+  multisig_type: String,
+) -> Fuzzer<(State, Option<MultisigScript>)> {
+  constant(
+    (
+      State {
+        ..st,
+        labels: [
+          string.concat(multisig_type, @" Multisig set to None"),
+          ..st.labels
+        ],
+      },
+      None,
+    ),
   )
 }
 
@@ -319,12 +488,18 @@ fn scenario_pool_datum_baseline(
     fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
   let fee_manager = fuzz.option(multisig())
   let linear_amplification = fuzz.int_at_least(1)
-  let linear_amplification_manager =
-    when action is {
-      ManageRedeemer.AdjustLinearAmplification { .. } ->
-        fuzz.map(multisig(), fn(ms) { Some(ms) })
-      _ -> fuzz.option(multisig())
-    }
+  let (st, linear_amplification_manager) <-
+    and_then(
+      when action is {
+        ManageRedeemer.AdjustLinearAmplification { .. } ->
+          scenario.fork(
+            128,
+            fn() { scenario_multisig_baseline(st) },
+            fn() { scenario_none_multisig(st, @"Linear Amplification Manager") },
+          )
+        _ -> fuzz.both(constant(st), fuzz.option(multisig()))
+      },
+    )
   let protocol_fees <-
     and_then(
       fuzz.tuple3(
@@ -335,14 +510,13 @@ fn scenario_pool_datum_baseline(
     )
   let pool_datum <-
     and_then(
-      fuzz.map7(
+      fuzz.map6(
         assets,
         circulating_lp,
         lp_fee_basis_points,
         protocol_fee_basis_points,
         fee_manager,
         linear_amplification,
-        linear_amplification_manager,
         fn(
           assets,
           circulating_lp,
@@ -350,7 +524,6 @@ fn scenario_pool_datum_baseline(
           protocol_fee_basis_points,
           fee_manager,
           linear_amplification,
-          linear_amplification_manager,
         ) -> StablePoolDatum {
           StablePoolDatum {
             identifier: pool_identifier,
@@ -437,22 +610,34 @@ fn scenario_pool_input_baseline(
   fuzz.tuple3(constant(st), pool_input, constant(pool_datum))
 }
 
-fn manage_redeemer() -> Fuzzer<ManageRedeemer> {
-  let amount_1 <- and_then(fuzz.int_at_least(0))
-  let amount_2 <- and_then(fuzz.int_at_least(0))
-  let amount_3 <- and_then(fuzz.int_at_least(0))
-  // fuzz.one_of(
-  //   [
-  //     ManageRedeemer.WithdrawFees {
-  //       amount: (amount_1, amount_2, amount_3),
-  //       treasury_output: 1,
-  //       pool_input: 0,
-  //     },
-  //     ManageRedeemer.UpdatePoolFees { pool_input: 0 },
-  //     ManageRedeemer.AdjustLinearAmplification { pool_input: 0 },
-  //   ],
-  // )
-  constant(ManageRedeemer.AdjustLinearAmplification { pool_input: 0 })
+fn manage_redeemer(action: ManageRedeemer) -> Fuzzer<ManageRedeemer> {
+  when action is {
+    ManageRedeemer.AdjustLinearAmplification { .. } ->
+      fuzz.map(
+        fuzz.int_between(0, 10),
+        fn(pool_input) {
+          ManageRedeemer.AdjustLinearAmplification { pool_input }
+        },
+      )
+    ManageRedeemer.UpdatePoolFees { .. } ->
+      fuzz.map(
+        fuzz.int_between(0, 10),
+        fn(pool_input) { ManageRedeemer.UpdatePoolFees { pool_input } },
+      )
+    ManageRedeemer.WithdrawFees { .. } ->
+      fuzz.map3(
+        fuzz.tuple3(
+          fuzz.int_at_least(0),
+          fuzz.int_at_least(0),
+          fuzz.int_at_least(0),
+        ),
+        fuzz.int_between(0, 10),
+        fuzz.int_between(0, 10),
+        fn(amount, treasury_output, pool_input) {
+          ManageRedeemer.WithdrawFees { amount, treasury_output, pool_input }
+        },
+      )
+  }
 }
 
 test simple_d_test() {

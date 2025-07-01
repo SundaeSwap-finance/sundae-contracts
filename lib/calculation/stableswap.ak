@@ -32,6 +32,10 @@ pub fn liquidity_invariant(
   linear_amplification: Int,
   new_sum_invariant: Int,
 ) {
+  trace new_pool_gives
+  trace new_pool_takes
+  trace linear_amplification
+  trace new_sum_invariant
   let new_pool_gives_p = new_pool_gives * precision
   let new_pool_takes_p = new_pool_takes * precision
   // 4 * A * 4 * (x*y) * D + D^3 - (4(x*y) * (4A(x + y) + D))
