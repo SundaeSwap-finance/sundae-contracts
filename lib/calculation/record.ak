@@ -1,5 +1,6 @@
-use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
+use cardano/assets.{ada_asset_name, ada_policy_id}
 use cardano/transaction.{Output}
+use shared.{AssetClass}
 use types/order.{Destination, Fixed, Self}
 
 pub fn check_record(
@@ -7,7 +8,7 @@ pub fn check_record(
   destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
-  asset_id: (PolicyId, AssetName),
+  asset_id: AssetClass,
 ) -> Bool {
   // Make sure all of the funds from the input make it into the oracle output
   // Note that the accuracy of the oracle is handled by the mint policy, since it has easier

@@ -65,6 +65,10 @@ pub fn liquidity_invariant(
   }
 }
 
+test liquidity_invariant_test_0() {
+  liquidity_invariant(20_000_000, 20_000_000, 200, 40000000000000000000)?
+}
+
 pub fn exchange_invariant(
   new_pool_gives: Int,
   old_pool_takes: Int,
