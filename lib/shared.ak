@@ -29,6 +29,9 @@ pub type Rational =
 pub type SingletonValue =
   (PolicyId, AssetName, Int)
 
+// The precision used when working with basis points
+pub const bp_precision = 10000
+
 /// Convert a singleton value to an actual value; convenient for comparing or adding together values
 pub fn to_value((p, a, i): SingletonValue) -> assets.Value {
   assets.from_asset(p, a, i)
