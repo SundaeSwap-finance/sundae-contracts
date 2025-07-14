@@ -153,46 +153,39 @@ pub fn do_swap(
       0
     }
 
-  // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
-  let pool_deduction = order_takes + protocol_fees
+  let lp_fees = total_fees - protocol_fees
 
   // Enforce that the stableswap invariant holds;
   // this ensures that:
   //  - The order_takes was computed by the scooper correctly
   //  - The new sum invariant was computed by the scooper correctly
   if a_to_b {
+    let new_pool_quantity_a = pool_quantity_a + order_give
+    let new_pool_quantity_b = pool_quantity_b - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        ( pool_quantity_a + order_give ) * calc_precision,
-        ( pool_quantity_b - pool_deduction ) * calc_precision,
+        new_pool_quantity_a * calc_precision,
+        new_pool_quantity_b * calc_precision,
         pool_quantity_b * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(
-      pool_quantity_a + order_give,
-      pool_quantity_b - pool_deduction,
-      0,
-      protocol_fees,
-    )
+    continuation(new_pool_quantity_a, new_pool_quantity_b, 0, protocol_fees)
   } else {
+    let new_pool_quantity_b = pool_quantity_b + order_give
+    let new_pool_quantity_a = pool_quantity_a - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        ( pool_quantity_b + order_give ) * calc_precision,
-        ( pool_quantity_a - pool_deduction ) * calc_precision,
+        new_pool_quantity_b * calc_precision,
+        new_pool_quantity_a * calc_precision,
         pool_quantity_a * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(
-      pool_quantity_a - pool_deduction,
-      pool_quantity_b + order_give,
-      protocol_fees,
-      0,
-    )
+    continuation(new_pool_quantity_a, new_pool_quantity_b, protocol_fees, 0)
   }
 }
