@@ -4,7 +4,7 @@ use aiken/fuzz.{and_then, constant}
 use aiken/fuzz/scenario.{Label, Scenario}
 use aiken/primitive/string
 use calculation/process.{pool_input_to_asset_reserves}
-use calculation/stableswap.{liquidity_invariant, precision}
+use calculation/stableswap.{liquidity_invariant}
 use cardano/address.{Credential}
 use cardano/assets.{
   AssetName, Lovelace, PolicyId, Value, ada_asset_name, ada_policy_id,
@@ -12,7 +12,7 @@ use cardano/assets.{
 use cardano/fuzz as cardano
 use cardano/transaction.{InlineDatum, Input, Output, ScriptPurpose, Transaction}
 use pool as handlers
-use shared.{Ident}
+use shared.{Ident, calc_precision}
 use sundae/multisig.{MultisigScript}
 use tests/constants
 use tests/examples/ex_settings.{mk_valid_settings_input}
@@ -120,7 +120,7 @@ fn step(st: State) -> Fuzzer<Scenario<State>> {
 
     let (st, dummy_inputs) <-
       scenario.fork_and_then(
-        128,
+        200,
         fn() {
           fuzz.both(
             constant(st),
@@ -233,7 +233,7 @@ fn get_D_recursive(d: Int, x: Int, y: Int, sum: Int, ann: Int, i: Int) -> Int {
       ( ann * sum / 100 + d_p * 2 ) * d / ( ( ann - 100 ) * d / 100 + 3 * d_p )
     if d > d_prev {
       if d - d_prev <= 1 {
-        if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
+        if liquidity_invariant(x, y, ann / 400, d) {
           d
         } else {
           d - 1
@@ -243,7 +243,7 @@ fn get_D_recursive(d: Int, x: Int, y: Int, sum: Int, ann: Int, i: Int) -> Int {
       }
     } else {
       if d_prev - d <= 1 {
-        if liquidity_invariant(x / precision, y / precision, ann / 400, d) {
+        if liquidity_invariant(x, y, ann / 400, d) {
           d
         } else {
           d - 1
@@ -259,8 +259,8 @@ fn get_D_recursive(d: Int, x: Int, y: Int, sum: Int, ann: Int, i: Int) -> Int {
 }
 
 fn get_D(a: Int, x: Int, y: Int) -> Int {
-  let x = x * precision
-  let y = y * precision
+  let x = x * calc_precision
+  let y = y * calc_precision
   let a = a * 200
   let sum: Int = x + y
   if sum == 0 {
@@ -295,7 +295,7 @@ fn scenario_pool_output_baseline(
       when action is {
         ManageRedeemer.AdjustLinearAmplification { .. } ->
           scenario.fork(
-            128,
+            200,
             fn() { fuzz.both(constant(st), fuzz.int_at_least(1)) },
             fn() {
               fuzz.both(
@@ -314,7 +314,7 @@ fn scenario_pool_output_baseline(
           )
         _ ->
           scenario.fork(
-            128,
+            200,
             fn() {
               fuzz.both(
                 constant(st),
@@ -493,7 +493,7 @@ fn scenario_pool_datum_baseline(
       when action is {
         ManageRedeemer.AdjustLinearAmplification { .. } ->
           scenario.fork(
-            128,
+            200,
             fn() { scenario_multisig_baseline(st) },
             fn() { scenario_none_multisig(st, @"Linear Amplification Manager") },
           )
@@ -643,17 +643,19 @@ fn manage_redeemer(action: ManageRedeemer) -> Fuzzer<ManageRedeemer> {
 test simple_d_test() {
   let d = get_D(16, 197, 6)
   trace d
-  expect liquidity_invariant(197, 6, 16, d)
+  expect liquidity_invariant(197 * calc_precision, 6 * calc_precision, 16, d)
 }
 
 test simple_d_test_plus() fail {
   let d = get_D(16, 197, 6)
   trace d
-  expect liquidity_invariant(197, 6, 16, d + 1)
+  expect
+    liquidity_invariant(197 * calc_precision, 6 * calc_precision, 16, d + 1)
 }
 
 test simple_d_test_minus() fail {
   let d = get_D(16, 197, 6)
   trace d
-  expect liquidity_invariant(197, 6, 16, d - 1)
+  expect
+    liquidity_invariant(197 * calc_precision, 6 * calc_precision, 16, d - 1)
 }

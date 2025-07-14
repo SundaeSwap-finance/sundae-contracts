@@ -15,8 +15,8 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, Withdraw,
 }
 use shared.{
-  AssetClass, Ident, count_orders, own_input_index, pool_lp_name, pool_nft_name,
-  spent_output,
+  AssetClass, Ident, calc_precision, count_orders, own_input_index, pool_lp_name,
+  pool_nft_name, spent_output,
 }
 use sundae/multisig
 use types/pool.{
@@ -1006,14 +1006,10 @@ validator manage(settings_policy_id: PolicyId) {
           pool_quantity_b,
         <- pool_input_to_asset_reserves(assets, protocol_fees, pool_input)
 
-        trace pool_quantity_a
-        trace pool_quantity_b
-        trace linear_amplification
-        trace sum_invariant
         expect
           liquidity_invariant(
-            pool_quantity_a,
-            pool_quantity_b,
+            pool_quantity_a * calc_precision,
+            pool_quantity_b * calc_precision,
             linear_amplification,
             sum_invariant,
           )

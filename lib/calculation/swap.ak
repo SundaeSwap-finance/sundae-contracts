@@ -1,8 +1,8 @@
 use aiken/math
-use calculation/stableswap.{precision}
+use calculation/stableswap
 use cardano/assets.{AssetName, PolicyId, ada_policy_id}
 use cardano/transaction.{Output}
-use shared.{SingletonValue, bp_precision}
+use shared.{SingletonValue, bp_precision, calc_precision}
 use types/order.{Destination, Fixed, Self}
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
@@ -127,7 +127,7 @@ pub fn do_swap(
       (order_takes >= min_received_3rd)?,
     }
 
-  let swap_result = raw_swap_result / precision
+  let swap_result = raw_swap_result / calc_precision
 
   // We calculate a percentage fee for liquidity providers and the protocol
   let total_fee_rate = lp_fee_rate + protocol_fee_rate
@@ -163,9 +163,9 @@ pub fn do_swap(
   if a_to_b {
     expect
       stableswap.swap_invariant(
-        pool_quantity_a + order_give,
-        pool_quantity_b - pool_deduction,
-        pool_quantity_b,
+        ( pool_quantity_a + order_give ) * calc_precision,
+        ( pool_quantity_b - pool_deduction ) * calc_precision,
+        pool_quantity_b * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,
@@ -180,9 +180,9 @@ pub fn do_swap(
   } else {
     expect
       stableswap.swap_invariant(
-        pool_quantity_b + order_give,
-        pool_quantity_a - pool_deduction,
-        pool_quantity_a,
+        ( pool_quantity_b + order_give ) * calc_precision,
+        ( pool_quantity_a - pool_deduction ) * calc_precision,
+        pool_quantity_a * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,

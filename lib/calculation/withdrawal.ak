@@ -1,9 +1,9 @@
 use aiken/math
+use calculation/stableswap
 use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use cardano/transaction.{Output}
-use shared.{SingletonValue}
+use shared.{SingletonValue, calc_precision}
 use types/order.{Destination, Fixed, Self}
-use calculation/stableswap
 
 /// Execute a withdrawal order
 ///
@@ -92,12 +92,14 @@ pub fn do_withdrawal(
   let new_pool_b = pool_quantity_b - withdrawn_b
 
   // TODO: do I need to check some relationship between withdrawn, and the delta between sum_invariant and next_sum_invariant?
-  expect stableswap.liquidity_invariant(new_pool_a, new_pool_b, linear_amplification, next_sum_invariant)
+  expect
+    stableswap.liquidity_invariant(
+      new_pool_a * calc_precision,
+      new_pool_b * calc_precision,
+      linear_amplification,
+      next_sum_invariant,
+    )
 
   // Return the final pool state
-  continuation(
-    new_pool_a,
-    new_pool_b,
-    pool_quantity_lp - withdrawn,
-  )
+  continuation(new_pool_a, new_pool_b, pool_quantity_lp - withdrawn)
 }
