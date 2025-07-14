@@ -1034,8 +1034,8 @@ validator manage(settings_policy_id: PolicyId) {
             withdrawals,
           )
 
-        // Make sure the linear amplification is in the sane range
-        expect linear_amplification > 0 && linear_amplification <= 10000
+        // Make sure the linear amplification is valid
+        expect linear_amplification > 0
 
         // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
         and {
