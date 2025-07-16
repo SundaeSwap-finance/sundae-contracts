@@ -134,6 +134,14 @@ validator pool(
         // Make sure it's not negative, for example if base_fee was negative
         expect amortized_base_fee >= 0
 
+        let order_outputs =
+          // The outputs that the scooper is expected to process, which are the outputs after the pool output
+          // This is a list of outputs, so we can use it to check that the scooper processed the right outputs
+          list.drop(outputs, 1)
+
+        // Make sure that the scooper didn't provide any outputs with a reference script
+        expect list.all(order_outputs, fn(o) { o.reference_script == None })
+
         // Construct the initial pool state from the datum and the locked values
         // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
         // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
@@ -218,7 +226,7 @@ validator pool(
             // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
             inputs,
             // The list of outputs we should be comparing orders against
-            list.drop(outputs, 1),
+            order_outputs,
             // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
             0,
             // The accumulated count of "simple" orders, for calculating the fee; set to 0 to start, but incremented in each recursion
@@ -368,6 +376,9 @@ validator pool(
       CreatePool { assets, pool_output, metadata_output } -> {
         // And grab the pool output
         expect Some(pool_output) = list.at(transaction.outputs, pool_output)
+
+        // Ensure the pool has no reference script attached
+        expect pool_output.reference_script == None
 
         // Check that the pool datum is inline, because a datum hash could brick this pool
         expect InlineDatum(d) = pool_output.datum
@@ -608,6 +619,7 @@ fn find_pool_output(outputs: List<Output>) -> (Output, StablePoolDatum) {
   // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
   // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
   expect Some(pool_output) = list.head(outputs)
+  expect pool_output.reference_script == None
   expect InlineDatum(output_datum) = pool_output.datum
   expect output_datum: StablePoolDatum = output_datum
   (pool_output, output_datum)
