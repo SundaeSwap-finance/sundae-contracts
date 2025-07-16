@@ -15,7 +15,7 @@ use cardano/transaction.{
   Transaction, Withdraw,
 }
 use pool as pool_validator
-use shared.{pool_lp_name}
+use shared.{pool_lp_name, get_D}
 use sundae/multisig
 use tests/constants
 use tests/examples/ex_settings.{
@@ -1341,6 +1341,10 @@ fn mint_test_modify(
   let pool_id = pool_ident_from_input(funds_input)
   let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) =
     shared.pool_token_names(pool_id)
+  let reserve_a = 1_000_000_000
+  let reserve_b = 1_000_000_000
+  let linear_amplification = 10
+  let sum_invariant = get_D(linear_amplification, reserve_a, reserve_b)
   let inline_pool_datum =
     modify_datum(
       InlineDatum(
@@ -1356,8 +1360,8 @@ fn mint_test_modify(
           fee_manager: None,
           market_open: 0,
           protocol_fees: (2_000_000, 0, 0),
-          linear_amplification: 10,
-          sum_invariant: 10,
+          linear_amplification,
+          sum_invariant,
           linear_amplification_manager: None,
         },
       ),
@@ -1366,10 +1370,10 @@ fn mint_test_modify(
     assets.from_asset(
       constants.rberry_policy,
       constants.rberry_asset_name,
-      1_000_000_000,
+      reserve_b,
     )
       |> assets.add(constants.pool_script_hash, new_pool_nft_token, 1)
-      |> assets.merge(assets.from_lovelace(1_002_000_000))
+      |> assets.merge(assets.from_lovelace(reserve_a + 2_000_000))
   let pool_output =
     new_tx_output(pool_address, 0, inline_pool_datum)
       // 1_002_000_000 = 1_000_000_000 ADA for pool + 2_000_000 ADA for protocol_fees

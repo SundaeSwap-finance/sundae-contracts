@@ -530,6 +530,13 @@ validator pool(
             shared.fees_in_legal_range(
               pool_output_datum.protocol_fee_basis_points.2nd,
             ),
+            pool_output_datum.linear_amplification > 0,
+            liquidity_invariant(
+              reserve_a * calc_precision,
+              reserve_b * calc_precision,
+              pool_output_datum.linear_amplification,
+              pool_output_datum.sum_invariant,
+            ),
           }
 
         // Make sure that the pool output is paid into own_policy_id (the pool script, remember this is a multivalidator)
