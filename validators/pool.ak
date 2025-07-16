@@ -467,8 +467,11 @@ validator pool(
         // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
         // In particular, though, we don't calculate the sqrt here, which is an expensive function; we instead verify that the
         // amount minted is valid by checking that it squares to the correct product
-        let initial_lq = pool_output_datum.circulating_lp
-        expect shared.is_sqrt(reserve_a * reserve_b, initial_lq)
+        expect
+          shared.is_sqrt(
+            reserve_a * reserve_b,
+            pool_output_datum.circulating_lp,
+          )
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
@@ -477,7 +480,13 @@ validator pool(
                 shared.to_value((own_policy_id, new_pool_nft_token, 1)),
               )
             |> assets.merge(
-                shared.to_value((own_policy_id, new_pool_lp_token, initial_lq)),
+                shared.to_value(
+                  (
+                    own_policy_id,
+                    new_pool_lp_token,
+                    pool_output_datum.circulating_lp,
+                  ),
+                ),
               )
         let mint_is_correct = transaction.mint == expected_mint
 
@@ -493,7 +502,7 @@ validator pool(
             asset_b.1st,
             asset_b.2nd,
             reserve_b,
-            initial_lq,
+            pool_output_datum.circulating_lp,
             pool_output_datum.protocol_fees,
           )
 
@@ -528,7 +537,6 @@ validator pool(
         let pool_output_datum_correct = and {
             pool_output_datum.identifier == new_pool_id,
             pool_output_datum.assets == (asset_a, asset_b),
-            pool_output_datum.circulating_lp == initial_lq,
             shared.fees_in_legal_range(
               pool_output_datum.lp_fee_basis_points.1st,
             ),
