@@ -12,7 +12,7 @@ use cardano/assets.{
 use cardano/fuzz as cardano
 use cardano/transaction.{InlineDatum, Input, Output, ScriptPurpose, Transaction}
 use pool as handlers
-use shared.{Ident, calc_precision}
+use shared.{Ident, calc_precision, get_D}
 use sundae/multisig.{MultisigScript}
 use tests/constants
 use tests/examples/ex_settings.{mk_valid_settings_input}
@@ -223,55 +223,6 @@ fn scenario_signatories_baseline(
     }
 
   fuzz.both(constant(st), signatories)
-}
-
-fn get_D_recursive(d: Int, x: Int, y: Int, sum: Int, ann: Int, i: Int) -> Int {
-  if i < 255 {
-    let d_p = d * d * d / ( 4 * x * y )
-    let d_prev = d
-    let d =
-      ( ann * sum / 100 + d_p * 2 ) * d / ( ( ann - 100 ) * d / 100 + 3 * d_p )
-    if d > d_prev {
-      if d - d_prev <= 1 {
-        if liquidity_invariant(x, y, ann / 400, d) {
-          d
-        } else {
-          d - 1
-        }
-      } else {
-        get_D_recursive(d, x, y, sum, ann, i + 1)
-      }
-    } else {
-      if d_prev - d <= 1 {
-        if liquidity_invariant(x, y, ann / 400, d) {
-          d
-        } else {
-          d - 1
-        }
-      } else {
-        get_D_recursive(d, x, y, sum, ann, i + 1)
-      }
-    }
-  } else {
-    trace @"get_D_recursive: reached max iterations"
-    d
-  }
-}
-
-fn get_D(a: Int, x: Int, y: Int) -> Int {
-  let x = x * calc_precision
-  let y = y * calc_precision
-  let a = a * 200
-  let sum: Int = x + y
-  if sum == 0 {
-    0
-  } else {
-    let d = sum
-    let ann = a * 2
-    let result_d = get_D_recursive(d, x, y, sum, ann, 0)
-    trace result_d
-    result_d
-  }
 }
 
 fn scenario_pool_output_baseline(
