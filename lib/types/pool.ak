@@ -43,6 +43,8 @@ pub type StablePoolDatum {
   /// Specifically, the scooper calculates it off-chain, and provides the new invariant,
   /// and the contract enforces that the invariant satisfies the correct formula.
   sum_invariant: Int,
+  // An optional multisig condition under which the linear amplification factor can be updated
+  linear_amplification_manager: Option<multisig.MultisigScript>,
 }
 
 /// A pool UTXO can be spent for two purposes:
@@ -110,4 +112,6 @@ pub type ManageRedeemer {
   }
   // Update the percentage fee the pool charges
   UpdatePoolFees { pool_input: Int }
+  // Update the linear amplification factor of the pool
+  AdjustLinearAmplification { pool_input: Int }
 }

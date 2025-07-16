@@ -1,8 +1,8 @@
 use aiken/math
-use calculation/stableswap.{precision}
+use calculation/stableswap
 use cardano/assets.{AssetName, PolicyId, ada_policy_id}
 use cardano/transaction.{Output}
-use shared.{SingletonValue}
+use shared.{SingletonValue, bp_precision, calc_precision}
 use types/order.{Destination, Fixed, Self}
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
@@ -127,78 +127,65 @@ pub fn do_swap(
       (order_takes >= min_received_3rd)?,
     }
 
+  let swap_result = raw_swap_result / calc_precision
+
   // We calculate a percentage fee for liquidity providers and the protocol
-  // Note that we assume both fees have already been deducted from the output, so we're
-  // calculating what the "pure" takes would have been; we do this in a way that is
-  // algebraically safe from rounding errors
-  // order_takes = swap_result * (1 - fee)
-  // swap_result = order_takes / (1 - fee)
-  // swap_result = order_takes / (1 - (fee_bp / 10000))
-  // swap_result = order_takes / (10000/10000 - (fee_bp / 10000))
-  // swap_result = order_takes / ((10000 - fee_bp) / 10000)
-  // swap_result = order_takes * 10000 / (10000 - (lp_fee_rate + protocol_fee_rate))
   let total_fee_rate = lp_fee_rate + protocol_fee_rate
-  let swap_result = raw_swap_result / precision
-  // let difference = 10000 - total_fee_rate
-  // let swap_result = order_takes * 10000 / difference
-  // We add precision - 1 to the numerator to ensure that we round up
-  let calculated_fees = ( swap_result * total_fee_rate + 9999 ) / 10000
 
+  // The actual fees taken from the swap are the swap result minus the amount the user received
   let total_fees = swap_result - order_takes
-  expect (calculated_fees == total_fees)?
 
+  // Note that we use basis points, so we divide by 10000 and to ensure that we round up
+  // we add precision - 1 to the numerator
+  expect {
+    let calculated_fees =
+      ( swap_result * total_fee_rate + bp_precision - 1 ) / bp_precision
+    (calculated_fees == total_fees)?
+  }
+
+  // Total fees are split between the liquidity provider and the protocol
+  // We use normal integer division here, so we round down, which in effect means that
+  // the lp fee is rounded up
   let protocol_fees =
     if total_fee_rate > 0 {
       total_fees * protocol_fee_rate / total_fee_rate
     } else {
       0
     }
-  // let _lp_fees =
-  //   if total_fee_rate > 0 {
-  //     total_fees - protocol_fees
-  //   } else {
-  //     0
-  //   }
-  // Note: the protocol_fees aren't taken by the user, but are "taken out" of the pool
-  let pool_deduction = order_takes + protocol_fees
+
+  let lp_fees = total_fees - protocol_fees
 
   // Enforce that the stableswap invariant holds;
   // this ensures that:
   //  - The order_takes was computed by the scooper correctly
   //  - The new sum invariant was computed by the scooper correctly
   if a_to_b {
+    let new_pool_quantity_a = pool_quantity_a + order_give
+    let new_pool_quantity_b = pool_quantity_b - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        pool_quantity_a + order_give,
-        pool_quantity_b - pool_deduction,
-        pool_quantity_b,
+        new_pool_quantity_a * calc_precision,
+        new_pool_quantity_b * calc_precision,
+        pool_quantity_b * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(
-      pool_quantity_a + order_give,
-      pool_quantity_b - pool_deduction,
-      0,
-      protocol_fees,
-    )
+    continuation(new_pool_quantity_a, new_pool_quantity_b, 0, protocol_fees)
   } else {
+    let new_pool_quantity_b = pool_quantity_b + order_give
+    let new_pool_quantity_a = pool_quantity_a - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        pool_quantity_b + order_give,
-        pool_quantity_a - pool_deduction,
-        pool_quantity_a,
+        new_pool_quantity_b * calc_precision,
+        new_pool_quantity_a * calc_precision,
+        pool_quantity_a * calc_precision,
         raw_swap_result,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
       )
-    continuation(
-      pool_quantity_a - pool_deduction,
-      pool_quantity_b + order_give,
-      protocol_fees,
-      0,
-    )
+    continuation(new_pool_quantity_a, new_pool_quantity_b, protocol_fees, 0)
   }
 }

@@ -4,7 +4,7 @@ use calculation/stableswap
 use cardano/address.{Address, VerificationKey}
 use cardano/assets.{AssetName, PolicyId, ada_asset_name, ada_policy_id}
 use cardano/transaction.{InlineDatum, NoDatum, Output}
-use shared.{SingletonValue}
+use shared.{SingletonValue, calc_precision}
 use sundae/multisig
 use types/order.{Destination, Fixed, OrderDatum, Self}
 
@@ -78,8 +78,8 @@ pub fn do_deposit(
   let new_pool_b = pool_quantity_b + deposited_b
   expect
     stableswap.liquidity_invariant(
-      new_pool_a,
-      new_pool_b,
+      new_pool_a * calc_precision,
+      new_pool_b * calc_precision,
       linear_amplification,
       next_sum_invariant,
     )

@@ -1,8 +1,7 @@
 use aiken/crypto.{Blake2b_224, Hash, Script, Signature, VerificationKey}
 use cardano/address.{Address}
-use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{Datum, OutputReference, ValidityRange}
-use shared.{Ident, SingletonValue}
+use shared.{AssetClass, Ident, SingletonValue}
 use sundae/multisig.{MultisigScript}
 
 /// An order to execute within the SundaeSwap ecosystem
@@ -71,7 +70,7 @@ pub type Order {
   Withdrawal { amount: SingletonValue }
   // Record, like the verb; let some script witness a scoop, and enforce some property about the output
   // Used, for example, to record the state of the pool for an on-chain oracle, etc.
-  Record { policy: (PolicyId, AssetName) }
+  Record { policy: AssetClass }
 }
 
 /// An order can be spent either to Scoop (execute) it, or to cancel it

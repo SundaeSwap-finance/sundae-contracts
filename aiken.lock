@@ -3,7 +3,7 @@
 
 [[requirements]]
 name = "aiken-lang/stdlib"
-version = "v2"
+version = "v2.2.0"
 source = "github"
 
 [[requirements]]
@@ -14,11 +14,16 @@ source = "github"
 [[requirements]]
 name = "KtorZ/tx_util"
 version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
+source = "github"
+
+[[requirements]]
+name = "aiken-lang/fuzz"
+version = "main"
 source = "github"
 
 [[packages]]
 name = "aiken-lang/stdlib"
-version = "v2"
+version = "v2.2.0"
 requirements = []
 source = "github"
 
@@ -34,5 +39,11 @@ version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
 requirements = []
 source = "github"
 
+[[packages]]
+name = "aiken-lang/fuzz"
+version = "main"
+requirements = []
+source = "github"
+
 [etags]
-"aiken-lang/stdlib@v2" = [{ secs_since_epoch = 1750347957, nanos_since_epoch = 74687325 }, "25c8d0802b8266feca04b47933382c5dee3cadb422208a5d3810d9d2df108c2e"]
+"aiken-lang/fuzz@main" = [{ secs_since_epoch = 1752484887, nanos_since_epoch = 781956287 }, "9843473958e51725a9274b487d2d4aac0395ec1a2e30f090724fa737226bc127"]

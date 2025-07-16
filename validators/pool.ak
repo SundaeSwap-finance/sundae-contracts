@@ -4,7 +4,10 @@ use aiken/collection/pairs
 use aiken/crypto.{ScriptHash}
 use aiken/interval
 use aiken/primitive/bytearray
-use calculation/process.{pool_input_to_state, process_orders}
+use calculation/process.{
+  pool_input_to_asset_reserves, pool_input_to_state, process_orders,
+}
+use calculation/stableswap.{liquidity_invariant}
 use cardano/address.{Address, Inline, Script}
 use cardano/assets.{AssetName, PolicyId, Value, ada_policy_id}
 use cardano/script_context.{ScriptContext}
@@ -12,13 +15,14 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, Withdraw,
 }
 use shared.{
-  AssetClass, Ident, count_orders, own_input_index, pool_lp_name, pool_nft_name,
-  spent_output,
+  AssetClass, Ident, calc_precision, count_orders, own_input_index, pool_lp_name,
+  pool_nft_name, spent_output,
 }
 use sundae/multisig
 use types/pool.{
-  BurnPool, CreatePool, Manage, ManageRedeemer, MintLP, PoolMintRedeemer,
-  PoolRedeemer, PoolScoop, StablePoolDatum, UpdatePoolFees, WithdrawFees,
+  AdjustLinearAmplification, BurnPool, CreatePool, Manage, ManageRedeemer,
+  MintLP, PoolMintRedeemer, PoolRedeemer, PoolScoop, StablePoolDatum,
+  UpdatePoolFees, WithdrawFees,
 } as types_pool
 use types/settings.{SettingsDatum, find_settings_datum}
 
@@ -243,6 +247,8 @@ validator pool(
             initial_fee_a + delta_fee_a,
             initial_fee_b + delta_fee_b,
           )
+        trace actual_protocol_fees
+        trace expected_protocol_fees
         expect actual_protocol_fees == expected_protocol_fees
 
         // The pool should have all of the scooper fees, and the quantity of each token of the outcome
@@ -336,6 +342,7 @@ validator pool(
                       when redeemer is {
                         UpdatePoolFees { pool_input } -> pool_input
                         WithdrawFees { pool_input, .. } -> pool_input
+                        AdjustLinearAmplification { pool_input } -> pool_input
                       }
                     let input_index = own_input_index(transaction, out_ref)
                     // Manage redeemer must have the correct index of this pool input
@@ -962,6 +969,73 @@ validator manage(settings_policy_id: PolicyId) {
             validity_range,
             withdrawals,
           )
+
+        // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
+        and {
+          pool_output_address == pool_input.address,
+          pool_output_value == pool_input.value,
+        }
+      }
+      AdjustLinearAmplification { pool_input } -> {
+        // Find the pool input; note that we don't look for the pool NFT here, because if someone
+        // spends with an unauthenticated UTXO, it will fail the spend script; and if someone
+        // spends with a different script address, this script can't do anything fishy,
+        // just enforces some things about the outputs
+        // This is duplicated code with the other branch, but only because we don't have pool_input yet
+        expect Some(pool_input) = list.at(inputs, pool_input)
+        let pool_input = pool_input.output
+        expect InlineDatum(datum) = pool_input.datum
+        expect datum: StablePoolDatum = datum
+        // We need the pool output to check that only the fees or fee manager are updated
+        let (
+          Output { address: pool_output_address, value: pool_output_value, .. },
+          pool_output_datum,
+        ) = find_pool_output(outputs)
+
+        let StablePoolDatum {
+          assets,
+          protocol_fees,
+          linear_amplification,
+          sum_invariant,
+          linear_amplification_manager: output_linear_amplification_manager,
+          ..
+        } = pool_output_datum
+
+        let
+          pool_quantity_a,
+          pool_quantity_b,
+        <- pool_input_to_asset_reserves(assets, protocol_fees, pool_input)
+
+        expect
+          liquidity_invariant(
+            pool_quantity_a * calc_precision,
+            pool_quantity_b * calc_precision,
+            linear_amplification,
+            sum_invariant,
+          )
+
+        let expected_datum =
+          StablePoolDatum {
+            ..datum,
+            linear_amplification: linear_amplification,
+            sum_invariant: sum_invariant,
+            linear_amplification_manager: output_linear_amplification_manager,
+          }
+        expect pool_output_datum == expected_datum
+
+        // Check that the *current* fee manager approves the update
+        expect Some(linear_amplification_manager) =
+          datum.linear_amplification_manager
+        expect
+          multisig.satisfied(
+            linear_amplification_manager,
+            extra_signatories,
+            validity_range,
+            withdrawals,
+          )
+
+        // Make sure the linear amplification is valid
+        expect linear_amplification > 0
 
         // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
         and {
