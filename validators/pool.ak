@@ -839,7 +839,7 @@ validator manage(settings_policy_id: PolicyId) {
           amount.3rd * settings_datum.treasury_allowance.1st / settings_datum.treasury_allowance.2nd
         let to_treasury_flat = amount.1st - allowance_flat
         let to_treasury_a = amount.2nd - allowance_a
-        let to_treasury_b = amount.2nd - allowance_b
+        let to_treasury_b = amount.3rd - allowance_b
 
         // And, we must pay everything except the allowance amount to the treasury address
         // We use the `treasury_output` index to skip to it quickly, rather than scanning for the output
