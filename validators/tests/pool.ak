@@ -15,7 +15,7 @@ use cardano/transaction.{
   Transaction, Withdraw,
 }
 use pool as pool_validator
-use shared.{pool_lp_name, get_D}
+use shared.{get_D, pool_lp_name}
 use sundae/multisig
 use tests/constants
 use tests/examples/ex_settings.{
@@ -1354,7 +1354,7 @@ fn mint_test_modify(
             (ada_policy_id, ada_asset_name),
             (constants.rberry_policy, constants.rberry_asset_name),
           ),
-          circulating_lp: 1_000_000_000,
+          circulating_lp: sum_invariant,
           lp_fee_basis_points: (5, 5),
           protocol_fee_basis_points: (0, 0),
           fee_manager: None,
@@ -1384,7 +1384,7 @@ fn mint_test_modify(
     assets.from_asset(
       constants.pool_script_hash,
       pool_lp_name(pool_id),
-      1_000_000_000,
+      sum_invariant,
     )
       |> assets.merge(assets.from_lovelace(2_000_000))
   let lp_output =
@@ -1424,7 +1424,7 @@ fn mint_test_modify(
             |> assets.add(
                 constants.pool_script_hash,
                 new_pool_lp_token,
-                1_000_000_000,
+                sum_invariant,
               )
             |> assets.add(constants.pool_script_hash, new_pool_nft_token, 1)
             |> assets.add(constants.pool_script_hash, new_pool_ref_token, 1),
