@@ -461,17 +461,9 @@ validator pool(
             reserve_a
           }
 
-        // Check that the quantity of LP tokens is correct; In particular, we adopt Uniswaps convention of
-        // using the sqrt of the product of the two values for the initial number of LP tokens to mint..
-        // This helps minimize precision loss: it gives decent initial liquidity values for a range of
-        // sizes of pools, such that an individual LP token is granular enough for depositing and withdrawing for most users.
-        // In particular, though, we don't calculate the sqrt here, which is an expensive function; we instead verify that the
-        // amount minted is valid by checking that it squares to the correct product
+        // We follow Curve's model for initial liquidity, by setting it to the initial sum invariant
         expect
-          shared.is_sqrt(
-            reserve_a * reserve_b,
-            pool_output_datum.circulating_lp,
-          )
+          pool_output_datum.sum_invariant == pool_output_datum.circulating_lp
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
