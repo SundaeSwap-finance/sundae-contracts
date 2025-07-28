@@ -952,14 +952,13 @@ validator manage(settings_policy_id: PolicyId) {
         expect InlineDatum(datum) = pool_input.datum
         expect datum: StablePoolDatum = datum
         // We need the pool output to check that only the fees or fee manager are updated
-        let (
-          Output { address: pool_output_address, value: pool_output_value, .. },
-          pool_output_datum,
-        ) = find_pool_output(outputs)
+        let (lovelace_diff, pool_output_datum) =
+          pool_output_datum(pool_input, outputs)
 
         let StablePoolDatum {
           lp_fee_basis_points,
           protocol_fee_basis_points,
+          protocol_fees,
           fee_manager: output_fee_manager,
           ..
         } = pool_output_datum
@@ -969,15 +968,6 @@ validator manage(settings_policy_id: PolicyId) {
         expect shared.fees_in_legal_range(lp_fee_basis_points.2nd)
         expect shared.fees_in_legal_range(protocol_fee_basis_points.1st)
         expect shared.fees_in_legal_range(protocol_fee_basis_points.2nd)
-
-        let expected_datum =
-          StablePoolDatum {
-            ..datum,
-            lp_fee_basis_points: lp_fee_basis_points,
-            protocol_fee_basis_points: protocol_fee_basis_points,
-            fee_manager: output_fee_manager,
-          }
-        expect pool_output_datum == expected_datum
 
         // Check that the *current* fee manager approves the update
         expect Some(fee_manager) = datum.fee_manager
@@ -989,11 +979,19 @@ validator manage(settings_policy_id: PolicyId) {
             withdrawals,
           )
 
-        // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
-        and {
-          pool_output_address == pool_input.address,
-          pool_output_value == pool_input.value,
-        }
+        let expected_datum =
+          StablePoolDatum {
+            ..datum,
+            protocol_fees: (
+              protocol_fees.1st + lovelace_diff,
+              protocol_fees.2nd,
+              protocol_fees.3rd,
+            ),
+            lp_fee_basis_points: lp_fee_basis_points,
+            protocol_fee_basis_points: protocol_fee_basis_points,
+            fee_manager: output_fee_manager,
+          }
+        pool_output_datum == expected_datum
       }
       AdjustLinearAmplification { pool_input } -> {
         // Find the pool input; note that we don't look for the pool NFT here, because if someone
@@ -1005,12 +1003,11 @@ validator manage(settings_policy_id: PolicyId) {
         let pool_input = pool_input.output
         expect InlineDatum(datum) = pool_input.datum
         expect datum: StablePoolDatum = datum
-        // We need the pool output to check that only the fees or fee manager are updated
-        let (
-          Output { address: pool_output_address, value: pool_output_value, .. },
-          pool_output_datum,
-        ) = find_pool_output(outputs)
 
+        let (lovelace_diff, pool_output_datum) =
+          pool_output_datum(pool_input, outputs)
+
+        // We need the pool output to check that only the fees or fee manager are updated
         let StablePoolDatum {
           assets,
           protocol_fees,
@@ -1033,15 +1030,6 @@ validator manage(settings_policy_id: PolicyId) {
             sum_invariant,
           )
 
-        let expected_datum =
-          StablePoolDatum {
-            ..datum,
-            linear_amplification: linear_amplification,
-            sum_invariant: sum_invariant,
-            linear_amplification_manager: output_linear_amplification_manager,
-          }
-        expect pool_output_datum == expected_datum
-
         // Check that the *current* fee manager approves the update
         expect Some(linear_amplification_manager) =
           datum.linear_amplification_manager
@@ -1056,12 +1044,44 @@ validator manage(settings_policy_id: PolicyId) {
         // Make sure the linear amplification is valid
         expect linear_amplification > 0
 
-        // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
-        and {
-          pool_output_address == pool_input.address,
-          pool_output_value == pool_input.value,
-        }
+        let expected_datum =
+          StablePoolDatum {
+            ..datum,
+            protocol_fees: (
+              protocol_fees.1st + lovelace_diff,
+              protocol_fees.2nd,
+              protocol_fees.3rd,
+            ),
+            linear_amplification: linear_amplification,
+            sum_invariant: sum_invariant,
+            linear_amplification_manager: output_linear_amplification_manager,
+          }
+        pool_output_datum == expected_datum
       }
     }
+    // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
   }
+}
+
+fn pool_output_datum(
+  pool_input: Output,
+  outputs: List<Output>,
+) -> (Int, StablePoolDatum) {
+  let (
+    Output { address: pool_output_address, value: pool_output_value, .. },
+    pool_output_datum,
+  ) = find_pool_output(outputs)
+  expect pool_output_address == pool_input.address
+  expect
+    assets.without_lovelace(pool_output_value) == assets.without_lovelace(
+      pool_input.value,
+    )
+
+  // Allow for increased lovelace amount in case the minutxo cost of the output is larger than the input
+  // it is important to verify this is also added to the protocol fees so that the pool values are not changed
+  let lovelace_diff =
+    assets.lovelace_of(pool_output_value) - assets.lovelace_of(pool_input.value)
+  expect lovelace_diff >= 0
+
+  (lovelace_diff, pool_output_datum)
 }
