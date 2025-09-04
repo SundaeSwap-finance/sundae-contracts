@@ -20,6 +20,8 @@ fn mk_pool_datum() -> PoolDatum {
     fee_manager: None,
     market_open: 100,
     protocol_fees: 10000000,
+    condition: None,
+    condition_datum: None,
   }
 }
 

@@ -78,7 +78,7 @@ validator pool_stake(settings_policy_id: PolicyId, _instance: Int) {
         treasury_output.datum == InlineDatum(Void)
       }
       // Publishing a cert succeeds, because we've already checked that the multisig script was satisfied above
-      Publishing(..) -> True
+      Publishing { .. } -> True
       // Prevent minting or spending, just in case
       _ -> False
     }

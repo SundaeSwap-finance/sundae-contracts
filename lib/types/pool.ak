@@ -1,3 +1,4 @@
+use aiken/crypto.{ScriptHash}
 use shared.{AssetClass, Ident}
 use sundae/multisig
 use types/order.{SignedStrategyExecution}
@@ -31,6 +32,8 @@ pub type PoolDatum {
   /// and withdrawals never have to be for the full amount.
   /// TODO: should we add a field to the settings object to set a minimum initial protocol_fees on pool mint?
   protocol_fees: Int,
+  condition: Option<ScriptHash>,
+  condition_datum: Option<Data>,
 }
 
 /// A pool UTXO can be spent for two purposes:
