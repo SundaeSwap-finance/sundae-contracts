@@ -70,6 +70,12 @@ pub type SettingsDatum {
   extensions: Data,
 }
 
+/// The extension datum is used for stableswaps pools to set a default protocol fee
+pub type ExtensionDatum {
+  /// The default protocol fee basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
+  protocol_fee_basis_points: (Int, Int),
+}
+
 /// The settings redeemer can be spent for two different purposes
 pub type SettingsRedeemer {
   /// To make an update by the settings administrator

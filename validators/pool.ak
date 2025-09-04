@@ -24,7 +24,7 @@ use types/pool.{
   MintLP, PoolMintRedeemer, PoolRedeemer, PoolScoop, StablePoolDatum,
   UpdatePoolFees, WithdrawFees,
 } as types_pool
-use types/settings.{SettingsDatum, find_settings_datum}
+use types/settings.{ExtensionDatum, SettingsDatum, find_settings_datum}
 
 /// An implementation of a curve-like "Stableswap" invariant that enables more efficient trades for stablecoin pairs.
 ///
@@ -439,6 +439,8 @@ validator pool(
         let settings_datum =
           find_settings_datum(reference_inputs, settings_policy_id)
 
+        expect settings_extensions: ExtensionDatum = settings_datum.extensions
+
         // Grab the initial reserves of each token by looking at what's paid to the UTXO
         let reserve_a =
           assets.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd)
@@ -541,6 +543,7 @@ validator pool(
             shared.fees_in_legal_range(
               pool_output_datum.protocol_fee_basis_points.2nd,
             ),
+            settings_extensions.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
               reserve_a * calc_precision,
@@ -958,7 +961,6 @@ validator manage(settings_policy_id: PolicyId) {
         let StablePoolDatum {
           lp_fee_basis_points,
           protocol_fee_basis_points,
-          protocol_fees,
           fee_manager: output_fee_manager,
           ..
         } = pool_output_datum
@@ -966,8 +968,6 @@ validator manage(settings_policy_id: PolicyId) {
         // Make sure we don't update the fees to negative or above 100%
         expect shared.fees_in_legal_range(lp_fee_basis_points.1st)
         expect shared.fees_in_legal_range(lp_fee_basis_points.2nd)
-        expect shared.fees_in_legal_range(protocol_fee_basis_points.1st)
-        expect shared.fees_in_legal_range(protocol_fee_basis_points.2nd)
 
         // Check that the *current* fee manager approves the update
         expect Some(fee_manager) = datum.fee_manager
@@ -983,9 +983,9 @@ validator manage(settings_policy_id: PolicyId) {
           StablePoolDatum {
             ..datum,
             protocol_fees: (
-              protocol_fees.1st + lovelace_diff,
-              protocol_fees.2nd,
-              protocol_fees.3rd,
+              datum.protocol_fees.1st + lovelace_diff,
+              datum.protocol_fees.2nd,
+              datum.protocol_fees.3rd,
             ),
             lp_fee_basis_points: lp_fee_basis_points,
             protocol_fee_basis_points: protocol_fee_basis_points,
@@ -1010,7 +1010,6 @@ validator manage(settings_policy_id: PolicyId) {
         // We need the pool output to check that only the fees or fee manager are updated
         let StablePoolDatum {
           assets,
-          protocol_fees,
           linear_amplification,
           sum_invariant,
           linear_amplification_manager: output_linear_amplification_manager,
@@ -1020,7 +1019,7 @@ validator manage(settings_policy_id: PolicyId) {
         let
           pool_quantity_a,
           pool_quantity_b,
-        <- pool_input_to_asset_reserves(assets, protocol_fees, pool_input)
+        <- pool_input_to_asset_reserves(assets, datum.protocol_fees, pool_input)
 
         expect
           liquidity_invariant(
@@ -1048,9 +1047,9 @@ validator manage(settings_policy_id: PolicyId) {
           StablePoolDatum {
             ..datum,
             protocol_fees: (
-              protocol_fees.1st + lovelace_diff,
-              protocol_fees.2nd,
-              protocol_fees.3rd,
+              datum.protocol_fees.1st + lovelace_diff,
+              datum.protocol_fees.2nd,
+              datum.protocol_fees.3rd,
             ),
             linear_amplification: linear_amplification,
             sum_invariant: sum_invariant,
