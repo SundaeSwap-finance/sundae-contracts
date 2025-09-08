@@ -267,7 +267,8 @@ validator pool(
                   pairs.get_first(withdrawals, address.Script(condition_script))
                 True
               } else {
-                True
+                // if it's a withdrawal only batch the condition script does not verify the condition datum.
+                datum.condition_datum == actual_condition_datum
               }
             None -> True
           }
@@ -312,7 +313,6 @@ validator pool(
         // And make sure each of these fields is unchanged
         and {
           datum.condition == actual_condition,
-          datum.condition_datum == actual_condition_datum,
           datum.identifier == actual_identifier,
           datum.assets == actual_assets,
           datum.bid_fees_per_10_thousand == actual_bid_fees_per_10_thousand,
