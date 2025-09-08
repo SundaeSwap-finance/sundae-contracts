@@ -780,6 +780,7 @@ pub fn find_pool_output(outputs: List<Output>) -> (Output, PoolDatum) {
   // - We check that the datum is the correct type, meaning we can't construct an invalid pool output
   // - Later, we check that the pool output has the correct value, meaning it *must* contain the pool token, so we can't pay to the pool script multiple times
   expect Some(pool_output) = list.head(outputs)
+  expect pool_output.reference_script == None
   expect InlineDatum(output_datum) = pool_output.datum
   expect output_datum: PoolDatum = output_datum
   (pool_output, output_datum)

@@ -141,6 +141,14 @@ validator pool(
         // Make sure it's not negative, for example if base_fee was negative
         expect amortized_base_fee >= 0
 
+        let order_outputs =
+          // The outputs that the scooper is expected to process, which are the outputs after the pool output
+          // This is a list of outputs, so we can use it to check that the scooper processed the right outputs
+          list.drop(outputs, 1)
+
+        // Make sure that the scooper didn't provide any outputs with a reference script
+        expect list.all(order_outputs, fn(o) { o.reference_script == None })
+
         // Construct the initial pool state from the datum and the locked values
         // This intermediate state will be updated as we process each order, allowing us to do a scan over each input
         // In particular, it calculates what fees we should be charging (because of the linear fee decay) and the actual tradable reserves
@@ -210,7 +218,7 @@ validator pool(
             // *All* inputs, so we can start over at the beginning of the list if we want
             inputs,
             // *Remaining* inputs, so we can advance through the list one by one so long as the orders are in order
-            list.drop(outputs, 1),
+            order_outputs,
             // The list of outputs we should be comparing orders against
             0,
             // A uniqueness bit-flag, to detect which orders have already been processed; see lib/calculation/InputSorting.md
