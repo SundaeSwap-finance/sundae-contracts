@@ -1,11 +1,12 @@
 use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound}
 use calculation/process.{find_pool_output}
-use calculation/shared.{millis_per_day}
 use cardano/address.{Credential}
 use cardano/transaction.{InlineDatum, Input, Output, Transaction, ValidityRange}
 use types/conditions/trading_hours.{TradingHoursDatum} as trading_hours_types
 use types/pool.{Manage, PoolDatum, PoolRedeemer, PoolScoop}
+
+const millis_per_day = 86_400_000
 
 validator trading_hours {
   withdraw(
@@ -78,7 +79,7 @@ fn scoop_trading_hours(
   }
 }
 
-// We are dealing with start and finish defined as time of day, so we need to account 
+// We are dealing with start and finish defined as time of day, so we need to account
 // for the case where open is in the evening and close in the morning (close < open)
 fn time_between_start_finish(time: Int, start: Int, finish: Int) -> Bool {
   if start < finish {
