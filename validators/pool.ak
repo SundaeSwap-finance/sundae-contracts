@@ -756,10 +756,8 @@ validator manage(settings_policy_id: PolicyId) {
         expect InlineDatum(datum) = pool_input.datum
         expect datum: PoolDatum = datum
         // We need the pool output to check that only the fees or fee manager are updated
-        let (
-          Output { address: pool_output_address, value: pool_output_value, .. },
-          pool_output_datum,
-        ) = find_pool_output(outputs)
+        let (lovelace_diff, pool_output_datum) =
+          pool_output_datum(pool_input, outputs)
 
         let PoolDatum {
           bid_fees_per_10_thousand,
@@ -775,6 +773,7 @@ validator manage(settings_policy_id: PolicyId) {
         let expected_datum =
           PoolDatum {
             ..datum,
+            protocol_fees: datum.protocol_fees + lovelace_diff,
             bid_fees_per_10_thousand: bid_fees_per_10_thousand,
             ask_fees_per_10_thousand: ask_fees_per_10_thousand,
             fee_manager: output_fee_manager,
@@ -791,12 +790,32 @@ validator manage(settings_policy_id: PolicyId) {
             withdrawals,
           )
 
-        // And make sure we don't touch the assets on the pool input; they must be spent back into the same script
-        and {
-          pool_output_address == pool_input.address,
-          pool_output_value == pool_input.value,
-        }
+        // The value and address are verified in pool_output_datum
+        pool_output_datum == expected_datum
       }
     }
   }
+}
+
+fn pool_output_datum(
+  pool_input: Output,
+  outputs: List<Output>,
+) -> (Int, PoolDatum) {
+  let (
+    Output { address: pool_output_address, value: pool_output_value, .. },
+    pool_output_datum,
+  ) = find_pool_output(outputs)
+  expect pool_output_address == pool_input.address
+  expect
+    assets.without_lovelace(pool_output_value) == assets.without_lovelace(
+      pool_input.value,
+    )
+
+  // Allow for increased lovelace amount in case the minutxo cost of the output is larger than the input
+  // it is important to verify this is also added to the protocol fees so that the pool values are not changed
+  let lovelace_diff =
+    assets.lovelace_of(pool_output_value) - assets.lovelace_of(pool_input.value)
+  expect lovelace_diff >= 0
+
+  (lovelace_diff, pool_output_datum)
 }
