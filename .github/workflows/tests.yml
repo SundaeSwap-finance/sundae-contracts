@@ -11,9 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: aiken-lang/setup-aiken@v0.1.0
+      - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.0.26-alpha
+          version: v1.1.17
 
       - run: |
           # Run the tests
@@ -21,7 +21,7 @@ jobs:
           RESULT=0
           aiken check -t silent 2>&1 || RESULT=$?
           if [ $RESULT -ne 0 ]; then
-            aiken check 2>&1 | tee aiken.log 
+            aiken check 2>&1 | tee aiken.log
             {
               echo 'FAILING_TESTS<<EOF'
               grep "FAIL" aiken.log
