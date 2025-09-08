@@ -32,7 +32,12 @@ pub type PoolDatum {
   /// and withdrawals never have to be for the full amount.
   /// TODO: should we add a field to the settings object to set a minimum initial protocol_fees on pool mint?
   protocol_fees: Int,
+  /// An optional condition that must be present in the withdrawals to spend the pool UTXO. This condition is a script that must be satisfied
+  /// and adds extra logic to a pool. Note that this condition is ignored when executing scoops with withdrawal orders only. This is to allow
+  /// users to withdraw their funds even if the condition is no longer satisfiable
   condition: Option<ScriptHash>,
+  /// A condition can have a need for extra data to be provided when spending the pool UTXO
+  /// This is that extra data and can have different types depending on the condition script
   condition_datum: Option<Data>,
 }
 
