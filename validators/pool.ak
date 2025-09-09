@@ -461,9 +461,9 @@ validator pool(
             reserve_a
           }
 
-        // We follow Curve's model for initial liquidity, by setting it to the initial sum invariant
+        // We follow Curve's model for initial liquidity, by setting it to the initial sum invariant, but divide by precision to avoid very large numbers potentially causing overflow
         expect
-          pool_output_datum.sum_invariant == pool_output_datum.circulating_lp
+          pool_output_datum.sum_invariant / calc_precision == pool_output_datum.circulating_lp
 
         // And check that we mint the correct tokens, and nothing else.
         let expected_mint =
