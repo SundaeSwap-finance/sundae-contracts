@@ -24,7 +24,7 @@ use types/pool.{
   MintLP, PoolMintRedeemer, PoolRedeemer, PoolScoop, StablePoolDatum,
   UpdatePoolFees, WithdrawFees,
 } as types_pool
-use types/settings.{ExtensionDatum, SettingsDatum, find_settings_datum}
+use types/settings.{SettingsDatum, find_settings_datum}
 
 /// An implementation of a curve-like "Stableswap" invariant that enables more efficient trades for stablecoin pairs.
 ///
@@ -439,8 +439,6 @@ validator pool(
         let settings_datum =
           find_settings_datum(reference_inputs, settings_policy_id)
 
-        expect settings_extensions: ExtensionDatum = settings_datum.extensions
-
         // Grab the initial reserves of each token by looking at what's paid to the UTXO
         let reserve_a =
           assets.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd)
@@ -543,7 +541,7 @@ validator pool(
             shared.fees_in_legal_range(
               pool_output_datum.protocol_fee_basis_points.2nd,
             ),
-            settings_extensions.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
+            settings_datum.extensions.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
               reserve_a * calc_precision,
@@ -904,7 +902,8 @@ validator manage(settings_policy_id: PolicyId) {
             pool_output_address.payment_credential == Script(pool_script_hash)
 
           // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
-          // but, importantly, *nothing else*; so we construct a datum with everything from the initial datum, plus the protofol fees updated
+          // but, the treasury admin is also allowed to update the protocol fees basis points, but nothing else in the datum
+          // is allowed to be changed.
           let expected_datum =
             StablePoolDatum {
               ..datum,
@@ -913,6 +912,7 @@ validator manage(settings_policy_id: PolicyId) {
                 initial_fee_a - amount.2nd,
                 initial_fee_b - amount.3rd,
               ),
+              protocol_fee_basis_points: output_datum.protocol_fee_basis_points,
             }
           expect output_datum == expected_datum
 
@@ -960,7 +960,6 @@ validator manage(settings_policy_id: PolicyId) {
 
         let StablePoolDatum {
           lp_fee_basis_points,
-          protocol_fee_basis_points,
           fee_manager: output_fee_manager,
           ..
         } = pool_output_datum
@@ -988,7 +987,6 @@ validator manage(settings_policy_id: PolicyId) {
               datum.protocol_fees.3rd,
             ),
             lp_fee_basis_points: lp_fee_basis_points,
-            protocol_fee_basis_points: protocol_fee_basis_points,
             fee_manager: output_fee_manager,
           }
         pool_output_datum == expected_datum

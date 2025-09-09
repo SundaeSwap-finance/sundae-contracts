@@ -1,11 +1,10 @@
-use aiken/cbor
 use cardano/address.{Address, Script, VerificationKey}
 use cardano/assets
 use cardano/transaction.{InlineDatum, Input, Output}
 use sundae/multisig
 use tests/examples/ex_shared.{mk_output_reference,
   print_example, script_address}
-use types/settings.{SettingsDatum}
+use types/settings.{ProtocolFeeBasisPointsExtension, SettingsDatum}
 
 pub const example_settings_admin =
   #"6313a1d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
@@ -32,7 +31,10 @@ pub fn mk_valid_settings_datum(scoopers: List<ByteArray>) -> SettingsDatum {
     simple_fee: 2_500_000,
     strategy_fee: 5_000_000,
     pool_creation_fee: 0,
-    extensions: Void,
+    extensions: ProtocolFeeBasisPointsExtension {
+      protocol_fee_basis_points: (0, 0),
+      next: Void,
+    },
   }
 }
 
@@ -57,9 +59,7 @@ pub fn mk_valid_settings_input(scoopers: List<ByteArray>, ix: Int) -> Input {
 }
 
 test example_settings_datum() {
-  print_example(
-    cbor.serialise(mk_valid_settings_datum([example_settings_admin])),
-  )
+  print_example(mk_valid_settings_datum([example_settings_admin]))
 }
 
 test example_big_settings_datum() {
@@ -207,7 +207,10 @@ test example_mainnet_boot_settings_datum() {
       simple_fee: 168_000,
       strategy_fee: 168_000,
       pool_creation_fee: 0,
-      extensions: 0,
+      extensions: ProtocolFeeBasisPointsExtension {
+        protocol_fee_basis_points: (30, 30),
+        next: Void,
+      },
     },
   )
 }

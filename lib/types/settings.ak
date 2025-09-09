@@ -67,13 +67,14 @@ pub type SettingsDatum {
   /// - publish data for convenient and canonical access by off-chain actors
   /// - expose data to the script conditions in the multisig scripts of the two administrator roles
   /// - expose additional settings for more advanced pool and order types to operate off of
-  extensions: Data,
+  extensions: ProtocolFeeBasisPointsExtension,
 }
 
-/// The extension datum is used for stableswaps pools to set a default protocol fee
-pub type ExtensionDatum {
+pub type ProtocolFeeBasisPointsExtension {
   /// The default protocol fee basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
   protocol_fee_basis_points: (Int, Int),
+  /// Pointing to next extension in the future
+  next: Data,
 }
 
 /// The settings redeemer can be spent for two different purposes
