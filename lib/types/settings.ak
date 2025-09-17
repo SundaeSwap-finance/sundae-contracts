@@ -1,5 +1,6 @@
 use aiken/builtin
 use aiken/collection/dict
+use aiken/collection/pairs
 use aiken/crypto.{VerificationKey}
 use cardano/address.{Address, Credential}
 use cardano/assets.{AssetName, PolicyId}
@@ -67,14 +68,12 @@ pub type SettingsDatum {
   /// - publish data for convenient and canonical access by off-chain actors
   /// - expose data to the script conditions in the multisig scripts of the two administrator roles
   /// - expose additional settings for more advanced pool and order types to operate off of
-  extensions: ProtocolFeeBasisPointsExtension,
+  extensions: Pairs<Int, Data>,
 }
 
 pub type ProtocolFeeBasisPointsExtension {
   /// The default protocol fee basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
   protocol_fee_basis_points: (Int, Int),
-  /// Pointing to next extension in the future
-  next: Data,
 }
 
 /// The settings redeemer can be spent for two different purposes
@@ -87,6 +86,19 @@ pub type SettingsRedeemer {
 
 /// The name of the token that authenticates the settings UTXO
 pub const settings_nft_name: AssetName = "settings"
+
+pub fn find_protocol_fee_extension(
+  settings: SettingsDatum,
+) -> Option<ProtocolFeeBasisPointsExtension> {
+  let maybe_extension = pairs.get_first(settings.extensions, 0)
+  when maybe_extension is {
+    Some(extension_data) -> {
+      expect extension: ProtocolFeeBasisPointsExtension = extension_data
+      Some(extension)
+    }
+    None -> None
+  }
+}
 
 /// Scan over the list of reference inputs to find the settings datum, and ensure it's the correct one
 /// Note that this makes the assumption that the settings datum is the first reference input, for performance

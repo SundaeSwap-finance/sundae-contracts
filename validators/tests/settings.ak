@@ -12,10 +12,7 @@ use tx_util/builder.{
   add_asset_to_tx_output, add_tx_input, add_tx_output, build_txn_context,
   mint_assets, new_tx_input, new_tx_output, with_asset_of_tx_input,
 }
-use types/settings.{
-  ProtocolFeeBasisPointsExtension, SettingsAdminUpdate, SettingsDatum,
-  settings_nft_name,
-}
+use types/settings.{SettingsAdminUpdate, SettingsDatum, settings_nft_name}
 
 fn test_mint_settings(settings_nfts_count: Int) {
   let settings_nft =
@@ -95,10 +92,7 @@ fn mk_valid_settings_datum(scoopers: List<ByteArray>) -> SettingsDatum {
     simple_fee: 2_500_000,
     strategy_fee: 5_000_000,
     pool_creation_fee: 0,
-    extensions: ProtocolFeeBasisPointsExtension {
-      protocol_fee_basis_points: (0, 0),
-      next: Void,
-    },
+    extensions: [],
   }
 }
 

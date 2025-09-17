@@ -37,7 +37,7 @@ use types/pool.{
   UpdatePoolFees, WithdrawFees,
 }
 use types/settings.{
-  ProtocolFeeBasisPointsExtension, SettingsDatum, settings_nft_name,
+  SettingsDatum, settings_nft_name,
 }
 
 type ScoopTestOptions {
@@ -383,10 +383,7 @@ test scooper_not_in_settings() fail {
             simple_fee: 2_500_000,
             strategy_fee: 5_000_000,
             pool_creation_fee: 0,
-            extensions: ProtocolFeeBasisPointsExtension {
-              protocol_fee_basis_points: (0, 0),
-              next: Void,
-            },
+            extensions: [],
           },
         ),
       ),

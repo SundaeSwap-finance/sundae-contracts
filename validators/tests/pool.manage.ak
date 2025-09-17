@@ -17,7 +17,7 @@ use sundae/multisig.{MultisigScript}
 use tests/constants
 use tests/examples/ex_settings.{mk_valid_settings_input}
 use types/pool.{ManageRedeemer, StablePoolDatum}
-use types/settings.{ProtocolFeeBasisPointsExtension, SettingsDatum}
+use types/settings.{SettingsDatum}
 
 const settings_policy_id: PolicyId =
   #"00000000000000000000000000000000000000000000000000000000"
@@ -388,10 +388,7 @@ fn scenario_settings_input_baseline(
           simple_fee: 2_500_000,
           strategy_fee: 5_000_000,
           pool_creation_fee: 0,
-          extensions: ProtocolFeeBasisPointsExtension {
-            protocol_fee_basis_points: (0, 0),
-            next: Void,
-          },
+          extensions: [],
         }
       },
     )

@@ -24,7 +24,10 @@ use types/pool.{
   MintLP, PoolMintRedeemer, PoolRedeemer, PoolScoop, StablePoolDatum,
   UpdatePoolFees, WithdrawFees,
 } as types_pool
-use types/settings.{SettingsDatum, find_settings_datum}
+use types/settings.{
+  ProtocolFeeBasisPointsExtension, SettingsDatum, find_protocol_fee_extension,
+  find_settings_datum,
+}
 
 /// An implementation of a curve-like "Stableswap" invariant that enables more efficient trades for stablecoin pairs.
 ///
@@ -518,6 +521,9 @@ validator pool(
         //    and potentially even on access UIs for the Sundae protocol
         expect metadata_output.datum == InlineDatum(Void)
 
+        expect Some(protocol_fee_extension) =
+          find_protocol_fee_extension(settings_datum)
+
         // And check that the datum is initialized correctly; This is part of why we have a minting policy handling this,
         // as it allows us to authenticate the providence of the datum.
         // A datum is valid so long as
@@ -541,7 +547,7 @@ validator pool(
             shared.fees_in_legal_range(
               pool_output_datum.protocol_fee_basis_points.2nd,
             ),
-            settings_datum.extensions.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
+            protocol_fee_extension.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
               reserve_a * calc_precision,
