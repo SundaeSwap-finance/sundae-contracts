@@ -278,7 +278,8 @@ validator pool(
                 // if it's a withdrawal only batch the condition script does not verify the condition datum.
                 datum.condition_datum == actual_condition_datum
               }
-            None -> True
+            // If there's no condition, then the datum must also be None to minimize utxo size
+            None -> actual_condition_datum == None
           }
 
         // the market must have opened; this allows projects to pre-create their pool, potentially across multiple protocols, and allows
@@ -539,6 +540,20 @@ validator pool(
             settings_datum.authorized_staking_keys,
             fn(a) { pool_output.address.stake_credential == Some(Inline(a)) },
           )
+
+        expect
+          when pool_output_datum.condition is {
+            Some(condition) -> {
+              expect Some(..) =
+                pairs.get_first(
+                  transaction.withdrawals,
+                  address.Script(condition),
+                )
+              True
+            }
+            // If there's no condition, then the datum must also be None to minimize utxo size
+            None -> pool_output_datum.condition_datum == None
+          }
 
         // And then check each of the conditions above as the condition for minting
         and {

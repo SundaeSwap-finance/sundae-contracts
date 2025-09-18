@@ -33,55 +33,65 @@ validator nft_check {
     ) = find_pool_output(outputs)
 
     // Then, (confusing terminology aside) find the specific pool UTXO being spent by this transaction
-    expect Some(Input { output: pool_input, .. }) =
+    let pool_input_found =
       list.find(
         inputs,
         fn(input) { input.output.address == pool_output_address },
       )
 
-    expect InlineDatum(pool_input_datum) = pool_input.datum
+    when pool_input_found is {
+      Some(Input { output: pool_input, .. }) -> {
+        expect InlineDatum(pool_input_datum) = pool_input.datum
 
-    expect PoolDatum { condition_datum: condition_datum_option, .. } =
-      pool_input_datum
+        expect PoolDatum { condition_datum: condition_datum_option, .. } =
+          pool_input_datum
 
-    expect Some(condition_datum) = condition_datum_option
+        expect Some(condition_datum) = condition_datum_option
 
-    expect nft_check_datum: NftCheckDatum = condition_datum
+        expect nft_check_datum: NftCheckDatum = condition_datum
 
-    let nft_check_value = assets.from_asset_list(nft_check_datum.value)
+        let nft_check_value = assets.from_asset_list(nft_check_datum.value)
 
-    let reference_inputs_outputs =
-      list.map(reference_inputs, fn(i) { i.output })
+        let reference_inputs_outputs =
+          list.map(reference_inputs, fn(i) { i.output })
 
-    // Then, there are two different actions that can be taken against a pool:
-    // - Scooping a batch of orders
-    // - Withdrawing protocol fees to the treasury
-    when redeemer is {
-      // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
-      PoolScoop { .. } -> {
-        let orders =
-          list.filter(
-            inputs,
-            fn(i) {
-              and {
-                i.output != pool_input,
-                is_script(i.output.address.payment_credential),
-              }
-            },
-          )
-            |> list.map(fn(i) { i.output })
-        and {
-          scoop_nft_check(
-            nft_check_value,
-            nft_check_datum.check,
-            reference_inputs_outputs,
-            datums,
-            orders,
-          ),
-          actual_condition_datum_option == condition_datum_option,
+        // Then, there are two different actions that can be taken against a pool:
+        // - Scooping a batch of orders
+        // - Withdrawing protocol fees to the treasury
+        when redeemer is {
+          // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
+          PoolScoop { .. } -> {
+            let orders =
+              list.filter(
+                inputs,
+                fn(i) {
+                  and {
+                    i.output != pool_input,
+                    is_script(i.output.address.payment_credential),
+                  }
+                },
+              )
+                |> list.map(fn(i) { i.output })
+            and {
+              scoop_nft_check(
+                nft_check_value,
+                nft_check_datum.check,
+                reference_inputs_outputs,
+                datums,
+                orders,
+              ),
+              actual_condition_datum_option == condition_datum_option,
+            }
+          }
+          Manage -> False
         }
       }
-      Manage -> False
+      // No input means we are dealing with a mint and all we need to ensure is the output datum is valid
+      None -> {
+        expect Some(actual_condition_datum) = actual_condition_datum_option
+        expect _nft_check_datum: NftCheckDatum = actual_condition_datum
+        True
+      }
     }
   }
 

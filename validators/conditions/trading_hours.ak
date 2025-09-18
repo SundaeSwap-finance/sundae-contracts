@@ -27,31 +27,40 @@ validator trading_hours {
     ) = find_pool_output(outputs)
 
     // Then, (confusing terminology aside) find the specific pool UTXO being spent by this transaction
-    expect Some(Input { output: pool_input, .. }) =
+    let pool_input_found =
       list.find(
         inputs,
         fn(input) { input.output.address == pool_output_address },
       )
 
-    expect InlineDatum(pool_input_datum) = pool_input.datum
+    when pool_input_found is {
+      Some(Input { output: pool_input, .. }) -> {
+        expect InlineDatum(pool_input_datum) = pool_input.datum
 
-    expect PoolDatum { condition_datum: condition_datum_option, .. } =
-      pool_input_datum
+        expect PoolDatum { condition_datum: condition_datum_option, .. } =
+          pool_input_datum
 
-    expect Some(condition_datum) = condition_datum_option
+        expect Some(condition_datum) = condition_datum_option
 
-    expect TradingHoursDatum { open_time, close_time } = condition_datum
+        expect TradingHoursDatum { open_time, close_time } = condition_datum
 
-    // Then, there are two different actions that can be taken against a pool:
-    // - Scooping a batch of orders
-    // - Withdrawing protocol fees to the treasury
-    when redeemer is {
-      // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
-      PoolScoop { .. } -> and {
-          scoop_trading_hours(validity_range, open_time, close_time),
-          actual_condition_datum_option == condition_datum_option,
+        // Then, there are two different actions that can be taken against a pool:
+        // - Scooping a batch of orders
+        // - Withdrawing protocol fees to the treasury
+        when redeemer is {
+          // In the case of the scoop, the redeemer indicates which scooper is doing the scoop, and the order in which the inputs should be processed
+          PoolScoop { .. } -> and {
+              scoop_trading_hours(validity_range, open_time, close_time),
+              actual_condition_datum_option == condition_datum_option,
+            }
+          Manage -> False
         }
-      Manage -> False
+      }
+      None -> {
+        expect Some(actual_condition_datum) = actual_condition_datum_option
+        expect TradingHoursDatum { .. } = actual_condition_datum
+        True
+      }
     }
   }
 
