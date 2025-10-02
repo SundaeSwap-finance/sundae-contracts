@@ -388,7 +388,7 @@ fn scenario_settings_input_baseline(
           simple_fee: 2_500_000,
           strategy_fee: 5_000_000,
           pool_creation_fee: 0,
-          extensions: Void,
+          extensions: [],
         }
       },
     )

@@ -15,7 +15,7 @@ use cardano/transaction.{
   Transaction, Withdraw,
 }
 use pool as pool_validator
-use shared.{get_D, pool_lp_name}
+use shared.{calc_precision, get_D, pool_lp_name}
 use sundae/multisig
 use tests/constants
 use tests/examples/ex_settings.{
@@ -36,7 +36,9 @@ use types/pool.{
   BurnPool, CreatePool, Manage, PoolMintRedeemer, PoolScoop, StablePoolDatum,
   UpdatePoolFees, WithdrawFees,
 }
-use types/settings.{SettingsDatum, settings_nft_name}
+use types/settings.{
+  SettingsDatum, settings_nft_name,
+}
 
 type ScoopTestOptions {
   edit_order_1_in_value: Option<Value>,
@@ -381,7 +383,7 @@ test scooper_not_in_settings() fail {
             simple_fee: 2_500_000,
             strategy_fee: 5_000_000,
             pool_creation_fee: 0,
-            extensions: Void,
+            extensions: [],
           },
         ),
       ),
@@ -1345,6 +1347,7 @@ fn mint_test_modify(
   let reserve_b = 1_000_000_000
   let linear_amplification = 10
   let sum_invariant = get_D(linear_amplification, reserve_a, reserve_b)
+  let initial_lp = sum_invariant / calc_precision
   let inline_pool_datum =
     modify_datum(
       InlineDatum(
@@ -1354,7 +1357,7 @@ fn mint_test_modify(
             (ada_policy_id, ada_asset_name),
             (constants.rberry_policy, constants.rberry_asset_name),
           ),
-          circulating_lp: sum_invariant,
+          circulating_lp: initial_lp,
           lp_fee_basis_points: (5, 5),
           protocol_fee_basis_points: (0, 0),
           fee_manager: None,
@@ -1384,7 +1387,7 @@ fn mint_test_modify(
     assets.from_asset(
       constants.pool_script_hash,
       pool_lp_name(pool_id),
-      sum_invariant,
+      initial_lp,
     )
       |> assets.merge(assets.from_lovelace(2_000_000))
   let lp_output =
@@ -1424,7 +1427,7 @@ fn mint_test_modify(
             |> assets.add(
                 constants.pool_script_hash,
                 new_pool_lp_token,
-                sum_invariant,
+                initial_lp,
               )
             |> assets.add(constants.pool_script_hash, new_pool_nft_token, 1)
             |> assets.add(constants.pool_script_hash, new_pool_ref_token, 1),
