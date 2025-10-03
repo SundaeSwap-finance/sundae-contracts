@@ -1,15 +1,17 @@
-use aiken/collection/list
-use aiken/crypto.{ScriptHash}
+use aiken/dict
+use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
-use cardano/address.{Address, Script}
-use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+use aiken/list
+use aiken/transaction.{
+  InlineDatum, Input, Output, OutputReference, ScriptContext, Transaction,
+  TransactionId,
 }
+use aiken/transaction/credential.{Address, Script, ScriptCredential}
+use aiken/transaction/value
 use shared
 use sundae/multisig
 use tests/examples/ex_shared.{mk_tx_hash, script_address}
-use types/oracle.{Burn, Mint, OracleDatum, OracleRedeemer} as types_oracle
+use types/oracle.{Burn, Mint, OracleDatum, OracleRedeemer}
 use types/order.{Fixed, OrderDatum}
 use types/pool.{PoolDatum}
 
@@ -22,33 +24,28 @@ use types/pool.{PoolDatum}
 // It's important to use the price at the *end* of the scoop, or at the beginning, rather than just using the price
 // "at the time" the order was processed. If we expose the pool price mid-stream, then it is easy to sandwich the order between two others.
 // By using the snapshot at the end of the order, such an attacker exposes themselves to arbitrage opportunities which makes such an attack riskier.
-validator oracle(pool_script_hash: ScriptHash) {
+validator(pool_script_hash: Hash<Blake2b_224, Script>) {
   // In order to spend the oracle script, two things must be true:
   // - it must be signed by the "owner"
   // - there must be no oracle tokens on the outputs
   // This allows reclaiming funds that were accidentally locked at the script address,
   // while also enforcing that the oracle token is burned; this is important, as people
   // will be relying on the oracle token to authenticate the actual values
-  spend(
-    datum: Option<OracleDatum>,
-    _r: Data,
-    out_ref: OutputReference,
-    transaction: Transaction,
-  ) {
-    expect Some(datum) = datum
-    let own_input = shared.spent_output(transaction, out_ref)
-    expect Script(own_script_hash) = own_input.address.payment_credential
+  fn spend(datum: OracleDatum, _r: Data, ctx: ScriptContext) -> Bool {
+    let own_input = shared.spent_output(ctx)
+    expect ScriptCredential(own_script_hash) =
+      own_input.address.payment_credential
     and {
       multisig.satisfied(
         datum.owner,
-        transaction.extra_signatories,
-        transaction.validity_range,
-        transaction.withdrawals,
+        ctx.transaction.extra_signatories,
+        ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
       ),
       list.all(
-        transaction.outputs,
+        ctx.transaction.outputs,
         fn(output) {
-          assets.quantity_of(
+          value.quantity_of(
             output.value,
             own_script_hash,
             shared.oracle_sft_name(),
@@ -62,23 +59,23 @@ validator oracle(pool_script_hash: ScriptHash) {
   // - each oracle token on the outputs must be paid with a quantity of 1 to the oracle script
   // - the datum for each must have the correct timing and pricing information
   // Burning an oracle token is always allowed
-  mint(
-    redeemer: OracleRedeemer,
-    own_policy_id: PolicyId,
-    transaction: Transaction,
-  ) {
+  fn mint(redeemer: OracleRedeemer, ctx: ScriptContext) {
     when redeemer is {
       Mint(pool_ident, order_indices) -> {
+        expect transaction.Mint(own_policy_id) = ctx.purpose
+
         // Calculate the expected pool token names, so we can look for the pool name, and record the LP tokens
         let pool_lp_name = shared.pool_lp_name(pool_ident)
         let pool_nft_name = shared.pool_nft_name(pool_ident)
 
         // Find the pool output, i.e. the one with the pool NFT, so we can record the prices
-        expect Some(pool_output) = list.head(transaction.outputs)
+        expect Some(pool_output) = list.head(ctx.transaction.outputs)
         expect
-          pool_output.address.payment_credential == Script(pool_script_hash)
+          pool_output.address.payment_credential == ScriptCredential(
+            pool_script_hash,
+          )
         expect
-          assets.quantity_of(pool_output.value, own_policy_id, pool_nft_name) == 1
+          value.quantity_of(pool_output.value, own_policy_id, pool_nft_name) == 1
 
         // Then unpack the pool datum
         expect InlineDatum(pool_datum) = pool_output.datum
@@ -90,13 +87,13 @@ validator oracle(pool_script_hash: ScriptHash) {
           (
             asset_a.1st,
             asset_a.2nd,
-            assets.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd),
+            value.quantity_of(pool_output.value, asset_a.1st, asset_a.2nd),
           )
         let reserve_b =
           (
             asset_b.1st,
             asset_b.2nd,
-            assets.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd),
+            value.quantity_of(pool_output.value, asset_b.1st, asset_b.2nd),
           )
         let circulating_lp = (pool_script_hash, pool_lp_name, circulating_lp)
 
@@ -107,30 +104,34 @@ validator oracle(pool_script_hash: ScriptHash) {
         // in the redeemer
         let (_, no_duplicate_minted_oracles) =
           list.foldl(
-            transaction.outputs,
+            ctx.transaction.outputs,
             (0, True),
             fn(output, state) {
               let (oracle_minted_index, no_duplicates) = state
               let qty =
-                assets.quantity_of(output.value, own_policy_id, oracle_name)
+                value.quantity_of(output.value, own_policy_id, oracle_name)
               when qty is {
                 0 -> (oracle_minted_index, no_duplicates)
                 1 -> {
                   expect Some(this_order_index) =
                     list.at(order_indices, oracle_minted_index)
                   expect Some(oracle_order) =
-                    list.at(transaction.inputs, this_order_index)
+                    list.at(ctx.transaction.inputs, this_order_index)
                   expect Some(oracle_order_datum) =
-                    shared.datum_of(transaction.datums, oracle_order.output)
+                    shared.datum_of(ctx.transaction.datums, oracle_order.output)
                   expect oracle_order_datum: OrderDatum = oracle_order_datum
-                  expect owner: multisig.MultisigScript =
-                    oracle_order_datum.extension
+                  expect owner = oracle_order_datum.extension
+                  expect owner: multisig.MultisigScript = owner
+
                   expect
-                    output.address.payment_credential == Script(own_policy_id)
+                    output.address.payment_credential == ScriptCredential(
+                      own_policy_id,
+                    )
                   expect Some(oracle_datum) =
-                    shared.datum_of(transaction.datums, output)
+                    shared.datum_of(ctx.transaction.datums, output)
                   expect oracle_datum: OracleDatum = oracle_datum
-                  expect oracle_datum.valid_range == transaction.validity_range
+                  expect
+                    oracle_datum.valid_range == ctx.transaction.validity_range
                   expect oracle_datum.pool_ident == pool_ident
                   expect oracle_datum.owner == owner
                   expect reserve_a == oracle_datum.reserve_a
@@ -146,10 +147,6 @@ validator oracle(pool_script_hash: ScriptHash) {
       }
       Burn -> True
     }
-  }
-
-  else(_) {
-    fail
   }
 }
 
@@ -208,11 +205,14 @@ fn mint_oracle(
     #"00000000000000000000000000000000000000000000000000000000"
   let oracle_address =
     Address {
-      payment_credential: Script(oracle_policy_id),
+      payment_credential: ScriptCredential(oracle_policy_id),
       stake_credential: None,
     }
   let order_address =
-    Address { payment_credential: Script(#"1234"), stake_credential: None }
+    Address {
+      payment_credential: ScriptCredential(#"1234"),
+      stake_credential: None,
+    }
   let pool_script_hash =
     #"00000000000000000000000000000000000000000000000000000000"
   let pool_address = script_address(pool_script_hash)
@@ -226,9 +226,9 @@ fn mint_oracle(
   let pool_output =
     Output {
       address: pool_address,
-      value: assets.from_lovelace(1_000_000_000)
-        |> assets.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
-        |> assets.add(pool_script_hash, pool_nft_name, 1),
+      value: value.from_lovelace(1_000_000_000)
+        |> value.add(rberry_policy_id, rberry_token_name, 1_000_000_000)
+        |> value.add(pool_script_hash, pool_nft_name, 1),
       datum: InlineDatum(
         PoolDatum {
           identifier: pool_id,
@@ -249,12 +249,12 @@ fn mint_oracle(
   let oracle_order_input_1 =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"00",
+        transaction_id: TransactionId { hash: #"00" },
         output_index: 0,
       },
       output: Output {
         address: order_address,
-        value: assets.from_lovelace(1_000_000),
+        value: value.from_lovelace(1_000_000),
         datum: InlineDatum(
           OrderDatum {
             pool_ident: None,
@@ -271,12 +271,12 @@ fn mint_oracle(
   let oracle_order_input_2 =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"00",
+        transaction_id: TransactionId { hash: #"00" },
         output_index: 1,
       },
       output: Output {
         address: order_address,
-        value: assets.from_lovelace(1_000_000),
+        value: value.from_lovelace(1_000_000),
         datum: InlineDatum(
           OrderDatum {
             pool_ident: None,
@@ -295,8 +295,8 @@ fn mint_oracle(
   let oracle_output_1 =
     Output {
       address: script_address(oracle_policy_id),
-      value: assets.from_lovelace(1_000_000)
-        |> assets.add(oracle_policy_id, oracle_name, 1),
+      value: value.from_lovelace(1_000_000)
+        |> value.add(oracle_policy_id, oracle_name, 1),
       datum: InlineDatum(
         modify_oracle_datum(
           OracleDatum {
@@ -314,8 +314,8 @@ fn mint_oracle(
   let oracle_output_2 =
     Output {
       address: script_address(oracle_policy_id),
-      value: assets.from_lovelace(1_000_000)
-        |> assets.add(oracle_policy_id, oracle_name, 1),
+      value: value.from_lovelace(1_000_000)
+        |> value.add(oracle_policy_id, oracle_name, 1),
       datum: InlineDatum(
         modify_oracle_datum(
           OracleDatum {
@@ -330,21 +330,27 @@ fn mint_oracle(
       ),
       reference_script: None,
     }
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [oracle_order_input_1, oracle_order_input_2],
-      outputs: [pool_output, oracle_output_1, oracle_output_2],
-      fee: 1_000_000,
-      mint: assets.zero |> assets.add(oracle_policy_id, oracle_name, 1),
-      validity_range: interval.between(1, 2),
-      id: mk_tx_hash(1),
+  let ctx =
+    ScriptContext {
+      transaction: Transaction {
+        inputs: [oracle_order_input_1, oracle_order_input_2],
+        outputs: [pool_output, oracle_output_1, oracle_output_2],
+        reference_inputs: [],
+        fee: value.from_lovelace(1_000_000),
+        mint: value.to_minted_value(
+          value.from_lovelace(0)
+            |> value.add(oracle_policy_id, oracle_name, 1),
+        ),
+        certificates: [],
+        withdrawals: dict.new(),
+        validity_range: interval.between(1, 2),
+        extra_signatories: [],
+        redeemers: dict.new(),
+        datums: dict.new(),
+        id: mk_tx_hash(1),
+      },
+      purpose: transaction.Mint(oracle_policy_id),
     }
-
-  oracle.mint(
-    oracle_policy_id,
-    oracleMintRedeemer,
-    oracle_policy_id,
-    transaction,
-  )
+  let result = mint(oracle_policy_id, oracleMintRedeemer, ctx)
+  result
 }
