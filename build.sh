@@ -53,10 +53,14 @@ echo "  lib/calculation/swap.ak           = ${SHA256}"
 SHA256=$(cat lib/calculation/withdrawal.ak | sha256sum | cut -f 1 -d ' ')
 echo "  lib/calculation/withdrawal.ak     = ${SHA256}"
 
-aiken build &> /dev/null
+aiken build
 
-PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
+# Preview
+PROTOCOL_BOOT_TX="45ae0839622478c3ed2fbf5eea03c54ca3fd57607b7a2660445166ea8a42d98c"
 PROTOCOL_BOOT_IX="01"
+# Mainnet
+# PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
+# PROTOCOL_BOOT_IX="01"
 PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
 
 aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
