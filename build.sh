@@ -38,8 +38,6 @@ SHA256=$(cat lib/types/settings.ak | sha256sum | cut -f 1 -d ' ')
 echo "  lib/types/settings.ak             = ${SHA256}"
 SHA256=$(cat lib/calculation/deposit.ak | sha256sum | cut -f 1 -d ' ')
 echo "  lib/calculation/deposit.ak        = ${SHA256}"
-SHA256=$(cat lib/calculation/donation.ak | sha256sum | cut -f 1 -d ' ')
-echo "  lib/calculation/donation.ak       = ${SHA256}"
 SHA256=$(cat lib/calculation/process.ak | sha256sum | cut -f 1 -d ' ')
 echo "  lib/calculation/process.ak        = ${SHA256}"
 SHA256=$(cat lib/calculation/record.ak | sha256sum | cut -f 1 -d ' ')
@@ -55,17 +53,21 @@ echo "  lib/calculation/withdrawal.ak     = ${SHA256}"
 
 aiken build &> /dev/null
 
-PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
-PROTOCOL_BOOT_IX="01"
-PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
+# Stablepools reuse the same settings UTXO as V3 and as such does not need a new bootstrap
+# PROTOCOL_BOOT_TX="382b27b28c70343161f9abebdab78264e0fd7271baf3bb88ca04b52e5f0067ef"
+# PROTOCOL_BOOT_IX="01"
+# PROTOCOL_BOOT_UTXO="d8799fd8799f5820${PROTOCOL_BOOT_TX}ff${PROTOCOL_BOOT_IX}ff"
 
-aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
-mv tmp plutus.json
+# aiken blueprint apply -v settings.spend $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
+# mv tmp plutus.json
 
-aiken blueprint apply -v settings.mint $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
-mv tmp plutus.json
+# aiken blueprint apply -v settings.mint $PROTOCOL_BOOT_UTXO 2> /dev/null > tmp
+# mv tmp plutus.json
 
-SETTINGS_SCRIPT_HASH="$(aiken blueprint policy -v settings.mint 2> /dev/null)"
+# Preview
+# SETTINGS_SCRIPT_HASH="85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76"
+# Mainnet
+SETTINGS_SCRIPT_HASH="6d9d7acac59a4469ec52bb207106167c5cbfa689008ffa6ee92acc50"
 aiken blueprint apply -v pool.manage "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
