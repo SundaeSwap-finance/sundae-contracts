@@ -106,7 +106,7 @@ test ok_scoop_swap_protocol_fees() {
     ScoopTestOptions {
       ..default_scoop_test_options(),
       edit_protocol_fee_basis_points: Some((10, 10)),
-      edit_accrued_protocol_fees: Some((7_000_000, 0, 19_999)),
+      edit_accrued_protocol_fees: Some((7_000_000 - 600_000, 0, 19_999)), // Subtract off tx_fee here
       edit_order_1_out_value: Some(
         assets.from_lovelace(2_000_000)
           |> assets.add(
@@ -124,7 +124,7 @@ test ok_scoop_swap_protocol_fees() {
             ),
       ),
       edit_pool_output_value: Some(
-        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000 - 600_000)
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
@@ -183,7 +183,7 @@ test ok_scoop_swap_with_over_rounding() {
       ),
       edit_pool_output_value: Some(
         assets.from_lovelace(
-          amt_1 + amt_2 + 20_000_000_000 + 2_000_000 + 2_500_000 + 2_500_000,
+          amt_1 + amt_2 + 20_000_000_000 + 2_000_000 + 2_500_000 + 2_500_000 - 600_000, // subtract off the tx_fee
         )
           |> assets.add(
               constants.rberry_policy,
@@ -286,7 +286,7 @@ test scoop_high_swap_fees() {
             ),
       ),
       edit_pool_output_value: Some(
-        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000 - 600_000) // subtract off tx_fee
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
@@ -397,8 +397,9 @@ fn scoop(options: ScoopTestOptions) {
   let fees = option.or_else(options.edit_swap_fees, (5, 5))
   let protocol_fee_basis_points =
     option.or_else(options.edit_protocol_fee_basis_points, (0, 0))
+  let tx_fee = option.or_else(options.edit_fee, 600_000)
   let accrued_protocol_fees =
-    option.or_else(options.edit_accrued_protocol_fees, (7_000_000, 0, 0))
+    option.or_else(options.edit_accrued_protocol_fees, (7_000_000 - tx_fee, 0, 0))
   let sum_invariants =
     option.or_else(
       options.edit_sum_invariants,
@@ -591,7 +592,7 @@ fn scoop(options: ScoopTestOptions) {
       address: option.or_else(options.edit_pool_output_address, pool_address),
       value: option.or_else(
         options.edit_pool_output_value,
-        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000 - tx_fee)
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
@@ -608,7 +609,7 @@ fn scoop(options: ScoopTestOptions) {
       inputs: [pool_input, order1_in, order2_in],
       reference_inputs: [settings_input],
       outputs: [pool_output, order1_out, order2_out],
-      fee: option.or_else(options.edit_fee, 1_000_000),
+      fee: tx_fee,
       validity_range: interval.between(1, 2),
       extra_signatories: [constants.scooper],
       id: mk_tx_hash(1),
@@ -663,6 +664,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
         2000000000000000000000,
       ),
     }
+  let tx_fee = option.or_else(options.edit_fee, 600_000)
   let pool_out_datum =
     StablePoolDatum {
       identifier: constants.pool_ident,
@@ -675,7 +677,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       protocol_fee_basis_points: (0, 0),
       fee_manager: None,
       market_open: 0,
-      protocol_fees: (7_000_000, 0, 0),
+      protocol_fees: (7_000_000 - tx_fee, 0, 0),
       linear_amplification: 200,
       linear_amplification_manager: None,
       sum_invariant: sum_invariants.2nd,
@@ -811,7 +813,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       address: pool_address,
       value: option.or_else(
         options.edit_pool_output_value,
-        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000)
+        assets.from_lovelace(1_000_000_000 + 20_000_000 + 5_000_000 + 2_000_000 - tx_fee)
           |> assets.add(
               constants.rberry_policy,
               constants.rberry_asset_name,
@@ -829,7 +831,7 @@ fn scoop_swap_deposit(options: ScoopTestOptions) {
       inputs: [pool_input, order1_in, order2_in],
       reference_inputs: [settings_input],
       outputs: [pool_output, order1_out, order2_out],
-      fee: option.or_else(options.edit_fee, 1_000_000),
+      fee: tx_fee,
       mint: assets.zero
         |> assets.add(
             constants.pool_script_hash,

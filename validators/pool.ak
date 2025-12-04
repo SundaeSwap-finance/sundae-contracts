@@ -68,6 +68,7 @@ validator pool(
       extra_signatories,
       validity_range,
       withdrawals,
+      fee,
       ..
     } = transaction
 
@@ -254,7 +255,7 @@ validator pool(
         // Make sure we actually increased the protocol fee by exactly this amount
         let expected_protocol_fees =
           (
-            initial_fee_ada + expected_fees_collected,
+            initial_fee_ada + expected_fees_collected - fee,
             initial_fee_a + delta_fee_a,
             initial_fee_b + delta_fee_b,
           )
