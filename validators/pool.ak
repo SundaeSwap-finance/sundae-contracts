@@ -68,6 +68,7 @@ validator pool(
       extra_signatories,
       validity_range,
       withdrawals,
+      fee,
       ..
     } = transaction
 
@@ -248,8 +249,11 @@ validator pool(
         // We calculate the expected total collected protocol fee
         // We multiply amortized_base_fee, which everyone paid, by the number of orders
         // and then the respective fees for each simple order and strategy order
+        // Finally we subtract the transaction fee
         let expected_fees_collected =
-          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee
+          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee - fee
+
+        expect expected_fees_collected >= 0
 
         // Make sure we actually increased the protocol fee by exactly this amount
         let expected_protocol_fees =
