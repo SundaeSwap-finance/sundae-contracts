@@ -68,6 +68,7 @@ validator pool(
       extra_signatories,
       validity_range,
       withdrawals,
+      fee,
       ..
     } = transaction
 
@@ -249,7 +250,9 @@ validator pool(
         // We multiply amortized_base_fee, which everyone paid, by the number of orders
         // and then the respective fees for each simple order and strategy order
         let expected_fees_collected =
-          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee
+          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee - fee
+
+        expect expected_fees_collected >= 0
 
         // Make sure we actually increased the protocol fee by exactly this amount
         let expected_protocol_fees =
@@ -992,7 +995,7 @@ validator manage(settings_policy_id: PolicyId) {
               datum.protocol_fees.2nd,
               datum.protocol_fees.3rd,
             ),
-            lp_fee_basis_points: lp_fee_basis_points,
+            lp_fee_basis_points,
             fee_manager: output_fee_manager,
           }
         pool_output_datum == expected_datum
@@ -1055,8 +1058,8 @@ validator manage(settings_policy_id: PolicyId) {
               datum.protocol_fees.2nd,
               datum.protocol_fees.3rd,
             ),
-            linear_amplification: linear_amplification,
-            sum_invariant: sum_invariant,
+            linear_amplification,
+            sum_invariant,
             linear_amplification_manager: output_linear_amplification_manager,
           }
         pool_output_datum == expected_datum
