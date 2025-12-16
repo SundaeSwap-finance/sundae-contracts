@@ -550,6 +550,12 @@ validator pool(
             shared.fees_in_legal_range(
               pool_output_datum.protocol_fee_basis_points.2nd,
             ),
+            shared.fees_in_legal_range(
+              pool_output_datum.lp_fee_basis_points.1st + pool_output_datum.protocol_fee_basis_points.1st,
+            ),
+            shared.fees_in_legal_range(
+              pool_output_datum.lp_fee_basis_points.2nd + pool_output_datum.protocol_fee_basis_points.2nd,
+            ),
             protocol_fee_extension.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
@@ -910,6 +916,23 @@ validator manage(settings_policy_id: PolicyId) {
           expect
             pool_output_address.payment_credential == Script(pool_script_hash)
 
+          expect
+            shared.fees_in_legal_range(
+              output_datum.protocol_fee_basis_points.1st,
+            )
+          expect
+            shared.fees_in_legal_range(
+              output_datum.protocol_fee_basis_points.2nd,
+            )
+          expect
+            shared.fees_in_legal_range(
+              output_datum.lp_fee_basis_points.1st + output_datum.protocol_fee_basis_points.1st,
+            )
+          expect
+            shared.fees_in_legal_range(
+              output_datum.lp_fee_basis_points.2nd + output_datum.protocol_fee_basis_points.2nd,
+            )
+
           // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
           // but, the treasury admin is also allowed to update the protocol fees basis points, but nothing else in the datum
           // is allowed to be changed.
@@ -970,12 +993,21 @@ validator manage(settings_policy_id: PolicyId) {
         let StablePoolDatum {
           lp_fee_basis_points,
           fee_manager: output_fee_manager,
+          protocol_fee_basis_points,
           ..
         } = pool_output_datum
 
         // Make sure we don't update the fees to negative or above 100%
         expect shared.fees_in_legal_range(lp_fee_basis_points.1st)
         expect shared.fees_in_legal_range(lp_fee_basis_points.2nd)
+        expect
+          shared.fees_in_legal_range(
+            lp_fee_basis_points.1st + protocol_fee_basis_points.1st,
+          )
+        expect
+          shared.fees_in_legal_range(
+            lp_fee_basis_points.2nd + protocol_fee_basis_points.2nd,
+          )
 
         // Check that the *current* fee manager approves the update
         expect Some(fee_manager) = datum.fee_manager
