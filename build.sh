@@ -65,11 +65,11 @@ aiken build 2> /dev/null
 # mv tmp plutus.json
 
 # Preview
-# SETTINGS_SCRIPT_HASH="85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76"
+SETTINGS_SCRIPT_HASH="85ed0c7060ccd4700927d8b60f0160abe2b3c30446fc0a9ac83b6b76"
 # Mainnet
 # SETTINGS_SCRIPT_HASH="6d9d7acac59a4469ec52bb207106167c5cbfa689008ffa6ee92acc50"
 # Test Mainnet
-SETTINGS_SCRIPT_HASH="bb2e8840a203180d45d542305a2b1c26589dcf867dae0cb5e4a02078"
+# SETTINGS_SCRIPT_HASH="bb2e8840a203180d45d542305a2b1c26589dcf867dae0cb5e4a02078"
 aiken blueprint apply -m pool -v manage "581c${SETTINGS_SCRIPT_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
