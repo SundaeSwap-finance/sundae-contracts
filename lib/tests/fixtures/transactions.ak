@@ -396,7 +396,7 @@ fn mk_settings_datum(scoopers: List<ByteArray>) -> SettingsDatum {
     simple_fee: protocol_fee,
     strategy_fee: 5_000_000,
     pool_creation_fee: 0,
-    extensions: Void,
+    extensions: [],
   }
 }
 

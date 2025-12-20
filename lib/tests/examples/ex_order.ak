@@ -133,7 +133,7 @@ fn mk_strategy_execution() {
     tx_ref,
     validity_range: valid_range,
     details: mk_swap().details,
-    extensions: Void,
+    extensions: [],
   }
 }
 

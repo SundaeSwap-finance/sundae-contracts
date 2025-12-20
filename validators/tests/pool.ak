@@ -88,11 +88,13 @@ fn base_pool_datum() -> PoolDatum {
     identifier: pool_ident,
     assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
     circulating_lp: 1_000_000_000,
-    bid_fees_per_10_thousand: 5,
-    ask_fees_per_10_thousand: 5,
+    lp_fee_basis_points: (5, 5),
+    protocol_fee_basis_points: (0, 0),
     fee_manager: None,
+    staking_admin: None,
+    extra_scoopers: [],
     market_open: 0,
-    protocol_fees: 2_000_000,
+    protocol_fees: (2_000_000, 0, 0),
   }
 }
 
@@ -122,7 +124,7 @@ test scoop_swap_swap_success() {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -217,7 +219,7 @@ test scoop_swap_with_surplus_success() {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -314,7 +316,7 @@ test scoop_ignores_transaction_fee() {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -409,12 +411,8 @@ test scoop_with_high_swap_fees() {
   let order_address = script_address(order_script_hash)
 
   let pool_datum =
-    PoolDatum {
-      ..base_pool_datum(),
-      bid_fees_per_10_thousand: 100,
-      ask_fees_per_10_thousand: 100,
-    }
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+    PoolDatum { ..base_pool_datum(), lp_fee_basis_points: (100, 100) }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -508,7 +506,7 @@ test scoop_with_self_destination() {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -608,7 +606,7 @@ test scoop_wrong_destination_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -704,7 +702,7 @@ test scoop_payouts_swapped_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -800,7 +798,7 @@ test scoop_missing_pool_nft_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -895,7 +893,7 @@ test scoop_pool_output_to_wallet_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -991,7 +989,7 @@ test scoop_pool_output_wrong_script_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -1093,7 +1091,7 @@ test scoop_pool_staking_credential_change_fails() fail {
       |> with_delegation_key(other_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -1189,7 +1187,7 @@ test scoop_unauthorized_scooper_fails() fail {
   let order_address = script_address(order_script_hash)
 
   let pool_datum = base_pool_datum()
-  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: 7_000_000 }
+  let pool_out_datum = PoolDatum { ..pool_datum, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -1288,7 +1286,7 @@ test scoop_swap_deposit_success() {
 
   let pool_datum = base_pool_datum()
   let pool_out_datum =
-    PoolDatum { ..pool_datum, circulating_lp: 1_009_900_990, protocol_fees: 7_000_000 }
+    PoolDatum { ..pool_datum, circulating_lp: 1_009_900_990, protocol_fees: (7_000_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -1401,8 +1399,8 @@ test scoop_swap_deposit_success() {
 /// Test basic fee withdrawal succeeds
 test withdraw_fees_success() {
   let pool_nft = pool_nft_name(pool_ident)
-  let protocol_fees = 2_000_000
-  let withdraw_amount = 100
+  let protocol_fees = (2_000_000, 0, 0)
+  let withdraw_amount = (100, 0, 0)
 
   let pool_address =
     Address {
@@ -1412,7 +1410,14 @@ test withdraw_fees_success() {
 
   let pool_datum = base_pool_datum()
   let pool_out_datum =
-    PoolDatum { ..pool_datum, protocol_fees: protocol_fees - withdraw_amount }
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
 
   let normal_input =
     new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
@@ -1421,7 +1426,7 @@ test withdraw_fees_success() {
     new_tx_input(
       mk_tx_hash(1),
       script_address(pool_script_hash),
-      1_000_000_000 + protocol_fees,
+      1_000_000_000 + protocol_fees.1st,
       InlineDatum(pool_datum),
     )
       |> with_asset_of_tx_input(
@@ -1432,7 +1437,7 @@ test withdraw_fees_success() {
   let pool_output =
     new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
       |> add_asset_to_tx_output(
-          assets.from_lovelace(1_000_000_000 + protocol_fees - withdraw_amount),
+          assets.from_lovelace(1_000_000_000 + protocol_fees.1st - withdraw_amount.1st),
         )
       |> add_asset_to_tx_output(
           assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
@@ -1445,7 +1450,7 @@ test withdraw_fees_success() {
       0,
       InlineDatum(Void),
     )
-      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount))
+      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount.1st))
 
   let settings_input =
     new_tx_input(
@@ -1499,8 +1504,8 @@ test withdraw_fees_success() {
 /// Test fee withdrawal fails with wrong pool input index
 test withdraw_fees_wrong_input_fails() fail {
   let pool_nft = pool_nft_name(pool_ident)
-  let protocol_fees = 2_000_000
-  let withdraw_amount = 100
+  let protocol_fees = (2_000_000, 0, 0)
+  let withdraw_amount = (100, 0, 0)
 
   let pool_address =
     Address {
@@ -1510,7 +1515,14 @@ test withdraw_fees_wrong_input_fails() fail {
 
   let pool_datum = base_pool_datum()
   let pool_out_datum =
-    PoolDatum { ..pool_datum, protocol_fees: protocol_fees - withdraw_amount }
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
 
   let normal_input =
     new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
@@ -1519,7 +1531,7 @@ test withdraw_fees_wrong_input_fails() fail {
     new_tx_input(
       mk_tx_hash(1),
       script_address(pool_script_hash),
-      1_000_000_000 + protocol_fees,
+      1_000_000_000 + protocol_fees.1st,
       InlineDatum(pool_datum),
     )
       |> with_asset_of_tx_input(
@@ -1530,7 +1542,7 @@ test withdraw_fees_wrong_input_fails() fail {
   let pool_output =
     new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
       |> add_asset_to_tx_output(
-          assets.from_lovelace(1_000_000_000 + protocol_fees - withdraw_amount),
+          assets.from_lovelace(1_000_000_000 + protocol_fees.1st - withdraw_amount.1st),
         )
       |> add_asset_to_tx_output(
           assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
@@ -1543,7 +1555,7 @@ test withdraw_fees_wrong_input_fails() fail {
       0,
       InlineDatum(Void),
     )
-      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount))
+      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount.1st))
 
   let settings_input =
     new_tx_input(
@@ -1598,8 +1610,8 @@ test withdraw_fees_wrong_input_fails() fail {
 /// Test overdrawing fees fails
 test withdraw_fees_overdraw_fails() fail {
   let pool_nft = pool_nft_name(pool_ident)
-  let protocol_fees = 2_000_000
-  let withdraw_amount = 5_000_000
+  let protocol_fees = (2_000_000, 0, 0)
+  let withdraw_amount = (5_000_000, 0, 0)
 
   let pool_address =
     Address {
@@ -1609,7 +1621,14 @@ test withdraw_fees_overdraw_fails() fail {
 
   let pool_datum = base_pool_datum()
   let pool_out_datum =
-    PoolDatum { ..pool_datum, protocol_fees: protocol_fees - withdraw_amount }
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
 
   let normal_input =
     new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
@@ -1618,7 +1637,7 @@ test withdraw_fees_overdraw_fails() fail {
     new_tx_input(
       mk_tx_hash(1),
       script_address(pool_script_hash),
-      1_000_000_000 + protocol_fees,
+      1_000_000_000 + protocol_fees.1st,
       InlineDatum(pool_datum),
     )
       |> with_asset_of_tx_input(
@@ -1629,7 +1648,7 @@ test withdraw_fees_overdraw_fails() fail {
   let pool_output =
     new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
       |> add_asset_to_tx_output(
-          assets.from_lovelace(1_000_000_000 + protocol_fees - withdraw_amount),
+          assets.from_lovelace(1_000_000_000 + protocol_fees.1st - withdraw_amount.1st),
         )
       |> add_asset_to_tx_output(
           assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
@@ -1642,7 +1661,7 @@ test withdraw_fees_overdraw_fails() fail {
       0,
       InlineDatum(Void),
     )
-      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount))
+      |> add_asset_to_tx_output(assets.from_lovelace(withdraw_amount.1st))
 
   let settings_input =
     new_tx_input(
@@ -1711,7 +1730,7 @@ test update_pool_fees_success() {
     PoolDatum { ..base_pool_datum(), fee_manager: Some(multisig.Signature(pool_script_hash)) }
 
   let pool_out_datum =
-    PoolDatum { ..pool_datum, bid_fees_per_10_thousand: 10, ask_fees_per_10_thousand: 10 }
+    PoolDatum { ..pool_datum, lp_fee_basis_points: (10, 10) }
 
   let pool_rider = 2_000_000
 
@@ -1777,11 +1796,7 @@ test update_pool_fees_too_high_fails() fail {
 
   // Fees > 100%
   let pool_out_datum =
-    PoolDatum {
-      ..pool_datum,
-      bid_fees_per_10_thousand: 10001,
-      ask_fees_per_10_thousand: 10001,
-    }
+    PoolDatum { ..pool_datum, lp_fee_basis_points: (10001, 10001) }
 
   let pool_rider = 2_000_000
 
@@ -1846,7 +1861,7 @@ test update_pool_fees_no_manager_fails() fail {
   let pool_datum = PoolDatum { ..base_pool_datum(), fee_manager: None }
 
   let pool_out_datum =
-    PoolDatum { ..pool_datum, bid_fees_per_10_thousand: 10, ask_fees_per_10_thousand: 10 }
+    PoolDatum { ..pool_datum, lp_fee_basis_points: (10, 10) }
 
   let pool_rider = 2_000_000
 
@@ -1913,7 +1928,7 @@ test update_pool_fees_with_script_manager() {
     PoolDatum { ..base_pool_datum(), fee_manager: Some(multisig.Script(script_hash)) }
 
   let pool_out_datum =
-    PoolDatum { ..pool_datum, bid_fees_per_10_thousand: 10, ask_fees_per_10_thousand: 10 }
+    PoolDatum { ..pool_datum, lp_fee_basis_points: (10, 10) }
 
   let pool_rider = 2_000_000
 
@@ -2017,11 +2032,13 @@ test mint_pool_success() {
       identifier: pool_id,
       assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: 5,
-      ask_fees_per_10_thousand: 5,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
     }
 
   let pool_output_val =
@@ -2100,11 +2117,13 @@ test mint_pool_exotic_pair() {
       identifier: pool_id,
       assets: ((#"01", #"54"), (#"02", #"55")),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: 5,
-      ask_fees_per_10_thousand: 5,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
     }
 
   let pool_output_val =
@@ -2180,11 +2199,13 @@ test mint_pool_wrong_address_fails() fail {
       identifier: pool_id,
       assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: 5,
-      ask_fees_per_10_thousand: 5,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
     }
 
   let pool_output_val =
@@ -2264,11 +2285,13 @@ test mint_pool_nonvoid_datum_fails() fail {
       identifier: pool_id,
       assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: 5,
-      ask_fees_per_10_thousand: 5,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
     }
 
   let pool_output_val =
@@ -2348,11 +2371,13 @@ test mint_pool_multiple_nfts_fails() fail {
       identifier: pool_id,
       assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
       circulating_lp: 1_000_000_000,
-      bid_fees_per_10_thousand: 5,
-      ask_fees_per_10_thousand: 5,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
       fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
       market_open: 0,
-      protocol_fees: 2_000_000,
+      protocol_fees: (2_000_000, 0, 0),
     }
 
   // Multiple NFTs
@@ -2505,7 +2530,7 @@ test pool_value_ada_token_pair() {
     outcome.quantity_b.2nd,
     outcome.quantity_b.3rd,
     99,
-    2_000_000,
+    (2_000_000, 0, 0),
   )
 }
 
@@ -2536,7 +2561,7 @@ test pool_value_token_token_pair() {
     outcome.quantity_b.2nd,
     outcome.quantity_b.3rd,
     99,
-    2_000_000,
+    (2_000_000, 0, 0),
   )
 }
 
@@ -2565,7 +2590,7 @@ test pool_value_empty_pool() {
     outcome.quantity_b.2nd,
     outcome.quantity_b.3rd,
     0,
-    3_000_000,
+    (3_000_000, 0, 0),
   )
 }
 
@@ -2585,13 +2610,9 @@ test scoop_swap_with_over_rounding() {
   let amt_1 = 408_367_450
   let amt_2 = 425_387_016
 
-  let pool_datum =
-    PoolDatum {
-      ..base_pool_datum(),
-      protocol_fees: 2_000_000,
-    }
+  let pool_datum = base_pool_datum()
   let pool_out_datum =
-    PoolDatum { ..pool_datum, protocol_fees: 2_000_000 + 2_500_000 + 2_500_000 }
+    PoolDatum { ..pool_datum, protocol_fees: (2_000_000 + 2_500_000 + 2_500_000, 0, 0) }
 
   let pool_input =
     Input {
@@ -2708,8 +2729,8 @@ test scoop_swap_with_over_rounding() {
 test evaporate_pool_success() {
   let pool_nft = pool_nft_name(pool_ident)
   let pool_address = script_address(pool_script_hash)
-  let protocol_fees = 18_000_000
-  let withdraw_amount = 18_000_000
+  let protocol_fees = (18_000_000, 0, 0)
+  let withdraw_amount = (18_000_000, 0, 0)
 
   let pool_datum =
     PoolDatum {
@@ -2723,7 +2744,7 @@ test evaporate_pool_success() {
       output_reference: mk_output_reference(0),
       output: Output {
         address: pool_address,
-        value: assets.from_lovelace(protocol_fees)
+        value: assets.from_lovelace(protocol_fees.1st)
           |> assets.add(pool_script_hash, pool_nft, 1),
         datum: InlineDatum(pool_datum),
         reference_script: None,
@@ -2735,7 +2756,7 @@ test evaporate_pool_success() {
   let treasury_output =
     Output {
       address: Address(VerificationKey(example_treasury_address), None),
-      value: assets.from_lovelace(withdraw_amount),
+      value: assets.from_lovelace(withdraw_amount.1st),
       datum: InlineDatum(Void),
       reference_script: None,
     }
@@ -2780,9 +2801,9 @@ test evaporate_pool_success() {
 test evaporate_pool_insufficient_withdrawal_fails() fail {
   let pool_nft = pool_nft_name(pool_ident)
   let pool_address = script_address(pool_script_hash)
-  let protocol_fees = 18_000_000
+  let protocol_fees = (18_000_000, 0, 0)
   // Withdraw less than full protocol fees - should fail
-  let withdraw_amount = 17_000_000
+  let withdraw_amount = (17_000_000, 0, 0)
 
   let pool_datum =
     PoolDatum {
@@ -2796,7 +2817,7 @@ test evaporate_pool_insufficient_withdrawal_fails() fail {
       output_reference: mk_output_reference(0),
       output: Output {
         address: pool_address,
-        value: assets.from_lovelace(protocol_fees)
+        value: assets.from_lovelace(protocol_fees.1st)
           |> assets.add(pool_script_hash, pool_nft, 1),
         datum: InlineDatum(pool_datum),
         reference_script: None,
@@ -2808,7 +2829,7 @@ test evaporate_pool_insufficient_withdrawal_fails() fail {
   let treasury_output =
     Output {
       address: Address(VerificationKey(example_treasury_address), None),
-      value: assets.from_lovelace(withdraw_amount),
+      value: assets.from_lovelace(withdraw_amount.1st),
       datum: NoDatum,
       reference_script: None,
     }
@@ -2853,8 +2874,8 @@ test evaporate_pool_insufficient_withdrawal_fails() fail {
 test evaporate_pool_via_spend() {
   let pool_nft = pool_nft_name(pool_ident)
   let pool_address = script_address(pool_script_hash)
-  let protocol_fees = 18_000_000
-  let withdraw_amount = 18_000_000
+  let protocol_fees = (18_000_000, 0, 0)
+  let withdraw_amount = (18_000_000, 0, 0)
 
   let pool_datum =
     PoolDatum {
@@ -2868,7 +2889,7 @@ test evaporate_pool_via_spend() {
       output_reference: mk_output_reference(0),
       output: Output {
         address: pool_address,
-        value: assets.from_lovelace(protocol_fees)
+        value: assets.from_lovelace(protocol_fees.1st)
           |> assets.add(pool_script_hash, pool_nft, 1),
         datum: InlineDatum(pool_datum),
         reference_script: None,
@@ -2880,7 +2901,7 @@ test evaporate_pool_via_spend() {
   let treasury_output =
     Output {
       address: Address(VerificationKey(example_treasury_address), None),
-      value: assets.from_lovelace(withdraw_amount),
+      value: assets.from_lovelace(withdraw_amount.1st),
       datum: NoDatum,
       reference_script: None,
     }

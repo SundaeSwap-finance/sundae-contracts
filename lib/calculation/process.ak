@@ -39,6 +39,10 @@ pub fn pool_input_to_state(
     Int,
     Int,
     Int,
+    Int,
+    Int,
+    Int,
+    Int,
   ) ->
     Bool,
 ) -> Bool {
@@ -47,43 +51,42 @@ pub fn pool_input_to_state(
     protocol_fees,
     identifier,
     circulating_lp,
-    bid_fees_per_10_thousand,
-    ask_fees_per_10_thousand,
+    lp_fee_basis_points,
+    protocol_fee_basis_points,
     ..
   } = datum
   let (asset_a, asset_b) = assets
   let (asset_a_policy_id, asset_a_name) = asset_a
   let (asset_b_policy_id, asset_b_name) = asset_b
+  let (lp_bid_fee, lp_ask_fee) = lp_fee_basis_points
+  let (protocol_bid_fee, protocol_ask_fee) = protocol_fee_basis_points
+  let (initial_fee_ada, initial_fee_a, initial_fee_b) = protocol_fees
   // If asset_a is ADA, then we need to not consider the protocol fees as part of this
   // We don't have to check asset_b, because assets are guaranteed to be in lexicographical order.
   let min_utxo =
     if asset_a_policy_id == assets.ada_policy_id {
-      protocol_fees
+      initial_fee_ada + initial_fee_a
     } else {
-      0
+      initial_fee_ada
     }
-  // Get the maximum of market_open and the transaction valid from so we can calculate the fees correctly
-  // Note: we use valid_from, as this favors the protocol: you pay the fees for the *earliest* moment your order *could* have executed.
-  // Scoopers could in theory set a wide validity range to cause users to overpay, but this should be considered malicious activity and
-  // get the scooper removed from the list of valid scoopers / ignore scooper rewards
-  // TODO: we could solve this by enforcing a validity range, and checking the length is within 4 hours.
-  let bid_fees = bid_fees_per_10_thousand
-  let ask_fees = ask_fees_per_10_thousand
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order
-  // TODO: we could potentially save quite a bit by not passing around this object, and passing around a lot of parameters instead...
   continuation(
     asset_a_policy_id,
     asset_a_name,
-    assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo,
+    assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo - ( if asset_a_policy_id != assets.ada_policy_id { initial_fee_a } else { 0 } ),
     asset_b_policy_id,
     asset_b_name,
-    assets.quantity_of(input.value, asset_b_policy_id, asset_b_name),
+    assets.quantity_of(input.value, asset_b_policy_id, asset_b_name) - initial_fee_b,
     pool_token_policy,
     pool_lp_name(identifier),
     circulating_lp,
-    bid_fees,
-    ask_fees,
-    protocol_fees,
+    lp_bid_fee,
+    lp_ask_fee,
+    protocol_bid_fee,
+    protocol_ask_fee,
+    initial_fee_ada,
+    initial_fee_a,
+    initial_fee_b,
   )
 }
 
@@ -128,20 +131,23 @@ pub fn process_order(
   // The destination where the result of the order must be sent; useful for chaining transactions, as it lets you specify a datum for the output
   destination: Destination,
   // The liquidity provider fee to charge for bid (A -> B) and ask (B -> A) orders, expressed as parts per 10,000. also called basis points
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
+  lp_bid_basis_points: Int,
+  lp_ask_basis_points: Int,
+  // The protocol's cut of the LP fees for bid (A -> B) or ask (B -> A) orders
+  protocol_bid_basis_points: Int,
+  protocol_ask_basis_points: Int,
   // The base fee, divided among all the participants in the scoop
   amortized_base_fee: Int,
   // The amount to charge for simple vs strategy orders, taken from the settings
   simple_fee: Int,
   strategy_fee: Int,
   // A list of outputs, so we can destructure the next output
-  // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
-  // A continuation to call with the next pool state and the list of outputs; this is more efficient than constructing an object and tuples
-  continuation: fn(Int, Int, Int, List<Output>) -> Bool,
+  // A continuation to call with the next pool state, list of outputs, and fee deltas
+  // (new_a, new_b, new_lp, outputs, delta_fee_a, delta_fee_b)
+  continuation: fn(Int, Int, Int, List<Output>, Int, Int) -> Bool,
 ) -> Bool {
-  // Returns the updated pool state, the correct list of outputs to resume from, and total fee charged by the order
+  // Returns the updated pool state, the correct list of outputs to resume from, and fee deltas
   when details is {
     order.Strategy { auth: signer } -> {
       // For a strategy, we can basically "unpack" (and validate) the signed execution, and then recurse to process the deferred order
@@ -174,8 +180,10 @@ pub fn process_order(
         details,
         max_protocol_fee,
         destination,
-        bid_fees_per_10_thousand,
-        ask_fees_per_10_thousand,
+        lp_bid_basis_points,
+        lp_ask_basis_points,
+        protocol_bid_basis_points,
+        protocol_ask_basis_points,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
         // because even though we're using the same logic, we're charging a different fee for strategies
@@ -194,6 +202,8 @@ pub fn process_order(
       let
         new_pool_a,
         new_pool_b,
+        delta_fee_a,
+        delta_fee_b,
       <-
         swap.do_swap(
           pool_policy_a,
@@ -204,14 +214,16 @@ pub fn process_order(
           pool_quantity_b,
           input,
           destination,
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
+          lp_bid_basis_points,
+          lp_ask_basis_points,
+          protocol_bid_basis_points,
+          protocol_ask_basis_points,
           fee,
           offer,
           min_received,
           output,
         )
-      continuation(new_pool_a, new_pool_b, pool_quantity_lp, rest_outputs)
+      continuation(new_pool_a, new_pool_b, pool_quantity_lp, rest_outputs, delta_fee_a, delta_fee_b)
     }
     order.Deposit { assets } -> {
       expect [output, ..rest_outputs] = outputs
@@ -241,7 +253,8 @@ pub fn process_order(
           fee,
           output,
         )
-      continuation(new_a, new_b, new_lp, rest_outputs)
+      // Deposits don't collect protocol fee cut from LP fees
+      continuation(new_a, new_b, new_lp, rest_outputs, 0, 0)
     }
     order.Withdrawal { amount } -> {
       expect [output, ..rest_outputs] = outputs
@@ -271,7 +284,8 @@ pub fn process_order(
           fee,
           output,
         )
-      continuation(new_a, new_b, new_lp, rest_outputs)
+      // Withdrawals don't collect protocol fee cut from LP fees
+      continuation(new_a, new_b, new_lp, rest_outputs, 0, 0)
     }
     // NOTE: we decided not to implement zap, for time constraints, and because a zap can be easily implemented as a chained order, as it is in V1
     // The cheaper fees the DAO voted on should make this acceptable
@@ -303,11 +317,11 @@ pub fn process_order(
         )
       // If a donation has no change (ex it has exactly the donation + the fee) then we don't have an output dedicated to the order
       // so we can skip over it
-      // TODO: can we just return used_output here instead of passing around the lists of outputs?
+      // Donations don't collect protocol fee cut from LP fees
       if used_output {
-        continuation(new_a, new_b, pool_quantity_lp, rest_outputs)
+        continuation(new_a, new_b, pool_quantity_lp, rest_outputs, 0, 0)
       } else {
-        continuation(new_a, new_b, pool_quantity_lp, outputs)
+        continuation(new_a, new_b, pool_quantity_lp, outputs, 0, 0)
       }
     }
     order.Record { policy } -> {
@@ -316,11 +330,14 @@ pub fn process_order(
       let fee = amortized_base_fee + simple_fee
       expect max_protocol_fee >= fee
       expect record.check_record(input, destination, fee, output, policy)
+      // Record orders don't collect protocol fee cut from LP fees
       continuation(
         pool_quantity_a,
         pool_quantity_b,
         pool_quantity_lp,
         rest_outputs,
+        0,
+        0,
       )
     }
   }
@@ -350,14 +367,17 @@ pub fn process_orders(
   // The list of remaining indices into the inputs, specifying which orders to process
   input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
   // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders, expressed as parts per 10,000
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
+  lp_bid_basis_points: Int,
+  lp_ask_basis_points: Int,
+  // The protocol's cut of the LP fees for bid (A -> B) or ask (B -> A) orders
+  protocol_bid_basis_points: Int,
+  protocol_ask_basis_points: Int,
   // The protocol base fee, split across each order
   amortized_base_fee: Int,
   // The simple and strategy fees from the settings datum
   simple_fee: Int,
   strategy_fee: Int,
-  // The previous order we processed, to check if we need to restart the loop; TODO: we actually pass +1 from this, and i'm not sure how to explain why we do this...
+  // The previous order we processed, to check if we need to restart the loop
   prev_index: Int,
   // *all* inputs on the transaction, in case we need to start over from the beginning (i.e. wrap around)
   all_inputs: List<Input>,
@@ -370,10 +390,13 @@ pub fn process_orders(
   // A recursive aggregator for the number of "simple" and "strategy" orders we see; used for computing the fee without traversing the list independently, since we're already walking this list
   simple_count: Int,
   strategy_count: Int,
-  // A continuation to call with the final pool state; more efficient than constructing tuples / objects
-  continuation: fn(Int, Int, Int, Int, Int) -> Bool,
+  // Accumulated protocol fee deltas for asset A and B (from LP fee cuts)
+  accumulated_fee_a: Int,
+  accumulated_fee_b: Int,
+  // A continuation to call with the final pool state and fee deltas; more efficient than constructing tuples / objects
+  continuation: fn(Int, Int, Int, Int, Int, Int, Int) -> Bool,
 ) -> Bool {
-  // Returns the final pool state, and the count of each order type
+  // Returns the final pool state, the count of each order type, and accumulated fee deltas
   // The main "pump" of the recursive loop is the input_order, which is a set of indices into the inputs list
   // specified by the scooper for the order to process each order in.
   // Once we've reached the end of the list, we can return, but otherwise
@@ -385,6 +408,8 @@ pub fn process_orders(
         pool_quantity_lp,
         simple_count,
         strategy_count,
+        accumulated_fee_a,
+        accumulated_fee_b,
       )
     [(idx, sse, _), ..rest] -> {
       // First, it's important to check that each order is processed only once;
@@ -436,6 +461,8 @@ pub fn process_orders(
         new_b,
         new_lp,
         next_orders,
+        delta_fee_a,
+        delta_fee_b,
       <-
         process_order(
           pool_policy_a,
@@ -456,8 +483,10 @@ pub fn process_orders(
           details,
           max_protocol_fee,
           destination,
-          bid_fees_per_10_thousand,
-          ask_fees_per_10_thousand,
+          lp_bid_basis_points,
+          lp_ask_basis_points,
+          protocol_bid_basis_points,
+          protocol_ask_basis_points,
           amortized_base_fee,
           simple_fee,
           strategy_fee,
@@ -480,21 +509,22 @@ pub fn process_orders(
         pool_asset_name_lp,
         new_lp,
         rest,
-        // This advances to the next element from input_order
-        bid_fees_per_10_thousand,
-        ask_fees_per_10_thousand,
+        lp_bid_basis_points,
+        lp_ask_basis_points,
+        protocol_bid_basis_points,
+        protocol_ask_basis_points,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
         idx + 1,
-        // This is the "previous index" within the input list; TODO: I'm not actually sure why we add 1?
         all_inputs,
-        // See the notes above about all_inputs vs remaining_inputs
         rest_of_input_list,
         next_orders,
         next_uniqueness_flag,
         next_simple_count,
         next_strategy_count,
+        accumulated_fee_a + delta_fee_a,
+        accumulated_fee_b + delta_fee_b,
         continuation,
       )
     }
@@ -588,6 +618,8 @@ test process_orders_test() {
     new_lp,
     simple,
     strategies,
+    _delta_fee_a,
+    _delta_fee_b,
   <-
     process_orders(
       #"",
@@ -606,6 +638,8 @@ test process_orders_test() {
       input_order,
       5,
       5,
+      0,
+      0,
       2_500_000,
       0,
       0,
@@ -613,6 +647,8 @@ test process_orders_test() {
       inputs,
       inputs,
       outputs,
+      0,
+      0,
       0,
       0,
       0,
@@ -724,6 +760,8 @@ test process_30_shuffled_orders_test() {
     new_lp,
     simple,
     strategies,
+    _delta_fee_a,
+    _delta_fee_b,
   <-
     process_orders(
       #"",
@@ -742,6 +780,8 @@ test process_30_shuffled_orders_test() {
       input_order,
       5,
       5,
+      0,
+      0,
       2_500_000,
       0,
       0,
@@ -749,6 +789,8 @@ test process_30_shuffled_orders_test() {
       inputs,
       inputs,
       outputs,
+      0,
+      0,
       0,
       0,
       0,

@@ -1,5 +1,6 @@
 use aiken/builtin
 use aiken/collection/dict
+use aiken/collection/pairs
 use aiken/crypto.{VerificationKey}
 use cardano/address.{Address, Credential}
 use cardano/assets.{AssetName, PolicyId}
@@ -61,13 +62,10 @@ pub type SettingsDatum {
   /// This fee is charged to those who open pools, and represents the minimum initial value for `protocol_fees`.
   /// It represents another source of revenue for the protocol, should it choose to exercise it.
   pool_creation_fee: Int,
-  // TODO: Perhaps we should split this into separate fields, with different permissions to update it from each administrator
-  // for example, maybe there is a "settings_extensions", "treasury_extensions", etc.
-  /// Any arbitrary "extension" data that can be added to the datum; This isn't used by any existing scripts, but may be used to:
-  /// - publish data for convenient and canonical access by off-chain actors
-  /// - expose data to the script conditions in the multisig scripts of the two administrator roles
-  /// - expose additional settings for more advanced pool and order types to operate off of
-  extensions: Data,
+  /// Extension data keyed by an integer identifier
+  /// Key 0 is reserved for stableswaps, key 1 for project pools
+  /// Used to expose additional settings for more advanced pool and order types
+  extensions: Pairs<Int, Data>,
 }
 
 /// The settings redeemer can be spent for two different purposes
@@ -80,6 +78,31 @@ pub type SettingsRedeemer {
 
 /// The name of the token that authenticates the settings UTXO
 pub const settings_nft_name: AssetName = "settings"
+
+/// Extension key for project pool protocol fee basis points (key 0 is reserved for stableswaps)
+pub const project_pool_extension_key: Int = 1
+
+/// Extension data for protocol fee basis points
+/// Used by project pools to determine the default protocol fee cut
+pub type ProtocolFeeBasisPointsExtension {
+  /// The default protocol fee basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
+  protocol_fee_basis_points: (Int, Int),
+}
+
+/// Look up the protocol fee extension from settings extensions
+/// Extensions are stored as Pairs<Int, Data> where the key identifies the extension type
+pub fn find_protocol_fee_extension(
+  extensions: Pairs<Int, Data>,
+) -> Option<ProtocolFeeBasisPointsExtension> {
+  let maybe_extension = pairs.get_first(extensions, project_pool_extension_key)
+  when maybe_extension is {
+    Some(extension_data) -> {
+      expect extension: ProtocolFeeBasisPointsExtension = extension_data
+      Some(extension)
+    }
+    None -> None
+  }
+}
 
 /// Scan over the list of reference inputs to find the settings datum, and ensure it's the correct one
 /// Note that this makes the assumption that the settings datum is the first reference input, for performance

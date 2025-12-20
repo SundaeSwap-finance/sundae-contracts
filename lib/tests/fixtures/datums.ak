@@ -24,11 +24,13 @@ pub fn default_pool_datum() -> PoolDatum {
     identifier: constants.pool_ident,
     assets: ((#"", #""), rberry),
     circulating_lp: 1_000_000_000,
-    bid_fees_per_10_thousand: 5,
-    ask_fees_per_10_thousand: 5,
+    lp_fee_basis_points: (5, 5),
+    protocol_fee_basis_points: (0, 0),
     fee_manager: None,
+    staking_admin: None,
+    extra_scoopers: [],
     market_open: 0,
-    protocol_fees: 2_000_000,
+    protocol_fees: (2_000_000, 0, 0),
   }
 }
 
@@ -48,11 +50,7 @@ pub fn with_assets(
 
 /// Set LP fees (bid and ask)
 pub fn with_lp_fees(datum: PoolDatum, bid: Int, ask: Int) -> PoolDatum {
-  PoolDatum {
-    ..datum,
-    bid_fees_per_10_thousand: bid,
-    ask_fees_per_10_thousand: ask,
-  }
+  PoolDatum { ..datum, lp_fee_basis_points: (bid, ask) }
 }
 
 /// Set the circulating LP supply
@@ -60,9 +58,14 @@ pub fn with_circulating_lp(datum: PoolDatum, amount: Int) -> PoolDatum {
   PoolDatum { ..datum, circulating_lp: amount }
 }
 
-/// Set protocol fees collected
-pub fn with_protocol_fees(datum: PoolDatum, amount: Int) -> PoolDatum {
-  PoolDatum { ..datum, protocol_fees: amount }
+/// Set protocol fees collected (ada, asset_a, asset_b)
+pub fn with_protocol_fees(
+  datum: PoolDatum,
+  ada: Int,
+  asset_a: Int,
+  asset_b: Int,
+) -> PoolDatum {
+  PoolDatum { ..datum, protocol_fees: (ada, asset_a, asset_b) }
 }
 
 /// Set the fee manager
@@ -237,7 +240,7 @@ pub fn default_settings_datum() -> SettingsDatum {
     simple_fee: 1_500_000,
     strategy_fee: 2_000_000,
     pool_creation_fee: 0,
-    extensions: Void,
+    extensions: [],
   }
 }
 

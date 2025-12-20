@@ -54,7 +54,7 @@ fn simple_scoop_tx(
 
 test pool_scoop_two_swaps_success() {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + 2 * protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + 2 * protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -88,7 +88,7 @@ test pool_scoop_market_closed_fails() fail {
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
 
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
   let p_out =
     pool_output(
       billion + 10_000_000,
@@ -133,7 +133,7 @@ test pool_scoop_zero_offer_fails() fail {
       },
     }
 
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
   let p_out = pool_output(billion, billion, min_ada + protocol_fee, datum_out)
   let u1 = user_output(min_ada, 0)
 
@@ -151,7 +151,7 @@ test pool_scoop_zero_offer_fails() fail {
 
 test pool_scoop_wrong_destination_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -187,7 +187,7 @@ test pool_scoop_wrong_destination_fails() fail {
 
 test pool_scoop_nft_stolen_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -218,7 +218,7 @@ test pool_scoop_nft_stolen_fails() fail {
 test pool_scoop_protocol_fees_wrong_fails() fail {
   let datum = default_pool_datum()
   // Protocol fees not incremented (should add protocol_fee)
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -241,7 +241,7 @@ test pool_scoop_protocol_fees_wrong_fails() fail {
 
 test pool_scoop_unauthorized_scooper_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -280,13 +280,8 @@ test pool_scoop_unauthorized_scooper_fails() fail {
 
 test pool_scoop_high_lp_fee_success() {
   // Pool with 1% fee (100bp) instead of default 0.05% (5bp)
-  let datum =
-    PoolDatum {
-      ..default_pool_datum(),
-      bid_fees_per_10_thousand: 100,
-      ask_fees_per_10_thousand: 100,
-    }
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum = PoolDatum { ..default_pool_datum(), lp_fee_basis_points: (100, 100) }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -319,7 +314,7 @@ test pool_scoop_high_lp_fee_success() {
 
 test pool_scoop_single_swap_success() {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -347,7 +342,7 @@ test pool_scoop_single_swap_success() {
 
 test pool_scoop_token_to_ada_success() {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input_token_to_ada(1, 10_000_000, 0)
@@ -383,7 +378,7 @@ test pool_scoop_swap_deposit_success() {
     PoolDatum {
       ..datum,
       circulating_lp: 1_009_900_990,
-      protocol_fees: 7_000_000,
+      protocol_fees: (7_000_000, 0, 0),
     }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
@@ -436,7 +431,7 @@ test pool_scoop_swap_deposit_success() {
 
 test pool_scoop_self_destination_success() {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = self_swap_order_input(1, 10_000_000, 0)
@@ -476,7 +471,7 @@ test pool_scoop_self_destination_success() {
 
 test pool_scoop_output_to_wallet_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -507,7 +502,7 @@ test pool_scoop_output_to_wallet_fails() fail {
 
 test pool_scoop_output_wrong_script_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -541,7 +536,7 @@ test pool_scoop_output_wrong_script_fails() fail {
 
 test pool_scoop_staking_credential_changed_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   // Pool input has stake_key as staking credential
   let p_in =
@@ -591,7 +586,7 @@ test pool_scoop_staking_credential_changed_fails() fail {
 /// Scoop fails when user payouts are swapped (order 1 gets order 2's output)
 test pool_scoop_payouts_swapped_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + 2 * protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + 2 * protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
   let o1 = swap_order_input(1, 10_000_000, 0)
@@ -631,7 +626,7 @@ test pool_scoop_withdrawal_success() {
     PoolDatum {
       ..datum,
       circulating_lp: 990_000_000,
-      protocol_fees: min_ada + protocol_fee,
+      protocol_fees: (min_ada + protocol_fee, 0, 0),
     }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
@@ -676,7 +671,7 @@ test pool_scoop_swap_withdrawal_success() {
     PoolDatum {
       ..datum,
       circulating_lp: 990_000_000,
-      protocol_fees: min_ada + 2 * protocol_fee,
+      protocol_fees: (min_ada + 2 * protocol_fee, 0, 0),
     }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
@@ -729,7 +724,7 @@ test pool_scoop_swap_withdrawal_success() {
 /// Swap fails when output is below min_received (slippage protection)
 test pool_scoop_min_received_not_met_fails() fail {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
 
@@ -777,7 +772,7 @@ test pool_scoop_min_received_not_met_fails() fail {
 /// Swap succeeds when output exactly meets min_received
 test pool_scoop_min_received_exact_success() {
   let datum = default_pool_datum()
-  let datum_out = PoolDatum { ..datum, protocol_fees: min_ada + protocol_fee }
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
 
   let p_in = pool_input(billion, billion, min_ada, datum)
 

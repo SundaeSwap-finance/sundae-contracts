@@ -138,8 +138,12 @@ pub fn do_swap(
   /// Where the results of the swap need to be paid
   destination: Destination,
   /// The liquidity provider fee to charge for bid (A -> B) or ask (B -> A) orders
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
+  lp_bid_basis_points: Int,
+  lp_ask_basis_points: Int,
+  /// The protocol's cut of the LP fees for bid (A -> B) or ask (B -> A) orders
+  /// This is a percentage of the LP fee, in basis points (e.g., 1000 = 10% of LP fee)
+  protocol_bid_basis_points: Int,
+  protocol_ask_basis_points: Int,
   actual_protocol_fee: Int,
   /// The amount of value from the UTXO that is "on offer" for the trade
   offer: SingletonValue,
@@ -147,8 +151,9 @@ pub fn do_swap(
   min_received: SingletonValue,
   /// The output to compare against
   output: Output,
-  // A continuation to call with the updated pool state
-  continuation: fn(Int, Int) -> Bool,
+  // A continuation to call with the updated pool state and protocol fee deltas
+  // (new_a, new_b, delta_fee_a, delta_fee_b)
+  continuation: fn(Int, Int, Int, Int) -> Bool,
 ) -> Bool {
   let Output { value: input_value, .. } = input_utxo
   let Output {
@@ -182,72 +187,71 @@ pub fn do_swap(
       }
     }
 
-  // There are two symmetric cases, depending on whether you're giving order A or order B
-  // If there's a clever way to write this as one branch it might be clearer to read
-  if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
-    let (min_received_1st, min_received_2nd, min_received_3rd) = min_received
-    // Make sure we're actually swapping against a pool with the correct assets
-    // We do this, instead of checking the pool ident, to allow orders to be agnostic and execute against an arbitrary pool
-    expect min_received_1st == pool_policy_b
-    expect min_received_2nd == pool_asset_name_b
-    // Compute the actual takes / change
-    let
-      takes,
-      gives,
-      out_value,
-    <-
-      swap_takes(
-        offer_policy_id,
-        offer_asset_name,
-        pool_policy_b,
-        pool_asset_name_b,
-        pool_quantity_a,
-        pool_quantity_b,
-        bid_fees_per_10_thousand,
-        actual_protocol_fee,
-        offer_amt,
-        input_value,
-        output_value,
-      )
+  // Determine swap direction and get the appropriate fee rates
+  // For a bid (A→B): user gives A, receives B
+  // For an ask (B→A): user gives B, receives A
+  let (a_to_b, lp_fee_rate, protocol_fee_rate) =
+    if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
+      let (min_received_1st, min_received_2nd, _) = min_received
+      // Make sure we're actually swapping against a pool with the correct assets
+      expect min_received_1st == pool_policy_b
+      expect min_received_2nd == pool_asset_name_b
+      (True, lp_bid_basis_points, protocol_bid_basis_points)
+    } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
+      expect min_received.1st == pool_policy_a
+      expect min_received.2nd == pool_asset_name_a
+      (False, lp_ask_basis_points, protocol_ask_basis_points)
+    } else {
+      fail @"wrong pool"
+    }
 
-    // Make sure the correct value (including change) carries through to the output
-    expect output_value == out_value
+  // Compute the actual takes / change using the LP fee rate
+  let
+    takes,
+    gives,
+    out_value,
+  <-
+    swap_takes(
+      offer_policy_id,
+      offer_asset_name,
+      if a_to_b { pool_policy_b } else { pool_policy_a },
+      if a_to_b { pool_asset_name_b } else { pool_asset_name_a },
+      if a_to_b { pool_quantity_a } else { pool_quantity_b },
+      if a_to_b { pool_quantity_b } else { pool_quantity_a },
+      lp_fee_rate,
+      actual_protocol_fee,
+      offer_amt,
+      input_value,
+      output_value,
+    )
 
-    // And check that the min_received (the lowest amount of tokens the user is willing to receive, aka a limit price)
-    // is satisfied
-    expect takes >= min_received_3rd
-    continuation(pool_quantity_a + gives, pool_quantity_b - takes)
-  } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
-    // This code is a mirror of the above, so should be scrutinized extra carefully during audit;
-    // it's easy to make a mistake when copy-pasting. If there's an easier way to express this symmetry that would be good too
-    expect min_received.1st == pool_policy_a
-    expect min_received.2nd == pool_asset_name_a
-    let
-      takes,
-      gives,
-      out_value,
-    <-
-      swap_takes(
-        offer_policy_id,
-        offer_asset_name,
-        pool_policy_a,
-        pool_asset_name_a,
-        pool_quantity_b,
-        pool_quantity_a,
-        ask_fees_per_10_thousand,
-        actual_protocol_fee,
-        offer_amt,
-        input_value,
-        output_value,
-      )
+  // Make sure the correct value (including change) carries through to the output
+  expect output_value == out_value
 
-    // Make sure the correct value (including change) carries through to the output
-    expect output_value == out_value
-    // Check that mintakes is satisfied
-    expect takes >= min_received.3rd
-    continuation(pool_quantity_a - takes, pool_quantity_b + gives)
+  // Check that min_received (the limit price) is satisfied
+  expect takes >= min_received.3rd
+
+  // Calculate the protocol's cut of the LP fee
+  // This is a percentage of the LP fee, which is approximately: gives * lp_fee_rate / 10000
+  // Protocol cut = gives * lp_fee_rate * protocol_fee_rate / (10000 * 10000)
+  let protocol_fee_cut = gives * lp_fee_rate * protocol_fee_rate / 100_000_000
+
+  // Return updated pool state and fee deltas
+  // For bid (A→B): user gives A, so protocol fee is in A (delta_fee_a)
+  // For ask (B→A): user gives B, so protocol fee is in B (delta_fee_b)
+  if a_to_b {
+    continuation(
+      pool_quantity_a + gives - protocol_fee_cut,
+      pool_quantity_b - takes,
+      protocol_fee_cut,
+      0,
+    )
   } else {
-    // If neither of the assets match what's being offered, fail the transaction, the scooper has incorrectly chosen an order that can't be satisfied
-    fail
+    continuation(
+      pool_quantity_a - takes,
+      pool_quantity_b + gives - protocol_fee_cut,
+      0,
+      protocol_fee_cut,
+    )
   }
 }

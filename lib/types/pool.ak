@@ -1,3 +1,4 @@
+use aiken/crypto.{VerificationKey}
 use shared.{AssetClass, Ident}
 use sundae/multisig
 use types/order.{SignedStrategyExecution}
@@ -15,22 +16,28 @@ pub type PoolDatum {
   /// - circulating_lp is always equal to the number of LP tokens that have been minted and are in circulation
   /// - A users LP tokens (or burned LP tokens), as a percentage of the circulating LP tokens, represent the percentage of assets they just deposited or withdrew.
   circulating_lp: Int,
-  /// The basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders
+  /// The basis points to charge on each trade for the liquidity providers
+  /// First element is for bid (A -> B), second is for ask (B -> A)
   /// For example, a 1% fee would be represented as 100 (out of 10,000), and a 0.3% fee would be represented as 30
-  bid_fees_per_10_thousand: Int,
-  ask_fees_per_10_thousand: Int,
-  // An optional multisig condition under which the protocol fees can be updated
+  lp_fee_basis_points: (Int, Int),
+  /// The percentage cut of the LP fees the protocol collects, in basis points
+  /// First element is for bid (A -> B), second is for ask (B -> A)
+  protocol_fee_basis_points: (Int, Int),
+  /// An optional multisig condition under which the pool fees can be updated
   fee_manager: Option<multisig.MultisigScript>,
+  /// An optional multisig condition under which the staking settings can be updated
+  /// If set, this admin can change the stake address attached to the pool, and can update itself
+  staking_admin: Option<multisig.MultisigScript>,
+  /// Extra scoopers that are authorized to scoop this pool
+  /// in addition to those in the settings UTxO
+  extra_scoopers: List<VerificationKey>,
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
-  /// TODO: deposits and arguably withdrawals should be processed before the market open
   market_open: Int,
-  /// The amount of ADA on the UTXO that is set aside by collecting protocol fees
-  /// This should be increased on each scoop to represent collecting fees; deducted from the reserve amount (if one of the tokens in the pair is ADA)
-  /// to calculate the swap amounts, and decreased when some amount is withdrawn.
-  /// Note that this also allows us to conveniently sidestep minUTXO woes, because the creator of the pool can set the initial protocol fees to whatever minUTXO is needed
-  /// and withdrawals never have to be for the full amount.
-  /// TODO: should we add a field to the settings object to set a minimum initial protocol_fees on pool mint?
-  protocol_fees: Int,
+  /// The amount of fees the protocol has collected from trading activity
+  /// First element is ADA collected from raw scooper fees
+  /// Second element is asset A (which may also be ADA) collected as a percentage of LP fees
+  /// Third element is asset B (which can never be ADA) collected as a percentage of LP fees
+  protocol_fees: (Int, Int, Int),
 }
 
 /// A pool UTXO can be spent for two purposes:
@@ -89,8 +96,11 @@ pub type PoolMintRedeemer {
 
 /// Manage settings about a pool (used against the pool manage script)
 pub type ManageRedeemer {
-  // Withdraw some subset of the fees in the pool, paid into the treasury
-  WithdrawFees { amount: Int, treasury_output: Int, pool_input: Int }
-  // Update the percentage fee the pool charges
+  /// Withdraw some subset of the fees in the pool, paid into the treasury
+  /// amount is (ada_amount, asset_a_amount, asset_b_amount)
+  WithdrawFees { amount: (Int, Int, Int), treasury_output: Int, pool_input: Int }
+  /// Update the percentage fee the pool charges (requires fee_manager)
   UpdatePoolFees { pool_input: Int }
+  /// Update the staking credential on the pool, or rotate the staking admin (requires staking_admin)
+  UpdateStaking { pool_input: Int }
 }

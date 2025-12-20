@@ -67,7 +67,7 @@ test swap_min_received_too_high() fail {
     }
 
   // Execute swap - should fail because min_received (10M) > actual (9.896M)
-  let new_a, new_b <-
+  let new_a, new_b, _delta_fee_a, _delta_fee_b <-
     do_swap(
       pool.quantity_a.1st,
       pool.quantity_a.2nd,
@@ -79,6 +79,8 @@ test swap_min_received_too_high() fail {
       order.destination,
       lp_fee,
       lp_fee,
+      0,
+      0,
       protocol_fee,
       swap_offer,
       swap_min,
@@ -126,7 +128,7 @@ test swap_with_asymmetric_fees() {
   let ask_fee = 100
   // 1.00%
 
-  let new_a, new_b <-
+  let new_a, new_b, _delta_fee_a, _delta_fee_b <-
     do_swap(
       pool.quantity_a.1st,
       pool.quantity_a.2nd,
@@ -138,6 +140,8 @@ test swap_with_asymmetric_fees() {
       order.destination,
       bid_fee,
       ask_fee,
+      0,
+      0,
       protocol_fee,
       swap_offer,
       swap_min,
