@@ -340,7 +340,7 @@ validator pool(
       // For creating a new pool, one of our design objectives was to avoid requiring interaction with any global
       // "factory", as in v1; this created a lot of contention, and didn't serve it's original goal of ensuring that
       // the (pair, fee) was unique.
-      CreatePool(assets, pool_output_ix, metadata_output_ix) -> {
+      CreatePool { assets, pool_output: pool_output_ix, metadata_output: metadata_output_ix } -> {
         // And grab the pool output
         expect Some(pool_output) = list.at(transaction.outputs, pool_output_ix)
 
@@ -530,7 +530,7 @@ validator pool(
       // - During CreatePool, it would be impossible to mint multiple of the same pool tokens; a different pool token; a different number of LP tokens; or a different pool's LP tokens
       // - During MintLP, it would be impossible to mint the relevant pool token; thus, the pool script must run, and thus it will be impossible to mint another pool token, a different pool
       //   ident pool token, a different quantity of LP tokens, or a different pools LP tokens
-      MintLP(pool_ident) -> {
+      MintLP { identifier: pool_ident } -> {
         let pool_nft_name = shared.pool_nft_name(pool_ident)
         expect Some(pool_output) = list.head(transaction.outputs)
         and {
@@ -544,7 +544,7 @@ validator pool(
           ) == 0,
         }
       }
-      BurnPool(pool_ident) -> {
+      BurnPool { identifier: pool_ident } -> {
         // Burning an asset is only possible when spending it, so if we enforce
         // that the mints consist of exactly 1 burn for the specified pool NFT
         // then we can defer to the pool spending validator

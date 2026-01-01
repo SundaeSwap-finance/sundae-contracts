@@ -1,115 +1,141 @@
+/// Deposit calculation tests - rewritten using test fixtures
+
 use aiken/math
 use calculation/deposit.{do_deposit}
-use calculation/shared.{PoolState} as calculation_shared
-use cardano/address.{Address, VerificationKey}
-use cardano/assets
+use calculation/shared.{PoolState}
+use cardano/assets.{from_asset, merge}
 use cardano/transaction.{InlineDatum, NoDatum, Output}
-use sundae/multisig
-use types/order.{Fixed, OrderDatum}
+use tests/fixtures/addresses.{user_address}
+use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
+use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use tests/fixtures/values.{lovelace, rberry}
+use types/order.{Deposit}
 
-test deposit_test() {
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  deposit_test_schema(
-    1_000_000_000,
-    1_000_000_000,
-    100_000_000,
-    50_000_000,
-    200_000_000,
-    500_000_000,
-    assets.from_lovelace(47_500_000)
-      |> assets.add(lp.1st, lp.2nd, 50_000_000),
-  )
+// ============================================
+// Test Fixtures
+// ============================================
+
+/// Standard protocol fee
+const protocol_fee = 2_500_000
+
+/// LP token identifiers for tests
+const lp_policy = #"99999999999999999999999999999999999999999999999999999999"
+
+const lp_name = "LP"
+
+/// Create a pool state with given quantities
+fn pool_state(qty_a: Int, qty_b: Int) -> PoolState {
+  expect Some(qty_lp) = math.sqrt(qty_a * qty_b)
+  PoolState {
+    quantity_a: (#"", #"", qty_a),
+    quantity_b: (rberry_policy, rberry_asset_name, qty_b),
+    quantity_lp: (lp_policy, lp_name, qty_lp),
+  }
 }
 
-test deposit_test_minimum() fail {
-  deposit_test_schema(
-    661_278_808_416,
-    188_253_559_159_646,
-    153_000_000,
-    150,
-    151_171_875,
-    150,
-    assets.from_lovelace(152_000_000),
-  )
-}
+// ============================================
+// Tests
+// ============================================
 
-fn deposit_test_schema(
-  qa: Int,
-  qb: Int,
-  has_a: Int,
-  has_b: Int,
-  gives_a: Int,
-  gives_b: Int,
-  out_value: assets.Value,
-) {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  expect Some(q_lp) = math.sqrt(qa * qb)
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", qa),
-      quantity_b: (rberry.1st, rberry.2nd, qb),
-      quantity_lp: (lp.1st, lp.2nd, q_lp),
-    }
-  let input_value =
-    assets.from_lovelace(has_a)
-      |> assets.add(rberry.1st, rberry.2nd, has_b)
-  let assets = ((ada.1st, ada.2nd, gives_a), (rberry.1st, rberry.2nd, gives_b))
+/// Test successful deposit with balanced assets
+test deposit_balanced() {
+  // Pool: 1B ADA / 1B RBERRY
+  let pool = pool_state(1_000_000_000, 1_000_000_000)
+
+  // Deposit: 100M ADA + 50M RBERRY (will use 50M of each due to ratio)
+  let deposit_assets =
+    ((#"", #"", 200_000_000), (rberry_policy, rberry_asset_name, 500_000_000))
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Deposit { assets },
-      extension: Void,
-    }
-  let output =
-    Output {
-      address: addr,
-      value: out_value,
-      datum: NoDatum,
-      reference_script: None,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Deposit { assets: deposit_assets })
+
+  // User has 100M ADA + 50M RBERRY in order
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(100_000_000) |> merge(rberry(50_000_000)),
       datum: InlineDatum(order),
       reference_script: None,
     }
-  let
-    _,
-    _,
-    _,
-  <-
+
+  // User receives: remainder + LP tokens (50M LP for 50M:50M deposit)
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(47_500_000)
+        |> merge(from_asset(lp_policy, lp_name, 50_000_000)),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let _, _, _ <-
     do_deposit(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd,
-      pool_state.quantity_lp.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
       input,
-      assets,
+      deposit_assets,
       order.destination,
-      2_500_000,
+      protocol_fee,
       output,
     )
-  // Test should pass as long as do_deposit didn't throw
+  True
+}
+
+/// Test deposit fails when LP tokens issued would be zero
+test deposit_too_small_fails() fail {
+  // Pool with very large imbalance
+  let pool = pool_state(661_278_808_416, 188_253_559_159_646)
+
+  // Tiny deposit relative to pool size
+  let deposit_assets =
+    ((#"", #"", 151_171_875), (rberry_policy, rberry_asset_name, 150))
+
+  let order =
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Deposit { assets: deposit_assets })
+
+  let input =
+    Output {
+      address: user_address(),
+      value: lovelace(153_000_000) |> merge(rberry(150)),
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
+
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(152_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let _, _, _ <-
+    do_deposit(
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
+      input,
+      deposit_assets,
+      order.destination,
+      protocol_fee,
+      output,
+    )
   True
 }

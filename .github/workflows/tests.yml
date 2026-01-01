@@ -6,22 +6,22 @@ on:
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: aiken-lang/setup-aiken@v0.1.0
+      - uses: aiken-lang/setup-aiken@v1
         with:
-          version: v1.0.26-alpha
+          version: v1.1.9
 
-      - run: |
-          # Run the tests
+      - name: Run tests
+        run: |
           set -o pipefail
           RESULT=0
           aiken check -t silent 2>&1 || RESULT=$?
           if [ $RESULT -ne 0 ]; then
-            aiken check 2>&1 | tee aiken.log 
+            aiken check 2>&1 | tee aiken.log
             {
               echo 'FAILING_TESTS<<EOF'
               grep "FAIL" aiken.log
@@ -30,12 +30,17 @@ jobs:
             cat $GITHUB_ENV
             exit $RESULT
           fi
-      - if: failure()
-        run: |
-          echo "$FAILING_TESTS"
-      - run: aiken build
-      - uses: actions/github-script@v6
-        if: failure() && env.FAILING_TESTS != ''
+
+      - name: Show failing tests
+        if: failure()
+        run: echo "$FAILING_TESTS"
+
+      - name: Build
+        run: aiken build
+
+      - name: Comment on PR with failures
+        uses: actions/github-script@v7
+        if: failure() && env.FAILING_TESTS != '' && github.event_name == 'pull_request'
         with:
           script: |
             github.rest.issues.createComment({
@@ -43,4 +48,87 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `Tests failed:\n\n\`\`\`\n${{ env.FAILING_TESTS }}\n\`\`\``
+            })
+
+  # Coverage job - disabled until aiken coverage support is released
+  # To enable: remove the 'if: false' line below
+  coverage:
+    runs-on: ubuntu-latest
+    if: false  # TODO: Enable when aiken coverage is released
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.9
+
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Generate coverage report
+        run: aiken coverage --output coverage.lcov
+
+      - name: Convert LCOV to HTML
+        run: |
+          mkdir -p coverage-html
+          genhtml coverage.lcov \
+            --output-directory coverage-html \
+            --title "Sundae Contracts Coverage" \
+            --legend \
+            --branch-coverage \
+            --function-coverage
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-html/
+          retention-days: 30
+
+      - name: Upload LCOV file
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage.lcov
+          retention-days: 30
+
+      - name: Generate coverage summary
+        run: |
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          lcov --summary coverage.lcov 2>&1 | tail -n +2 >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the full HTML report from the workflow artifacts." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment coverage on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            // Get coverage summary
+            const summary = execSync('lcov --summary coverage.lcov 2>&1 || true').toString();
+            const lines = summary.match(/lines\.*:\s*([\d.]+%)/);
+            const functions = summary.match(/functions\.*:\s*([\d.]+%)/);
+
+            const linesCov = lines ? lines[1] : 'N/A';
+            const funcsCov = functions ? functions[1] : 'N/A';
+
+            const body = `## 📊 Coverage Report
+
+            | Metric | Coverage |
+            |--------|----------|
+            | Lines | ${linesCov} |
+            | Functions | ${funcsCov} |
+
+            📥 [Download full HTML report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) from the workflow artifacts.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
             })

@@ -13,14 +13,14 @@ fn mk_swap() -> OrderDatum {
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let dest = Fixed { address: addr, datum: NoDatum }
   let swap =
-    Swap(
-      (#"", #"", 10000000),
-      (
+    Swap {
+      offer: (#"", #"", 10000000),
+      min_received: (
         #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
         #"44554d4d59",
         0,
       ),
-    )
+    }
   OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -42,8 +42,8 @@ fn mk_deposit() -> OrderDatum {
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let dest = Fixed { address: addr, datum: NoDatum }
   let deposit =
-    Deposit(
-      (
+    Deposit {
+      assets: (
         (#"", #"", 10000000),
         (
           #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
@@ -51,7 +51,7 @@ fn mk_deposit() -> OrderDatum {
           10000000,
         ),
       ),
-    )
+    }
   OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -73,13 +73,13 @@ fn mk_withdrawal() {
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let dest = Fixed { address: addr, datum: NoDatum }
   let withdrawal =
-    Withdrawal(
-      (
+    Withdrawal {
+      amount: (
         #"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf",
         #"6c",
         10000000,
       ),
-    )
+    }
   OrderDatum {
     pool_ident: None,
     owner: multisig.Signature(
@@ -101,9 +101,9 @@ fn mk_strategy() {
     wallet_address(#"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513")
   let dest = Fixed { address: addr, datum: NoDatum }
   let strategy =
-    Strategy(
-      Signature(#"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf"),
-    )
+    Strategy {
+      auth: Signature(#"d441227553a0f1a965fee7d60a0f724b368dd1bddbc208730fccebcf"),
+    }
   OrderDatum {
     pool_ident: Some(
       #"fc2c4a6ae8048b0b5affc169dfd496a7ace7d08288c476d9d7a5804e",
@@ -124,10 +124,10 @@ test example_strategy() {
 
 fn mk_strategy_execution() {
   let tx_ref =
-    OutputReference(
-      #"797831ec63153a84ae1393bd5fea14196684f1dd12d6485e93cfe373d142e0d3",
-      1,
-    )
+    OutputReference {
+      transaction_id: #"797831ec63153a84ae1393bd5fea14196684f1dd12d6485e93cfe373d142e0d3",
+      output_index: 1,
+    }
   let valid_range = interval.between(1000, 10000)
   StrategyExecution {
     tx_ref,

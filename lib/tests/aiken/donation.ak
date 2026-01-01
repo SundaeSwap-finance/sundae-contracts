@@ -1,223 +1,182 @@
-use calculation/donation.{do_donation}
-use calculation/shared.{PoolState} as calc_shared
-use cardano/address.{Address, VerificationKey}
-use cardano/assets
-use cardano/transaction.{InlineDatum, NoDatum, Output}
-use sundae/multisig
-use types/order.{Fixed, OrderDatum}
+/// Donation calculation tests - rewritten using test fixtures
 
-test donation() {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value =
-    assets.from_lovelace(3_500_000)
-      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets =
-    ((ada.1st, ada.2nd, 1_000_000), (rberry.1st, rberry.2nd, 1_000_000))
+use calculation/donation.{do_donation}
+use calculation/shared.{PoolState}
+use cardano/assets.{merge}
+use cardano/transaction.{InlineDatum, NoDatum, Output}
+use tests/fixtures/addresses.{user_address}
+use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
+use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use tests/fixtures/values.{lovelace, rberry}
+use types/order.{Donation}
+
+// ============================================
+// Test Fixtures
+// ============================================
+
+const protocol_fee = 2_500_000
+
+/// Standard 1B/1B pool
+fn test_pool_state() -> PoolState {
+  PoolState {
+    quantity_a: (#"", #"", 1_000_000_000),
+    quantity_b: (rberry_policy, rberry_asset_name, 1_000_000_000),
+    quantity_lp: (#"99999999", #"4c50", 1_000_000_000),
+  }
+}
+
+// ============================================
+// Tests
+// ============================================
+
+/// Test donation with no remainder (exact amounts)
+test donation_no_remainder() {
+  let pool = test_pool_state()
+
+  // Donate 1M ADA + 1M RBERRY (balanced, no remainder)
+  let donation_assets =
+    ((#"", #"", 1_000_000), (rberry_policy, rberry_asset_name, 1_000_000))
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation { assets },
-      extension: Void,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Donation { assets: donation_assets })
+
+  // Input has the donation amount + protocol fee
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(3_500_000) |> merge(rberry(1_000_000)),
       datum: InlineDatum(order),
       reference_script: None,
     }
-  // There's no remainder so do_donation totally ignores this Output record
+
+  // No remainder output needed - donation ignores this when has_remainder is false
   let output =
     Output {
-      address: addr,
-      value: assets.from_lovelace(999_999_999_999_999_999),
+      address: user_address(),
+      value: lovelace(999_999_999_999_999_999),
       datum: NoDatum,
       reference_script: None,
     }
 
-  let
-    new_a,
-    new_b,
-    has_remainder,
-  <-
+  let new_a, new_b, has_remainder <-
     do_donation(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
       input,
-      assets,
+      donation_assets,
       order.destination,
-      2_500_000,
+      protocol_fee,
       output,
     )
+
   expect !has_remainder
   expect new_a == 1_001_000_000
   expect new_b == 1_001_000_000
   True
 }
 
+/// Test donation with remainder (unbalanced donation)
 test donation_with_remainder() {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value =
-    assets.from_lovelace(3_500_000)
-      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
+  let pool = test_pool_state()
+
+  // Donate only RBERRY (0 ADA, 1M RBERRY) - remainder expected
+  let donation_assets =
+    ((#"", #"", 0), (rberry_policy, rberry_asset_name, 1_000_000))
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation { assets },
-      extension: Void,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Donation { assets: donation_assets })
+
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(3_500_000) |> merge(rberry(1_000_000)),
       datum: InlineDatum(order),
       reference_script: None,
     }
+
+  // Remainder: leftover ADA after protocol fee
   let output =
     Output {
-      address: addr,
-      value: assets.from_lovelace(1_000_000),
+      address: user_address(),
+      value: lovelace(1_000_000),
       datum: NoDatum,
       reference_script: None,
     }
 
-  let
-    new_a,
-    new_b,
-    has_remainder,
-  <-
+  let new_a, new_b, has_remainder <-
     do_donation(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
       input,
-      assets,
+      donation_assets,
       order.destination,
-      2_500_000,
+      protocol_fee,
       output,
     )
+
   expect has_remainder
   expect new_a == 1_000_000_000
+  // No ADA donated
   expect new_b == 1_001_000_000
   True
 }
 
-test donation_with_wrong_remainder() fail {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value =
-    assets.from_lovelace(3_500_000)
-      |> assets.add(rberry.1st, rberry.2nd, 1_000_000)
-  let assets = ((ada.1st, ada.2nd, 0), (rberry.1st, rberry.2nd, 1_000_000))
+/// Test donation fails when remainder output is incorrect
+test donation_wrong_remainder_fails() fail {
+  let pool = test_pool_state()
+
+  let donation_assets =
+    ((#"", #"", 0), (rberry_policy, rberry_asset_name, 1_000_000))
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Donation { assets },
-      extension: Void,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Donation { assets: donation_assets })
+
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(3_500_000) |> merge(rberry(1_000_000)),
       datum: InlineDatum(order),
       reference_script: None,
     }
+
+  // Wrong remainder amount
   let output =
     Output {
-      address: addr,
-      value: assets.from_lovelace(123),
+      address: user_address(),
+      value: lovelace(123),
       datum: NoDatum,
       reference_script: None,
     }
 
-  let
-    new_a,
-    new_b,
-    has_remainder,
-  <-
+  let new_a, new_b, has_remainder <-
     do_donation(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
       input,
-      assets,
+      donation_assets,
       order.destination,
-      2_500_000,
+      protocol_fee,
       output,
     )
+
   expect has_remainder
   expect new_a == 1_000_000_000
   expect new_b == 1_001_000_000

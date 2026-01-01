@@ -1,153 +1,151 @@
-use calculation/shared.{PoolState} as calc_shared
-use calculation/swap.{do_swap}
-use cardano/address.{Address, VerificationKey}
-use cardano/assets
-use cardano/transaction.{InlineDatum, NoDatum, Output}
-use sundae/multisig
-use types/order.{Fixed, OrderDatum}
+/// Swap calculation tests - rewritten using test fixtures
+///
+/// Compare with swap.ak to see the improvement in readability
 
-test swap_mintakes_too_high() fail {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value = assets.from_lovelace(14_500_000)
-  let swap_offer = (ada.1st, ada.2nd, 10_000_000)
-  let swap_min_received = (rberry.1st, rberry.2nd, 10_000_000)
+use calculation/shared.{PoolState}
+use calculation/swap.{do_swap}
+use cardano/assets.{merge}
+use cardano/transaction.{InlineDatum, NoDatum, Output}
+use tests/fixtures/addresses.{user_address}
+use tests/fixtures/values.{lovelace, rberry}
+use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
+use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use types/order.{Swap}
+
+// ============================================
+// Test Fixtures
+// ============================================
+
+/// Standard pool state for swap tests: 1B ADA / 1B RBERRY
+fn test_pool_state() -> PoolState {
+  PoolState {
+    quantity_a: (#"", #"", 1_000_000_000),
+    quantity_b: (rberry_policy, rberry_asset_name, 1_000_000_000),
+    quantity_lp: (#"99999999", #"4c50", 1_000_000_000),
+  }
+}
+
+/// Standard protocol fee for tests
+const protocol_fee = 2_500_000
+
+/// Standard LP fee (0.05%)
+const lp_fee = 5
+
+// ============================================
+// Tests
+// ============================================
+
+/// Test that swap fails when min_received is set too high
+test swap_min_received_too_high() fail {
+  let pool = test_pool_state()
+
+  // Order: swap 10 ADA for RBERRY, but demand more than possible
+  let swap_offer = (#"", #"", 10_000_000)
+  let swap_min = (rberry_policy, rberry_asset_name, 10_000_000)
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Swap { offer: swap_offer, min_received: swap_min_received },
-      extension: Void,
-    }
-  let output =
-    Output {
-      address: addr,
-      value: assets.from_lovelace(2_000_000)
-        |> assets.add(rberry.1st, rberry.2nd, 9_896_088),
-      datum: NoDatum,
-      reference_script: None,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Swap { offer: swap_offer, min_received: swap_min })
+
+  // Input: order value (10 ADA + 2.5 ADA protocol fee + 2 ADA for output)
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(14_500_000),
       datum: InlineDatum(order),
       reference_script: None,
     }
 
-  let
-    new_a,
-    new_b,
-  <-
+  // Output: what the user would receive (actual swap gives ~9.896M RBERRY)
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(2_000_000) |> merge(rberry(9_896_088)),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  // Execute swap - should fail because min_received (10M) > actual (9.896M)
+  let new_a, new_b <-
     do_swap(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
       input,
       order.destination,
-      5,
-      5,
-      2_500_000,
+      lp_fee,
+      lp_fee,
+      protocol_fee,
       swap_offer,
-      swap_min_received,
+      swap_min,
       output,
     )
+
   expect new_a == 1_000_000_000 + 10_000_000
   expect new_b == 1_000_000_000 - 9_896_088
   True
 }
 
-test swap_different_bid_ask() {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let ada = (#"", #"")
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_000_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_000_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_000_000_000),
-    }
-  let input_value =
-    assets.from_lovelace(4_500_000)
-      |> assets.add(rberry.1st, rberry.2nd, 10_000_000)
-  let swap_offer = (rberry.1st, rberry.2nd, 10_000_000)
-  let swap_min_received = (ada.1st, ada.2nd, 0)
+/// Test swap with asymmetric bid/ask fees (higher ask fee)
+test swap_with_asymmetric_fees() {
+  let pool = test_pool_state()
+
+  // Order: swap 10M RBERRY for ADA (selling RBERRY, so ask fee applies)
+  let swap_offer = (rberry_policy, rberry_asset_name, 10_000_000)
+  let swap_min = (#"", #"", 0)
+
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Swap { offer: swap_offer, min_received: swap_min_received },
-      extension: Void,
-    }
-  let output =
-    Output {
-      address: addr,
-      value: assets.from_lovelace(11_802_950),
-      datum: NoDatum,
-      reference_script: None,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Swap { offer: swap_offer, min_received: swap_min })
+
+  // Input: RBERRY + protocol fee
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(4_500_000) |> merge(rberry(10_000_000)),
       datum: InlineDatum(order),
       reference_script: None,
     }
-  let
-    new_a,
-    new_b,
-  <-
+
+  // Output: ADA received (less than with symmetric fees due to 1% ask fee)
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(11_802_950),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let bid_fee = 5
+  // 0.05%
+  let ask_fee = 100
+  // 1.00%
+
+  let new_a, new_b <-
     do_swap(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
       input,
       order.destination,
-      5,
-      100,
-      2_500_000,
+      bid_fee,
+      ask_fee,
+      protocol_fee,
       swap_offer,
-      swap_min_received,
+      swap_min,
       output,
     )
-  // If we charged 5%, from the bid fee, it would be `- 9_896_088`, but because we charged a higher fee, the user got less in return
+
+  // With 0.05% bid fee, user would get 9,896,088 ADA
+  // With 1.00% ask fee, user gets less: 9,802,950 ADA
   expect new_a == 1_000_000_000 - 9_802_950
   expect new_b == 1_000_000_000 + 10_000_000
   True

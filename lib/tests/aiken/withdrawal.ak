@@ -1,128 +1,193 @@
-use aiken/option
-use calculation/shared.{PoolState} as calc_shared
+/// Withdrawal calculation tests - rewritten using test fixtures
+
+use calculation/shared.{PoolState}
 use calculation/withdrawal.{do_withdrawal}
-use cardano/address.{Address, VerificationKey}
-use cardano/assets.{Value}
+use cardano/assets.{add, merge}
 use cardano/transaction.{InlineDatum, NoDatum, Output}
-use sundae/multisig
-use types/order.{Fixed, OrderDatum}
+use mocktail/virgin_address.{mock_pub_key_address}
+use tests/fixtures/addresses.{user_address}
+use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
+use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use tests/fixtures/values.{lovelace, rberry}
+use types/order.{Withdrawal}
 
-type WithdrawalTestOptions {
-  edit_withdrawal_value: Option<Value>,
-  edit_withdrawal_destination: Option<Address>,
-}
+// ============================================
+// Test Fixtures
+// ============================================
 
-fn default_withdrawal_test_options() {
-  WithdrawalTestOptions {
-    edit_withdrawal_value: None,
-    edit_withdrawal_destination: None,
+const protocol_fee = 2_500_000
+
+const lp_policy = #"99999999999999999999999999999999999999999999999999999999"
+
+const lp_name = "LP"
+
+/// Pool with 1.01B of each asset (after some deposits)
+fn test_pool_state() -> PoolState {
+  PoolState {
+    quantity_a: (#"", #"", 1_010_000_000),
+    quantity_b: (rberry_policy, rberry_asset_name, 1_010_000_000),
+    quantity_lp: (lp_policy, lp_name, 1_010_000_000),
   }
 }
 
-test withdrawal_ok() {
-  let options = default_withdrawal_test_options()
-  withdrawal_test(options)
-}
+// ============================================
+// Tests
+// ============================================
 
-test withdrawal_wrong_output_value() fail {
-  let options =
-    WithdrawalTestOptions {
-      ..default_withdrawal_test_options(),
-      edit_withdrawal_value: Some(assets.from_lovelace(2_000_000)),
-    }
-  withdrawal_test(options)
-}
+/// Test successful withdrawal
+test withdrawal_success() {
+  let pool = test_pool_state()
 
-test withdrawal_wrong_payout_address() fail {
-  let burn_addr =
-    Address(
-      VerificationKey(
-        #"77777777777777777777777777777777777777777777777777777777",
-      ),
-      None,
-    )
-  let options =
-    WithdrawalTestOptions {
-      ..default_withdrawal_test_options(),
-      edit_withdrawal_destination: Some(burn_addr),
-    }
-  withdrawal_test(options)
-}
+  // Withdraw 10M LP tokens
+  let amount = (lp_policy, lp_name, 10_000_000)
 
-fn withdrawal_test(options: WithdrawalTestOptions) {
-  let addr =
-    Address(
-      VerificationKey(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      None,
-    )
-  let rberry =
-    (#"01010101010101010101010101010101010101010101010101010101", "RBERRY")
-  let lp = (#"99999999999999999999999999999999999999999999999999999999", "LP")
-  let pool_state =
-    PoolState {
-      quantity_a: (#"", #"", 1_010_000_000),
-      quantity_b: (rberry.1st, rberry.2nd, 1_010_000_000),
-      quantity_lp: (lp.1st, lp.2nd, 1_010_000_000),
-    }
-  let input_value =
-    assets.from_lovelace(4_500_000)
-      |> assets.add(lp.1st, lp.2nd, 10_000_000)
-  let amount = (lp.1st, lp.2nd, 10_000_000)
   let order =
-    OrderDatum {
-      pool_ident: None,
-      owner: multisig.Signature(
-        #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513",
-      ),
-      max_protocol_fee: 2_500_000,
-      destination: Fixed { address: addr, datum: NoDatum },
-      details: order.Withdrawal { amount },
-      extension: Void,
-    }
-  let output =
-    Output {
-      address: option.or_else(options.edit_withdrawal_destination, addr),
-      value: option.or_else(
-        options.edit_withdrawal_value,
-        assets.from_lovelace(2_000_000)
-          |> assets.add(#"", #"", 10_000_000)
-          |> assets.add(rberry.1st, rberry.2nd, 10_000_000),
-      ),
-      datum: NoDatum,
-      reference_script: None,
-    }
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Withdrawal { amount })
+
+  // Input: LP tokens + protocol fee buffer
   let input =
     Output {
-      address: addr,
-      value: input_value,
+      address: user_address(),
+      value: lovelace(4_500_000) |> add(lp_policy, lp_name, 10_000_000),
       datum: InlineDatum(order),
       reference_script: None,
     }
-  let
-    new_a,
-    new_b,
-    new_lp,
-  <-
+
+  // Output: proportional share of pool (10M each of ADA and RBERRY)
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(2_000_000 + 10_000_000) |> merge(rberry(10_000_000)),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let new_a, new_b, new_lp <-
     do_withdrawal(
-      pool_state.quantity_a.1st,
-      pool_state.quantity_a.2nd,
-      pool_state.quantity_a.3rd,
-      pool_state.quantity_b.1st,
-      pool_state.quantity_b.2nd,
-      pool_state.quantity_b.3rd,
-      pool_state.quantity_lp.1st,
-      pool_state.quantity_lp.2nd,
-      pool_state.quantity_lp.3rd,
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
       input,
       amount,
       order.destination,
-      2_500_000,
+      protocol_fee,
       output,
     )
+
+  // Pool should have 1B of each after withdrawal
   expect new_a == 1_000_000_000
   expect new_b == 1_000_000_000
-  expect new_lp == 1000000000
+  expect new_lp == 1_000_000_000
+  True
+}
+
+/// Test withdrawal fails with incorrect output value
+test withdrawal_wrong_value_fails() fail {
+  let pool = test_pool_state()
+  let amount = (lp_policy, lp_name, 10_000_000)
+
+  let order =
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Withdrawal { amount })
+
+  let input =
+    Output {
+      address: user_address(),
+      value: lovelace(4_500_000) |> add(lp_policy, lp_name, 10_000_000),
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
+
+  // Wrong output value - missing the withdrawn assets
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(2_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let new_a, new_b, new_lp <-
+    do_withdrawal(
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
+      input,
+      amount,
+      order.destination,
+      protocol_fee,
+      output,
+    )
+
+  expect new_a == 1_000_000_000
+  expect new_b == 1_000_000_000
+  expect new_lp == 1_000_000_000
+  True
+}
+
+/// Test withdrawal fails when paid to wrong address
+test withdrawal_wrong_address_fails() fail {
+  let pool = test_pool_state()
+  let amount = (lp_policy, lp_name, 10_000_000)
+
+  let order =
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(Withdrawal { amount })
+
+  let input =
+    Output {
+      address: user_address(),
+      value: lovelace(4_500_000) |> add(lp_policy, lp_name, 10_000_000),
+      datum: InlineDatum(order),
+      reference_script: None,
+    }
+
+  // Correct value but wrong destination address
+  let wrong_address = mock_pub_key_address(99, None)
+  let output =
+    Output {
+      address: wrong_address,
+      value: lovelace(2_000_000 + 10_000_000) |> merge(rberry(10_000_000)),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let new_a, new_b, new_lp <-
+    do_withdrawal(
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
+      input,
+      amount,
+      order.destination,
+      protocol_fee,
+      output,
+    )
+
+  expect new_a == 1_000_000_000
+  expect new_b == 1_000_000_000
+  expect new_lp == 1_000_000_000
   True
 }

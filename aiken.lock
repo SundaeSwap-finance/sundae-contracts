@@ -16,6 +16,16 @@ name = "KtorZ/tx_util"
 version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
 source = "github"
 
+[[requirements]]
+name = "sidan-lab/vodka"
+version = "0.1.16"
+source = "github"
+
+[[requirements]]
+name = "aiken-lang/fuzz"
+version = "v2"
+source = "github"
+
 [[packages]]
 name = "aiken-lang/stdlib"
 version = "v2"
@@ -34,5 +44,18 @@ version = "48a3e88ff3776f30133f9c3a5852f2b5163ae51e"
 requirements = []
 source = "github"
 
+[[packages]]
+name = "sidan-lab/vodka"
+version = "0.1.16"
+requirements = []
+source = "github"
+
+[[packages]]
+name = "aiken-lang/fuzz"
+version = "v2"
+requirements = []
+source = "github"
+
 [etags]
-"aiken-lang/stdlib@v2" = [{ secs_since_epoch = 1725207797, nanos_since_epoch = 651057000 }, "d79382d2b6ecb3aee9b0755c31d8a5bbafe88a7b3706d7fb8a52fd4d05818501"]
+"aiken-lang/fuzz@v2" = [{ secs_since_epoch = 1767298625, nanos_since_epoch = 122014413 }, "9843473958e51725a9274b487d2d4aac0395ec1a2e30f090724fa737226bc127"]
+"aiken-lang/stdlib@v2" = [{ secs_since_epoch = 1767298624, nanos_since_epoch = 923906517 }, "6928535a4098118e5f2a30478caf80defeec5e128b4768da88c97399bb563b6d"]

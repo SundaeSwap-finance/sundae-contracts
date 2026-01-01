@@ -54,7 +54,7 @@ pub fn compare_stake(left: Credential, right: Credential) -> Ordering {
 pub fn compare_redeemer(left: ScriptPurpose, right: ScriptPurpose) -> Ordering {
   when (left, right) is {
     (Mint(p_a), Mint(p_b)) -> bytearray.compare(p_a, p_b)
-    (Spend(OutputReference(tx_a, idx_a)), Spend(OutputReference(tx_b, idx_b))) ->
+    (Spend(OutputReference { transaction_id: tx_a, output_index: idx_a }), Spend(OutputReference { transaction_id: tx_b, output_index: idx_b })) ->
       when bytearray.compare(tx_a, tx_b) is {
         Less -> Less
         Greater -> Greater
