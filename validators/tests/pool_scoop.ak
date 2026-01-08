@@ -12,11 +12,13 @@ use pool as pool_validator
 use shared.{pool_lp_name, pool_nft_name}
 use tests/fixtures/addresses.{order_address, pool_address, user_address}
 use tests/fixtures/constants.{
-  billion, manage_stake_script_hash, min_ada, not_a_scooper, other_hash,
-  pool_ident, pool_script_hash, protocol_fee, rberry_asset_name, rberry_policy,
-  scooper, settings_policy_id, stake_key,
+  billion, extra_scooper, manage_stake_script_hash, min_ada, not_a_scooper,
+  other_hash, pool_ident, pool_script_hash, protocol_fee, rberry_asset_name,
+  rberry_policy, scooper, settings_policy_id, stake_key,
 }
-use tests/fixtures/datums.{default_pool_datum, default_swap_order}
+use tests/fixtures/datums.{
+  default_pool_datum, default_swap_order, with_extra_scoopers,
+}
 use tests/fixtures/transactions.{
   deposit_order_input, pool_input, pool_output, scoop_redeemer,
   self_swap_order_input, settings_ref_input, swap_order_input,
@@ -812,6 +814,170 @@ test pool_scoop_min_received_exact_success() {
     settings_policy_id,
     Some(datum),
     scoop_redeemer(1),
+    p_in.output_reference,
+    tx,
+  )
+}
+
+// ============================================
+// EXTRA SCOOPERS TESTS
+// ============================================
+
+/// Extra scooper (not in global list) can scoop a pool that has them listed
+test pool_scoop_extra_scooper_success() {
+  // Pool with extra_scooper in its extra_scoopers list
+  let datum =
+    default_pool_datum()
+      |> with_extra_scoopers([extra_scooper])
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
+
+  let p_in = pool_input(billion, billion, min_ada, datum)
+  let o1 = swap_order_input(1, 10_000_000, 0)
+
+  let p_out =
+    pool_output(
+      billion + 10_000_000,
+      billion - 9_896_088,
+      min_ada + protocol_fee,
+      datum_out,
+    )
+  let u1 = user_output(min_ada, 9_896_088)
+
+  // Signed by extra_scooper, settings only has regular scooper
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [p_in, o1],
+      reference_inputs: [settings_ref_input([scooper])],
+      outputs: [p_out, u1],
+      fee: 1_000_000,
+      validity_range: interval.between(1, 2),
+      extra_signatories: [extra_scooper],
+      id: mock_tx_hash(1),
+    }
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(datum),
+    PoolScoop { signatory_index: 0, scooper_index: -1, input_order: [(1, None, 0)] },
+    p_in.output_reference,
+    tx,
+  )
+}
+
+/// Extra scooper cannot scoop a pool that doesn't have them listed
+test pool_scoop_extra_scooper_not_in_pool_fails() fail {
+  // Pool with NO extra_scoopers (only global list matters)
+  let datum = default_pool_datum()
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
+
+  let p_in = pool_input(billion, billion, min_ada, datum)
+  let o1 = swap_order_input(1, 10_000_000, 0)
+
+  let p_out =
+    pool_output(
+      billion + 10_000_000,
+      billion - 9_896_088,
+      min_ada + protocol_fee,
+      datum_out,
+    )
+  let u1 = user_output(min_ada, 9_896_088)
+
+  // Signed by extra_scooper but neither in global list nor in pool's extra_scoopers
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [p_in, o1],
+      reference_inputs: [settings_ref_input([scooper])],
+      outputs: [p_out, u1],
+      fee: 1_000_000,
+      validity_range: interval.between(1, 2),
+      extra_signatories: [extra_scooper],
+      id: mock_tx_hash(1),
+    }
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(datum),
+    PoolScoop { signatory_index: 0, scooper_index: -1, input_order: [(1, None, 0)] },
+    p_in.output_reference,
+    tx,
+  )
+}
+
+/// Global scooper still works when pool has extra_scoopers
+test pool_scoop_global_scooper_with_extras_present_success() {
+  // Pool has extra_scoopers but we use global scooper
+  let datum =
+    default_pool_datum()
+      |> with_extra_scoopers([extra_scooper])
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
+
+  let p_in = pool_input(billion, billion, min_ada, datum)
+  let o1 = swap_order_input(1, 10_000_000, 0)
+
+  let p_out =
+    pool_output(
+      billion + 10_000_000,
+      billion - 9_896_088,
+      min_ada + protocol_fee,
+      datum_out,
+    )
+  let u1 = user_output(min_ada, 9_896_088)
+
+  // Signed by global scooper (in settings list)
+  let tx = simple_scoop_tx(p_in, [o1], p_out, [u1])
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(datum),
+    scoop_redeemer(1),
+    p_in.output_reference,
+    tx,
+  )
+}
+
+/// Unauthorized scooper fails even when pool has extra_scoopers (but not this one)
+test pool_scoop_unauthorized_fails_with_extras() fail {
+  // Pool has extra_scoopers but not_a_scooper is not in either list
+  let datum =
+    default_pool_datum()
+      |> with_extra_scoopers([extra_scooper])
+  let datum_out = PoolDatum { ..datum, protocol_fees: (min_ada + protocol_fee, 0, 0) }
+
+  let p_in = pool_input(billion, billion, min_ada, datum)
+  let o1 = swap_order_input(1, 10_000_000, 0)
+
+  let p_out =
+    pool_output(
+      billion + 10_000_000,
+      billion - 9_896_088,
+      min_ada + protocol_fee,
+      datum_out,
+    )
+  let u1 = user_output(min_ada, 9_896_088)
+
+  // Signed by not_a_scooper (not in global or extra list)
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [p_in, o1],
+      reference_inputs: [settings_ref_input([scooper])],
+      outputs: [p_out, u1],
+      fee: 1_000_000,
+      validity_range: interval.between(1, 2),
+      extra_signatories: [not_a_scooper],
+      id: mock_tx_hash(1),
+    }
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(datum),
+    PoolScoop { signatory_index: 0, scooper_index: -1, input_order: [(1, None, 0)] },
     p_in.output_reference,
     tx,
   )

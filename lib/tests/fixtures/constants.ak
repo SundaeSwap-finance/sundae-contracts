@@ -30,6 +30,10 @@ pub const scooper =
 pub const not_a_scooper =
   #"11111111111111111111111111111111111111111111111111111114"
 
+/// Extra scooper that can be added to a pool's extra_scoopers list
+pub const extra_scooper =
+  #"22222222222222222222222222222222222222222222222222222224"
+
 pub const payment_key =
   #"6af53ff4f054348ad825c692dd9db8f1760a8e0eacf9af9f99306513"
 

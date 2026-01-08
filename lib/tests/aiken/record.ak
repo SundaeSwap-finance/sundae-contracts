@@ -10,7 +10,7 @@ use shared
 use sundae/multisig
 use tests/fixtures/values.{lovelace}
 use types/oracle.{OracleDatum}
-use types/order.{Fixed}
+use types/order.{Fixed, Self}
 
 // ============================================
 // Test Fixtures
@@ -164,6 +164,36 @@ test record_input_has_token_fails() fail {
   check_record(
     input,
     destination,
+    protocol_fee,
+    output,
+    (oracle_policy_id, oracle_name()),
+  )
+}
+
+/// Test record fails with Self destination (oracles shouldn't chain into themselves)
+test record_self_destination_fails() fail {
+  let addr = script_dest()
+
+  let input =
+    Output {
+      address: addr,
+      value: lovelace(4_500_000),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+
+  // Even with correct value, Self destination should fail
+  let output =
+    Output {
+      address: addr,
+      value: lovelace(2_000_000) |> add(oracle_policy_id, oracle_name(), 1),
+      datum: InlineDatum(test_oracle_datum()),
+      reference_script: None,
+    }
+
+  check_record(
+    input,
+    Self,
     protocol_fee,
     output,
     (oracle_policy_id, oracle_name()),

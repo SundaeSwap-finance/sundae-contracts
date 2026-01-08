@@ -63,6 +63,15 @@ test scoop_order_missing_stake_withdrawal_fails() fail {
   run_scoop([Pair(Script(random_hash), 100), Pair(Script(other_hash), 500)])
 }
 
+/// Test scoop with VerificationKey withdrawals (covers the _ -> acc branch)
+test scoop_order_with_verification_key_withdrawals() {
+  run_scoop([
+    Pair(VerificationKey(random_hash), 100),
+    Pair(VerificationKey(other_hash), 500),
+    Pair(Script(stake_script_hash), 0),
+  ])
+}
+
 // Cancel tests
 
 fn order_datum(owner: multisig.MultisigScript) -> OrderDatum {

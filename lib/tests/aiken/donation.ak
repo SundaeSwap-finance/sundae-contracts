@@ -6,9 +6,11 @@ use cardano/assets.{merge}
 use cardano/transaction.{InlineDatum, NoDatum, Output}
 use tests/fixtures/addresses.{user_address}
 use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
-use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use tests/fixtures/datums.{
+  default_swap_order, with_details, with_pool_ident, with_self_destination,
+}
 use tests/fixtures/values.{lovelace, rberry}
-use types/order.{Donation}
+use types/order as types_order
 
 // ============================================
 // Test Fixtures
@@ -40,7 +42,7 @@ test donation_no_remainder() {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Donation { assets: donation_assets })
+      |> with_details(types_order.Donation { assets: donation_assets })
 
   // Input has the donation amount + protocol fee
   let input =
@@ -92,7 +94,7 @@ test donation_with_remainder() {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Donation { assets: donation_assets })
+      |> with_details(types_order.Donation { assets: donation_assets })
 
   let input =
     Output {
@@ -133,6 +135,59 @@ test donation_with_remainder() {
   True
 }
 
+/// Test donation with Self destination (remainder returns to same address/datum)
+test donation_self_destination_with_remainder() {
+  let pool = test_pool_state()
+
+  // Donate only RBERRY - remainder will go back to Self
+  let donation_assets =
+    ((#"", #"", 0), (rberry_policy, rberry_asset_name, 1_000_000))
+
+  // Create order with Self destination
+  let self_order =
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(types_order.Donation { assets: donation_assets })
+      |> with_self_destination()
+
+  let input =
+    Output {
+      address: user_address(),
+      value: lovelace(3_500_000) |> merge(rberry(1_000_000)),
+      datum: InlineDatum(self_order),
+      reference_script: None,
+    }
+
+  // Remainder: returns to SAME address with SAME datum
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(1_000_000),
+      datum: InlineDatum(self_order),
+      reference_script: None,
+    }
+
+  let new_a, new_b, has_remainder <-
+    do_donation(
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      input,
+      donation_assets,
+      self_order.destination,
+      protocol_fee,
+      output,
+    )
+
+  expect has_remainder
+  expect new_a == 1_000_000_000
+  expect new_b == 1_001_000_000
+  True
+}
+
 /// Test donation fails when remainder output is incorrect
 test donation_wrong_remainder_fails() fail {
   let pool = test_pool_state()
@@ -143,7 +198,7 @@ test donation_wrong_remainder_fails() fail {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Donation { assets: donation_assets })
+      |> with_details(types_order.Donation { assets: donation_assets })
 
   let input =
     Output {

@@ -14,8 +14,8 @@ version = "v2"
 source = "github"
 
 [[dependencies]]
-name = "KtorZ/aicone"
-version = "a9ae9ef8b6bdb183ea020ea97f6b648f9343924e"
+name = "SundaeSwap-finance/aicone"
+version = "main"
 source = "github"
 
 [[dependencies]]

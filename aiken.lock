@@ -7,8 +7,8 @@ version = "v2"
 source = "github"
 
 [[requirements]]
-name = "KtorZ/aicone"
-version = "a9ae9ef8b6bdb183ea020ea97f6b648f9343924e"
+name = "SundaeSwap-finance/aicone"
+version = "main"
 source = "github"
 
 [[requirements]]
@@ -33,8 +33,8 @@ requirements = []
 source = "github"
 
 [[packages]]
-name = "KtorZ/aicone"
-version = "a9ae9ef8b6bdb183ea020ea97f6b648f9343924e"
+name = "SundaeSwap-finance/aicone"
+version = "main"
 requirements = []
 source = "github"
 
@@ -57,5 +57,6 @@ requirements = []
 source = "github"
 
 [etags]
-"aiken-lang/fuzz@v2" = [{ secs_since_epoch = 1767298625, nanos_since_epoch = 122014413 }, "9843473958e51725a9274b487d2d4aac0395ec1a2e30f090724fa737226bc127"]
-"aiken-lang/stdlib@v2" = [{ secs_since_epoch = 1767298624, nanos_since_epoch = 923906517 }, "6928535a4098118e5f2a30478caf80defeec5e128b4768da88c97399bb563b6d"]
+"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1767302818, nanos_since_epoch = 504732431 }, "3f1dd35a89bc04cd630cfac553706c27fdff94ae9b17113dfea51270495e5fc3"]
+"aiken-lang/fuzz@v2" = [{ secs_since_epoch = 1767302818, nanos_since_epoch = 759630698 }, "9843473958e51725a9274b487d2d4aac0395ec1a2e30f090724fa737226bc127"]
+"aiken-lang/stdlib@v2" = [{ secs_since_epoch = 1767302818, nanos_since_epoch = 200762323 }, "6928535a4098118e5f2a30478caf80defeec5e128b4768da88c97399bb563b6d"]

@@ -7,9 +7,11 @@ use cardano/transaction.{InlineDatum, NoDatum, Output}
 use mocktail/virgin_address.{mock_pub_key_address}
 use tests/fixtures/addresses.{user_address}
 use tests/fixtures/constants.{rberry_asset_name, rberry_policy}
-use tests/fixtures/datums.{default_swap_order, with_details, with_pool_ident}
+use tests/fixtures/datums.{
+  default_swap_order, with_details, with_pool_ident, with_self_destination,
+}
 use tests/fixtures/values.{lovelace, rberry}
-use types/order.{Withdrawal}
+use types/order as types_order
 
 // ============================================
 // Test Fixtures
@@ -44,7 +46,7 @@ test withdrawal_success() {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Withdrawal { amount })
+      |> with_details(types_order.Withdrawal { amount })
 
   // Input: LP tokens + protocol fee buffer
   let input =
@@ -97,7 +99,7 @@ test withdrawal_wrong_value_fails() fail {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Withdrawal { amount })
+      |> with_details(types_order.Withdrawal { amount })
 
   let input =
     Output {
@@ -140,6 +142,63 @@ test withdrawal_wrong_value_fails() fail {
   True
 }
 
+/// Test successful withdrawal with Self destination (output returns to same address/datum)
+test withdrawal_self_destination_success() {
+  let pool = test_pool_state()
+
+  // Withdraw 10M LP tokens
+  let amount = (lp_policy, lp_name, 10_000_000)
+
+  // Create the order with Self destination
+  let self_order =
+    default_swap_order()
+      |> with_pool_ident(None)
+      |> with_details(types_order.Withdrawal { amount })
+      |> with_self_destination()
+
+  // Input: LP tokens + protocol fee buffer
+  let input =
+    Output {
+      address: user_address(),
+      value: lovelace(4_500_000) |> add(lp_policy, lp_name, 10_000_000),
+      datum: InlineDatum(self_order),
+      reference_script: None,
+    }
+
+  // Output: returns to SAME address with SAME datum, plus withdrawn assets
+  let output =
+    Output {
+      address: user_address(),
+      value: lovelace(2_000_000 + 10_000_000) |> merge(rberry(10_000_000)),
+      datum: InlineDatum(self_order),
+      reference_script: None,
+    }
+
+  let new_a, new_b, new_lp <-
+    do_withdrawal(
+      pool.quantity_a.1st,
+      pool.quantity_a.2nd,
+      pool.quantity_a.3rd,
+      pool.quantity_b.1st,
+      pool.quantity_b.2nd,
+      pool.quantity_b.3rd,
+      pool.quantity_lp.1st,
+      pool.quantity_lp.2nd,
+      pool.quantity_lp.3rd,
+      input,
+      amount,
+      self_order.destination,
+      protocol_fee,
+      output,
+    )
+
+  // Pool should have 1B of each after withdrawal
+  expect new_a == 1_000_000_000
+  expect new_b == 1_000_000_000
+  expect new_lp == 1_000_000_000
+  True
+}
+
 /// Test withdrawal fails when paid to wrong address
 test withdrawal_wrong_address_fails() fail {
   let pool = test_pool_state()
@@ -148,7 +207,7 @@ test withdrawal_wrong_address_fails() fail {
   let order =
     default_swap_order()
       |> with_pool_ident(None)
-      |> with_details(Withdrawal { amount })
+      |> with_details(types_order.Withdrawal { amount })
 
   let input =
     Output {

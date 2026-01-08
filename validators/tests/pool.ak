@@ -27,10 +27,10 @@ use tests/examples/ex_settings.{
 }
 use tests/examples/ex_shared.{compare_redeemer, compare_stake, mk_tx_hash}
 use tests/fixtures/constants.{
-  manage_stake_script_hash, not_a_scooper, order_script_hash, other_asset_name,
-  other_hash, other_policy, payment_key, pool_ident, pool_script_hash,
-  random_hash, rberry_asset_name, rberry_policy, scooper, settings_policy_id,
-  stake_key,
+  extra_scooper, manage_stake_script_hash, not_a_scooper, order_script_hash,
+  other_asset_name, other_hash, other_policy, payment_key, pool_ident,
+  pool_script_hash, random_hash, rberry_asset_name, rberry_policy, scooper,
+  settings_policy_id, stake_key,
 }
 use tx_util/builder.{
   add_asset_to_tx_output, add_tx_input, add_tx_output, add_tx_ref_input,
@@ -40,7 +40,7 @@ use tx_util/builder.{
 use types/order.{Deposit, Fixed, OrderDatum, Self, Swap}
 use types/pool.{
   BurnPool, CreatePool, Manage, PoolDatum, PoolScoop,
-  UpdatePoolFees, WithdrawFees,
+  UpdatePoolFees, UpdateStaking, WithdrawFees,
 }
 use types/settings.{settings_nft_name}
 
@@ -1712,6 +1712,478 @@ test withdraw_fees_overdraw_fails() fail {
   )
 }
 
+/// Test withdrawing only asset_b (RBERRY) fees
+test withdraw_fees_asset_b_only() {
+  let pool_nft = pool_nft_name(pool_ident)
+  // Protocol fees: (ada, asset_a, asset_b) = (0, 0, 500_000) - only RBERRY fees
+  let protocol_fees = (0, 0, 500_000)
+  let withdraw_amount = (0, 0, 100_000)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum = PoolDatum { ..base_pool_datum(), protocol_fees: protocol_fees }
+  let pool_out_datum =
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
+
+  let normal_input =
+    new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(pool_script_hash),
+      1_000_000_000,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd,
+          ),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000))
+      |> add_asset_to_tx_output(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd - withdraw_amount.3rd,
+          ),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let treasury_output =
+    new_tx_output(
+      Address(VerificationKey(example_treasury_address), None),
+      0,
+      InlineDatum(Void),
+    )
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, withdraw_amount.3rd),
+        )
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let withdraw_fees_redeemer =
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_input(normal_input)
+      |> add_tx_output(treasury_output)
+      |> add_tx_output(pool_output)
+      |> insert_withdrawal(Script(manage_stake_script_hash), 0, compare_stake)
+      |> insert_redeemer(
+          Spend(OutputReference { transaction_id: mk_tx_hash(1), output_index: 0 }),
+          Manage,
+          compare_redeemer,
+        )
+      |> insert_redeemer(
+          Withdraw(Script(manage_stake_script_hash)),
+          withdraw_fees_redeemer,
+          compare_redeemer,
+        )
+      |> builder.add_signatory(example_treasury_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(pool_datum),
+    Manage,
+    pool_input.output_reference,
+    ctx.transaction,
+  ) && pool_validator.manage.else(
+    settings_policy_id,
+    ScriptContext { ..ctx, redeemer: withdraw_fees_redeemer },
+  )
+}
+
+/// Test withdrawing from all three fee components (ADA, asset_a, asset_b)
+test withdraw_fees_all_assets() {
+  let pool_nft = pool_nft_name(pool_ident)
+  // Protocol fees in all three buckets
+  let protocol_fees = (2_000_000, 1_000_000, 500_000)
+  let withdraw_amount = (500_000, 250_000, 100_000)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum = PoolDatum { ..base_pool_datum(), protocol_fees: protocol_fees }
+  let pool_out_datum =
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
+
+  let normal_input =
+    new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
+
+  // Pool value includes: base ADA + ada fees + asset_a fees (also ADA), RBERRY + asset_b fees
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(pool_script_hash),
+      1_000_000_000 + protocol_fees.1st + protocol_fees.2nd,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd,
+          ),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(
+            1_000_000_000 + protocol_fees.1st + protocol_fees.2nd - withdraw_amount.1st - withdraw_amount.2nd,
+          ),
+        )
+      |> add_asset_to_tx_output(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd - withdraw_amount.3rd,
+          ),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  // Treasury receives: ADA (withdraw_amount.1st + withdraw_amount.2nd for ADA pairs) + RBERRY
+  let treasury_output =
+    new_tx_output(
+      Address(VerificationKey(example_treasury_address), None),
+      0,
+      InlineDatum(Void),
+    )
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(withdraw_amount.1st + withdraw_amount.2nd),
+        )
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, withdraw_amount.3rd),
+        )
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let withdraw_fees_redeemer =
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_input(normal_input)
+      |> add_tx_output(treasury_output)
+      |> add_tx_output(pool_output)
+      |> insert_withdrawal(Script(manage_stake_script_hash), 0, compare_stake)
+      |> insert_redeemer(
+          Spend(OutputReference { transaction_id: mk_tx_hash(1), output_index: 0 }),
+          Manage,
+          compare_redeemer,
+        )
+      |> insert_redeemer(
+          Withdraw(Script(manage_stake_script_hash)),
+          withdraw_fees_redeemer,
+          compare_redeemer,
+        )
+      |> builder.add_signatory(example_treasury_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(pool_datum),
+    Manage,
+    pool_input.output_reference,
+    ctx.transaction,
+  ) && pool_validator.manage.else(
+    settings_policy_id,
+    ScriptContext { ..ctx, redeemer: withdraw_fees_redeemer },
+  )
+}
+
+/// Test overdrawing asset_b (RBERRY) fees fails
+test withdraw_fees_overdraw_asset_b_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+  let protocol_fees = (0, 0, 500_000)
+  // Try to withdraw more RBERRY than available
+  let withdraw_amount = (0, 0, 1_000_000)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum = PoolDatum { ..base_pool_datum(), protocol_fees: protocol_fees }
+  let pool_out_datum =
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
+
+  let normal_input =
+    new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(pool_script_hash),
+      1_000_000_000,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd,
+          ),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000))
+      |> add_asset_to_tx_output(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd - withdraw_amount.3rd,
+          ),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let treasury_output =
+    new_tx_output(
+      Address(VerificationKey(example_treasury_address), None),
+      0,
+      InlineDatum(Void),
+    )
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, withdraw_amount.3rd),
+        )
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let withdraw_fees_redeemer =
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_input(normal_input)
+      |> add_tx_output(treasury_output)
+      |> add_tx_output(pool_output)
+      |> insert_withdrawal(Script(manage_stake_script_hash), 0, compare_stake)
+      |> insert_redeemer(
+          Spend(OutputReference { transaction_id: mk_tx_hash(1), output_index: 0 }),
+          Manage,
+          compare_redeemer,
+        )
+      |> insert_redeemer(
+          Withdraw(Script(manage_stake_script_hash)),
+          withdraw_fees_redeemer,
+          compare_redeemer,
+        )
+      |> builder.add_signatory(example_treasury_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(pool_datum),
+    Manage,
+    pool_input.output_reference,
+    ctx.transaction,
+  ) && pool_validator.manage.else(
+    settings_policy_id,
+    ScriptContext { ..ctx, redeemer: withdraw_fees_redeemer },
+  )
+}
+
+/// Test partial withdrawal from each fee component
+test withdraw_fees_partial_each() {
+  let pool_nft = pool_nft_name(pool_ident)
+  // Protocol fees in all buckets, we'll withdraw partial from each
+  let protocol_fees = (5_000_000, 3_000_000, 2_000_000)
+  let withdraw_amount = (1_000_000, 500_000, 300_000)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum = PoolDatum { ..base_pool_datum(), protocol_fees: protocol_fees }
+  let pool_out_datum =
+    PoolDatum {
+      ..pool_datum,
+      protocol_fees: (
+        protocol_fees.1st - withdraw_amount.1st,
+        protocol_fees.2nd - withdraw_amount.2nd,
+        protocol_fees.3rd - withdraw_amount.3rd,
+      ),
+    }
+
+  let normal_input =
+    new_tx_input(mk_tx_hash(0), wallet_address(payment_key), 1_000_000, NoDatum)
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(pool_script_hash),
+      1_000_000_000 + protocol_fees.1st + protocol_fees.2nd,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd,
+          ),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(
+            1_000_000_000 + protocol_fees.1st + protocol_fees.2nd - withdraw_amount.1st - withdraw_amount.2nd,
+          ),
+        )
+      |> add_asset_to_tx_output(
+          assets.from_asset(
+            rberry_policy,
+            rberry_asset_name,
+            1_000_000_000 + protocol_fees.3rd - withdraw_amount.3rd,
+          ),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let treasury_output =
+    new_tx_output(
+      Address(VerificationKey(example_treasury_address), None),
+      0,
+      InlineDatum(Void),
+    )
+      |> add_asset_to_tx_output(
+          assets.from_lovelace(withdraw_amount.1st + withdraw_amount.2nd),
+        )
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, withdraw_amount.3rd),
+        )
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let withdraw_fees_redeemer =
+    WithdrawFees { amount: withdraw_amount, treasury_output: 1, pool_input: 1 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_input(normal_input)
+      |> add_tx_output(treasury_output)
+      |> add_tx_output(pool_output)
+      |> insert_withdrawal(Script(manage_stake_script_hash), 0, compare_stake)
+      |> insert_redeemer(
+          Spend(OutputReference { transaction_id: mk_tx_hash(1), output_index: 0 }),
+          Manage,
+          compare_redeemer,
+        )
+      |> insert_redeemer(
+          Withdraw(Script(manage_stake_script_hash)),
+          withdraw_fees_redeemer,
+          compare_redeemer,
+        )
+      |> builder.add_signatory(example_treasury_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  pool_validator.pool.spend(
+    manage_stake_script_hash,
+    settings_policy_id,
+    Some(pool_datum),
+    Manage,
+    pool_input.output_reference,
+    ctx.transaction,
+  ) && pool_validator.manage.else(
+    settings_policy_id,
+    ScriptContext { ..ctx, redeemer: withdraw_fees_redeemer },
+  )
+}
+
 // ============================================
 // UPDATE POOL FEES TESTS
 // ============================================
@@ -1984,6 +2456,645 @@ test update_pool_fees_with_script_manager() {
       },
       redeemer: update_fees_redeemer,
     }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating protocol_fee_basis_points succeeds
+test update_pool_fees_protocol_cut_success() {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Pool with fee manager, 0% protocol cut initially
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      fee_manager: Some(multisig.Signature(pool_script_hash)),
+      protocol_fee_basis_points: (0, 0),
+    }
+
+  // Update to 10% protocol cut
+  let pool_out_datum =
+    PoolDatum { ..pool_datum, protocol_fee_basis_points: (1000, 1000) }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_fees_redeemer = UpdatePoolFees { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(pool_script_hash)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_fees_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating protocol_fee_basis_points > 100% fails
+test update_pool_fees_protocol_out_of_range_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      fee_manager: Some(multisig.Signature(pool_script_hash)),
+      protocol_fee_basis_points: (0, 0),
+    }
+
+  // Protocol fee > 100% should fail
+  let pool_out_datum =
+    PoolDatum { ..pool_datum, protocol_fee_basis_points: (10001, 0) }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_fees_redeemer = UpdatePoolFees { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(pool_script_hash)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_fees_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating both LP and protocol fees together succeeds
+test update_pool_fees_both_lp_and_protocol() {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Initial: LP fee 5 bps, protocol 0%
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      fee_manager: Some(multisig.Signature(pool_script_hash)),
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
+    }
+
+  // Update both: LP fee 30 bps, protocol 20%
+  let pool_out_datum =
+    PoolDatum {
+      ..pool_datum,
+      lp_fee_basis_points: (30, 30),
+      protocol_fee_basis_points: (2000, 2000),
+    }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_fees_redeemer = UpdatePoolFees { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(pool_script_hash)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_fees_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+// ============================================
+// UPDATE STAKING TESTS
+// ============================================
+
+/// Test updating staking admin by current staking admin succeeds
+test update_staking_admin_success() {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  // Pool address with stake credential in authorized list
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Current staking_admin is example_settings_admin (uses Signature)
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+    }
+
+  // New staking_admin (rotating to a different key)
+  let new_admin_key = other_hash
+  let pool_out_datum =
+    PoolDatum { ..pool_datum, staking_admin: Some(multisig.Signature(new_admin_key)) }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating stake credential to authorized key succeeds
+test update_staking_credential_success() {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  // Pool starts with one stake credential
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Pool output has different stake credential (still in authorized list)
+  let new_pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+    }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(new_pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating staking without proper authorization fails
+test update_staking_unauthorized_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+    }
+
+  let pool_out_datum =
+    PoolDatum { ..pool_datum, staking_admin: Some(multisig.Signature(other_hash)) }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  // Signed by wrong key (other_hash instead of example_settings_admin)
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(other_hash)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating staking on pool without staking_admin fails
+test update_staking_no_admin_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Pool has no staking_admin
+  let pool_datum = base_pool_datum()
+
+  let pool_out_datum =
+    PoolDatum { ..pool_datum, staking_admin: Some(multisig.Signature(example_settings_admin)) }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_out_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating staking to unauthorized credential fails
+test update_staking_invalid_credential_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  // Output has stake credential not in authorized_staking_keys
+  let invalid_pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(other_hash))),
+    }
+
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+    }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  // Output at invalid stake credential (other_hash not in authorized_staking_keys)
+  let pool_output =
+    new_tx_output(invalid_pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000 + pool_rider))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
+
+  pool_validator.manage.else(settings_policy_id, ctx)
+}
+
+/// Test updating staking preserves pool value
+test update_staking_value_changed_fails() fail {
+  let pool_nft = pool_nft_name(pool_ident)
+
+  let pool_address =
+    Address {
+      payment_credential: Script(pool_script_hash),
+      stake_credential: Some(Inline(VerificationKey(example_settings_admin))),
+    }
+
+  let pool_datum =
+    PoolDatum {
+      ..base_pool_datum(),
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+    }
+
+  let pool_rider = 2_000_000
+
+  let pool_input =
+    new_tx_input(
+      mk_tx_hash(0),
+      pool_address,
+      1_000_000_000 + pool_rider,
+      InlineDatum(pool_datum),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> with_asset_of_tx_input(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  // Output has less ADA (value changed)
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(assets.from_lovelace(1_000_000_000))
+      |> add_asset_to_tx_output(
+          assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000),
+        )
+      |> add_asset_to_tx_output(assets.from_asset(pool_script_hash, pool_nft, 1))
+
+  let settings_input =
+    new_tx_input(
+      mk_tx_hash(1),
+      script_address(settings_policy_id),
+      1,
+      InlineDatum(mk_valid_settings_datum([])),
+    )
+      |> with_asset_of_tx_input(
+          assets.from_asset(settings_policy_id, settings_nft_name, 1),
+        )
+
+  let update_staking_redeemer = UpdateStaking { pool_input: 0 }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_input(pool_input)
+      |> add_tx_output(pool_output)
+      |> builder.add_signatory(example_settings_admin)
+      |> builder.spend(pool_input.output_reference)
+
+  let ctx = ScriptContext { ..ctx, redeemer: update_staking_redeemer }
 
   pool_validator.manage.else(settings_policy_id, ctx)
 }
@@ -2422,6 +3533,350 @@ test mint_pool_multiple_nfts_fails() fail {
           assets.zero
             |> assets.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
             |> assets.add(pool_script_hash, new_pool_nft_token, 2)
+            |> assets.add(pool_script_hash, new_pool_ref_token, 1),
+        )
+      |> add_tx_input(input)
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_output(ref_output)
+      |> add_tx_output(lp_output)
+      |> add_tx_output(pool_output)
+
+  pool_validator.pool.mint(
+    manage_stake_script_hash,
+    settings_policy_id,
+    pool_mint_redeemer,
+    pool_script_hash,
+    ctx.transaction,
+  )
+}
+
+/// Test pool creation with protocol_fee_basis_points set
+test mint_pool_with_protocol_fee_basis_points() {
+  let pool_address =
+    script_address(pool_script_hash)
+      |> with_delegation_key(settings_admin)
+  let user_address = wallet_address(payment_key)
+  let settings_input = mk_settings_input([], 1)
+
+  let input = funds_input()
+  let pool_id = pool_ident_from_input(input)
+  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) =
+    pool_token_names(pool_id)
+
+  // Create pool with 10% protocol fee cut (1000 basis points)
+  let pool_datum =
+    PoolDatum {
+      identifier: pool_id,
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      circulating_lp: 1_000_000_000,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (1000, 1000),
+      fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
+      market_open: 0,
+      protocol_fees: (2_000_000, 0, 0),
+    }
+
+  let pool_output_val =
+    assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000)
+      |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+      |> assets.merge(assets.from_lovelace(1_002_000_000))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(pool_output_val)
+
+  let lp_output_val =
+    assets.from_asset(pool_script_hash, pool_lp_name(pool_id), 1_000_000_000)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let lp_output =
+    new_tx_output(user_address, 0, NoDatum)
+      |> add_asset_to_tx_output(lp_output_val)
+
+  let ref_output_val =
+    assets.from_asset(pool_script_hash, new_pool_ref_token, 1)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let metadata_address = wallet_address(metadata_admin)
+  let ref_output =
+    new_tx_output(metadata_address, 0, InlineDatum(Void))
+      |> add_asset_to_tx_output(ref_output_val)
+
+  let pool_mint_redeemer =
+    CreatePool {
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      pool_output: 0,
+      metadata_output: 2,
+    }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> mint_assets(
+          pool_script_hash,
+          assets.zero
+            |> assets.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
+            |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+            |> assets.add(pool_script_hash, new_pool_ref_token, 1),
+        )
+      |> add_tx_input(input)
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_output(ref_output)
+      |> add_tx_output(lp_output)
+      |> add_tx_output(pool_output)
+
+  pool_validator.pool.mint(
+    manage_stake_script_hash,
+    settings_policy_id,
+    pool_mint_redeemer,
+    pool_script_hash,
+    ctx.transaction,
+  )
+}
+
+/// Test pool creation fails with protocol_fee_basis_points > 100% (10000)
+test mint_pool_protocol_fee_out_of_range_fails() fail {
+  let pool_address =
+    script_address(pool_script_hash)
+      |> with_delegation_key(settings_admin)
+  let user_address = wallet_address(payment_key)
+  let settings_input = mk_settings_input([], 1)
+
+  let input = funds_input()
+  let pool_id = pool_ident_from_input(input)
+  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) =
+    pool_token_names(pool_id)
+
+  // Protocol fee > 100% should fail
+  let pool_datum =
+    PoolDatum {
+      identifier: pool_id,
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      circulating_lp: 1_000_000_000,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (10001, 0),
+      fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [],
+      market_open: 0,
+      protocol_fees: (2_000_000, 0, 0),
+    }
+
+  let pool_output_val =
+    assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000)
+      |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+      |> assets.merge(assets.from_lovelace(1_002_000_000))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(pool_output_val)
+
+  let lp_output_val =
+    assets.from_asset(pool_script_hash, pool_lp_name(pool_id), 1_000_000_000)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let lp_output =
+    new_tx_output(user_address, 0, NoDatum)
+      |> add_asset_to_tx_output(lp_output_val)
+
+  let ref_output_val =
+    assets.from_asset(pool_script_hash, new_pool_ref_token, 1)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let metadata_address = wallet_address(metadata_admin)
+  let ref_output =
+    new_tx_output(metadata_address, 0, InlineDatum(Void))
+      |> add_asset_to_tx_output(ref_output_val)
+
+  let pool_mint_redeemer =
+    CreatePool {
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      pool_output: 0,
+      metadata_output: 2,
+    }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> mint_assets(
+          pool_script_hash,
+          assets.zero
+            |> assets.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
+            |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+            |> assets.add(pool_script_hash, new_pool_ref_token, 1),
+        )
+      |> add_tx_input(input)
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_output(ref_output)
+      |> add_tx_output(lp_output)
+      |> add_tx_output(pool_output)
+
+  pool_validator.pool.mint(
+    manage_stake_script_hash,
+    settings_policy_id,
+    pool_mint_redeemer,
+    pool_script_hash,
+    ctx.transaction,
+  )
+}
+
+/// Test pool creation with extra_scoopers set
+test mint_pool_with_extra_scoopers() {
+  let pool_address =
+    script_address(pool_script_hash)
+      |> with_delegation_key(settings_admin)
+  let user_address = wallet_address(payment_key)
+  let settings_input = mk_settings_input([], 1)
+
+  let input = funds_input()
+  let pool_id = pool_ident_from_input(input)
+  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) =
+    pool_token_names(pool_id)
+
+  // Create pool with extra_scoopers
+  let pool_datum =
+    PoolDatum {
+      identifier: pool_id,
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      circulating_lp: 1_000_000_000,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
+      fee_manager: None,
+      staking_admin: None,
+      extra_scoopers: [extra_scooper, payment_key],
+      market_open: 0,
+      protocol_fees: (2_000_000, 0, 0),
+    }
+
+  let pool_output_val =
+    assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000)
+      |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+      |> assets.merge(assets.from_lovelace(1_002_000_000))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(pool_output_val)
+
+  let lp_output_val =
+    assets.from_asset(pool_script_hash, pool_lp_name(pool_id), 1_000_000_000)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let lp_output =
+    new_tx_output(user_address, 0, NoDatum)
+      |> add_asset_to_tx_output(lp_output_val)
+
+  let ref_output_val =
+    assets.from_asset(pool_script_hash, new_pool_ref_token, 1)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let metadata_address = wallet_address(metadata_admin)
+  let ref_output =
+    new_tx_output(metadata_address, 0, InlineDatum(Void))
+      |> add_asset_to_tx_output(ref_output_val)
+
+  let pool_mint_redeemer =
+    CreatePool {
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      pool_output: 0,
+      metadata_output: 2,
+    }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> mint_assets(
+          pool_script_hash,
+          assets.zero
+            |> assets.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
+            |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+            |> assets.add(pool_script_hash, new_pool_ref_token, 1),
+        )
+      |> add_tx_input(input)
+      |> add_tx_ref_input(settings_input)
+      |> add_tx_output(ref_output)
+      |> add_tx_output(lp_output)
+      |> add_tx_output(pool_output)
+
+  pool_validator.pool.mint(
+    manage_stake_script_hash,
+    settings_policy_id,
+    pool_mint_redeemer,
+    pool_script_hash,
+    ctx.transaction,
+  )
+}
+
+/// Test pool creation with staking_admin set
+test mint_pool_with_staking_admin() {
+  let pool_address =
+    script_address(pool_script_hash)
+      |> with_delegation_key(settings_admin)
+  let user_address = wallet_address(payment_key)
+  let settings_input = mk_settings_input([], 1)
+
+  let input = funds_input()
+  let pool_id = pool_ident_from_input(input)
+  let (new_pool_ref_token, new_pool_nft_token, new_pool_lp_token) =
+    pool_token_names(pool_id)
+
+  // Create pool with staking_admin
+  let pool_datum =
+    PoolDatum {
+      identifier: pool_id,
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      circulating_lp: 1_000_000_000,
+      lp_fee_basis_points: (5, 5),
+      protocol_fee_basis_points: (0, 0),
+      fee_manager: None,
+      staking_admin: Some(multisig.Signature(example_settings_admin)),
+      extra_scoopers: [],
+      market_open: 0,
+      protocol_fees: (2_000_000, 0, 0),
+    }
+
+  let pool_output_val =
+    assets.from_asset(rberry_policy, rberry_asset_name, 1_000_000_000)
+      |> assets.add(pool_script_hash, new_pool_nft_token, 1)
+      |> assets.merge(assets.from_lovelace(1_002_000_000))
+
+  let pool_output =
+    new_tx_output(pool_address, 0, InlineDatum(pool_datum))
+      |> add_asset_to_tx_output(pool_output_val)
+
+  let lp_output_val =
+    assets.from_asset(pool_script_hash, pool_lp_name(pool_id), 1_000_000_000)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let lp_output =
+    new_tx_output(user_address, 0, NoDatum)
+      |> add_asset_to_tx_output(lp_output_val)
+
+  let ref_output_val =
+    assets.from_asset(pool_script_hash, new_pool_ref_token, 1)
+      |> assets.merge(assets.from_lovelace(2_000_000))
+
+  let metadata_address = wallet_address(metadata_admin)
+  let ref_output =
+    new_tx_output(metadata_address, 0, InlineDatum(Void))
+      |> add_asset_to_tx_output(ref_output_val)
+
+  let pool_mint_redeemer =
+    CreatePool {
+      assets: ((ada_policy_id, ada_asset_name), (rberry_policy, rberry_asset_name)),
+      pool_output: 0,
+      metadata_output: 2,
+    }
+
+  let ctx =
+    interval.between(1, 2)
+      |> build_txn_context()
+      |> mint_assets(
+          pool_script_hash,
+          assets.zero
+            |> assets.add(pool_script_hash, new_pool_lp_token, 1_000_000_000)
+            |> assets.add(pool_script_hash, new_pool_nft_token, 1)
             |> assets.add(pool_script_hash, new_pool_ref_token, 1),
         )
       |> add_tx_input(input)

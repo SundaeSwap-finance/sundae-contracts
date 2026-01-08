@@ -81,6 +81,31 @@ pub fn with_market_open(datum: PoolDatum, timestamp: Int) -> PoolDatum {
   PoolDatum { ..datum, market_open: timestamp }
 }
 
+/// Set the protocol fee basis points (protocol's cut of LP fees)
+pub fn with_protocol_fee_basis_points(
+  datum: PoolDatum,
+  bid: Int,
+  ask: Int,
+) -> PoolDatum {
+  PoolDatum { ..datum, protocol_fee_basis_points: (bid, ask) }
+}
+
+/// Set the staking admin
+pub fn with_staking_admin(
+  datum: PoolDatum,
+  admin: Option<MultisigScript>,
+) -> PoolDatum {
+  PoolDatum { ..datum, staking_admin: admin }
+}
+
+/// Set extra scoopers for this pool
+pub fn with_extra_scoopers(
+  datum: PoolDatum,
+  scoopers: List<ByteArray>,
+) -> PoolDatum {
+  PoolDatum { ..datum, extra_scoopers: scoopers }
+}
+
 // ============================================
 // Order Datum Builders
 // ============================================
