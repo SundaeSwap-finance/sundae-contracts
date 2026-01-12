@@ -17,7 +17,7 @@ use shared.{
 }
 use sundae/multisig
 use types/pool.{
-  BurnPool, CreatePool, Manage, ManageRedeemer, MintLP, PoolDatum,
+  BurnPool, CreatePool, DirectScoop, Manage, ManageRedeemer, MintLP, PoolDatum,
   PoolMintRedeemer, PoolRedeemer, PoolScoop, UpdatePoolFees, UpdateStaking,
   WithdrawFees,
 } as types_pool
@@ -69,6 +69,7 @@ validator pool(
       outputs,
       reference_inputs,
       mint,
+      fee,
       datums,
       extra_signatories,
       validity_range,
@@ -238,8 +239,12 @@ validator pool(
         // We calculate the expected total collected protocol fee (ADA portion)
         // We multiply amortized_base_fee, which everyone paid, by the number of orders
         // and then the respective fees for each simple order and strategy order
+        // Finally we subtract the transaction fee, so the scooper can cover their tx cost
         let expected_ada_fees_collected =
-          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee
+          amortized_base_fee * real_order_count + simple_count * simple_fee + strategy_count * strategy_fee - fee
+
+        // Make sure scoopers can't claim more than what was collected
+        expect expected_ada_fees_collected >= 0
 
         // The expected protocol fees tuple
         let expected_protocol_fees = (
@@ -250,10 +255,6 @@ validator pool(
 
         // Make sure we actually have the correct protocol fees
         expect actual_protocol_fees == expected_protocol_fees
-
-        // The pool should have all of the scooper fees, and the quantity of each token of the outcome
-        // Note that initializing the state with `-transaction.fee` means this gets subracted out of the protocol fees
-        // TODO: do we need to account for this? it seems to have gotten lost in some changes.
         expect
           minted_correct_pool_tokens(pool_script_hash, mint, datum, final_lp)
 
@@ -326,6 +327,130 @@ validator pool(
           datum.protocol_fee_basis_points == actual_protocol_fee_basis_points,
           datum.market_open == actual_market_open,
           // Finally, make sure we don't change the stake credential; this can only be done via UpdateStaking by the staking admin
+          pool_input.address.stake_credential == pool_output_address.stake_credential,
+        }
+      }
+      // DirectScoop allows authorized scoopers to execute directly against the pool without processing orders.
+      // This enables composition with other transactions (e.g., DEX aggregators, arbitrage).
+      // The scooper can swap against the pool as long as the constant product invariant is maintained.
+      // Note: When orders are included, the stake script validates each order is satisfied.
+      DirectScoop { signatory_index, scooper_index } -> {
+        // Find the pool output
+        let (
+          Output { address: pool_output_address, value: pool_output_value, .. },
+          PoolDatum {
+            identifier: actual_identifier,
+            circulating_lp: actual_circulating_lp,
+            protocol_fees: actual_protocol_fees,
+            assets: actual_assets,
+            lp_fee_basis_points: actual_lp_fee_basis_points,
+            protocol_fee_basis_points: actual_protocol_fee_basis_points,
+            market_open: actual_market_open,
+            ..
+          },
+        ) = find_pool_output(outputs)
+
+        // Ensure pool output goes to the same payment credential
+        expect
+          pool_output_address.payment_credential == Script(pool_script_hash)
+
+        // Deconstruct the settings datum
+        let SettingsDatum { authorized_scoopers, .. } = settings_datum
+
+        // Construct the initial pool state from the datum and locked values
+        let
+          pool_policy_a,
+          pool_asset_name_a,
+          pool_quantity_a,
+          pool_policy_b,
+          pool_asset_name_b,
+          pool_quantity_b,
+          _pool_policy_lp,
+          _pool_asset_name_lp,
+          pool_quantity_lp,
+          _lp_bid_fee,
+          _lp_ask_fee,
+          _protocol_bid_fee,
+          _protocol_ask_fee,
+          _initial_fee_ada,
+          _initial_fee_a,
+          _initial_fee_b,
+        <- pool_input_to_state(pool_script_hash, datum, pool_input)
+
+        // Get final reserves from pool output
+        let final_a =
+          assets.quantity_of(pool_output_value, pool_policy_a, pool_asset_name_a) - actual_protocol_fees.2nd
+        // Adjust for ADA fees if asset A is ADA
+        let final_a =
+          if pool_policy_a == ada_policy_id {
+            final_a - actual_protocol_fees.1st
+          } else {
+            final_a
+          }
+        let final_b =
+          assets.quantity_of(pool_output_value, pool_policy_b, pool_asset_name_b) - actual_protocol_fees.3rd
+
+        // Check constant product invariant: final_a * final_b >= initial_a * initial_b
+        // This ensures the scooper doesn't drain value from the pool
+        expect final_a * final_b >= pool_quantity_a * pool_quantity_b
+
+        // Verify no LP tokens are minted (no deposits/withdrawals via DirectScoop)
+        expect minted_correct_pool_tokens(pool_script_hash, mint, datum, pool_quantity_lp)
+
+        // Check that the scooper is authorized
+        expect
+          when authorized_scoopers is {
+            Some(authorized_scoopers) -> {
+              expect Some(scooper_sig) =
+                list.at(extra_signatories, signatory_index)
+              // Check global list first (scooper_index >= 0) or pool's extra_scoopers (scooper_index == -1)
+              if scooper_index >= 0 {
+                when list.at(authorized_scoopers, scooper_index) is {
+                  Some(scooper) -> scooper_sig == scooper
+                  None -> False
+                }
+              } else {
+                // Check pool's extra_scoopers list
+                list.any(
+                  datum.extra_scoopers,
+                  fn(extra) { scooper_sig == extra },
+                )
+              }
+            }
+            _ -> True
+          }
+
+        // The market must have opened
+        expect interval.is_entirely_after(validity_range, datum.market_open)
+
+        // Check the pool output has the expected value structure
+        expect
+          has_expected_pool_value(
+            pool_script_hash,
+            actual_identifier,
+            pool_output_value,
+            pool_policy_a,
+            pool_asset_name_a,
+            final_a,
+            pool_policy_b,
+            pool_asset_name_b,
+            final_b,
+            pool_quantity_lp,
+            actual_protocol_fees,
+          )
+
+        // Circulating LP must stay the same (no deposits/withdrawals)
+        expect actual_circulating_lp == pool_quantity_lp
+
+        // And make sure each datum field is unchanged
+        and {
+          datum.identifier == actual_identifier,
+          datum.assets == actual_assets,
+          datum.lp_fee_basis_points == actual_lp_fee_basis_points,
+          datum.protocol_fee_basis_points == actual_protocol_fee_basis_points,
+          datum.market_open == actual_market_open,
+          datum.protocol_fees == actual_protocol_fees,
+          // Stake credential must not change
           pool_input.address.stake_credential == pool_output_address.stake_credential,
         }
       }

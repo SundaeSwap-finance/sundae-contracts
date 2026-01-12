@@ -99,6 +99,9 @@ pub const billion = 1_000_000_000
 /// One million lovelace (1 ADA)
 pub const million = 1_000_000
 
+/// Standard transaction fee for tests (1 ADA)
+pub const tx_fee = 1_000_000
+
 /// Default LP fee in basis points (0.05% = 5/10000)
 pub const default_lp_fee = 5
 

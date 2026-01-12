@@ -2,12 +2,13 @@ use aiken/interval
 use cardano/address.{Address, Script, VerificationKey}
 use cardano/assets.{add, from_lovelace}
 use cardano/script_context.{ScriptContext, Spending, Withdrawing}
-use cardano/transaction.{InlineDatum, NoDatum, Output, OutputReference}
+use cardano/transaction.{InlineDatum, Input, NoDatum, Output, OutputReference, Spend}
 use shared.{pool_lp_name, pool_nft_name}
 use stake as stake_validator
 use tests/fixtures/constants.{
   payment_key, pool_ident, pool_script_hash, stake_script_hash,
 }
+use types/pool.{DirectScoop, PoolScoop}
 
 fn pool_address() -> Address {
   Address(Script(pool_script_hash), None)
@@ -57,13 +58,24 @@ fn output_ada_only() -> Output {
   }
 }
 
+fn pool_input() -> Input {
+  Input {
+    output_reference: OutputReference { transaction_id: #"0000", output_index: 0 },
+    output: pool_output_with_nft(),
+  }
+}
+
 fn run_stake(outputs: List<Output>) -> Bool {
   let withdrawals = [Pair(Script(stake_script_hash), 0)]
+  let pool_out_ref = OutputReference { transaction_id: #"0000", output_index: 0 }
+  let pool_scoop_redeemer: Data = PoolScoop { signatory_index: 0, scooper_index: 0, input_order: [] }
   let tx =
     transaction.Transaction {
       ..transaction.placeholder,
+      inputs: [pool_input()],
       outputs: outputs,
       withdrawals: withdrawals,
+      redeemers: [Pair(Spend(pool_out_ref), pool_scoop_redeemer)],
       validity_range: interval.between(1, 2),
     }
 
@@ -134,6 +146,33 @@ test stake_non_withdrawing_context_fails() fail {
         output: OutputReference { transaction_id: #"abcd", output_index: 0 },
         datum: None,
       },
+    }
+
+  stake_validator.stake.else(pool_script_hash, ctx)
+}
+
+// DirectScoop should be rejected - orders cannot be processed with DirectScoop
+// This prevents an attack where orders could be "authorized" but not actually processed
+test stake_direct_scoop_rejected() fail {
+  let withdrawals = [Pair(Script(stake_script_hash), 0)]
+  let pool_out_ref = OutputReference { transaction_id: #"0000", output_index: 0 }
+  // Use DirectScoop instead of PoolScoop
+  let direct_scoop_redeemer: Data = DirectScoop { signatory_index: 0, scooper_index: 0 }
+  let tx =
+    transaction.Transaction {
+      ..transaction.placeholder,
+      inputs: [pool_input()],
+      outputs: [pool_output_with_nft()],
+      withdrawals: withdrawals,
+      redeemers: [Pair(Spend(pool_out_ref), direct_scoop_redeemer)],
+      validity_range: interval.between(1, 2),
+    }
+
+  let ctx =
+    ScriptContext {
+      transaction: tx,
+      redeemer: Void,
+      info: Withdrawing(Script(stake_script_hash)),
     }
 
   stake_validator.stake.else(pool_script_hash, ctx)

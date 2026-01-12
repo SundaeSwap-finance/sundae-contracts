@@ -89,9 +89,11 @@ pub type ProtocolFeeBasisPointsExtension {
   protocol_fee_basis_points: (Int, Int),
 }
 
-/// Look up the protocol fee extension from settings extensions
+/// Look up the project pool protocol fee extension from settings extensions
 /// Extensions are stored as Pairs<Int, Data> where the key identifies the extension type
-pub fn find_protocol_fee_extension(
+/// Note: This is specifically for project pools (key 1), which have a different default
+/// protocol fee structure because the fee is calculated differently than standard pools
+pub fn find_project_protocol_fee_extension(
   extensions: Pairs<Int, Data>,
 ) -> Option<ProtocolFeeBasisPointsExtension> {
   let maybe_extension = pairs.get_first(extensions, project_pool_extension_key)

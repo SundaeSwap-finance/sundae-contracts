@@ -40,7 +40,7 @@ pub type PoolDatum {
   protocol_fees: (Int, Int, Int),
 }
 
-/// A pool UTXO can be spent for two purposes:
+/// A pool UTXO can be spent for three purposes:
 pub type PoolRedeemer {
   /// Execute a scoop, a batch of transactions all processed at once
   PoolScoop {
@@ -61,6 +61,16 @@ pub type PoolRedeemer {
     /// Lists of pairs get serialized as cbor maps, which canonically are unordered! so we needed to insert a dummy value so that they get serialized as lists of triples appropriately.
     /// Today, Aiken now has the `Pairs` abstraction to distinguish, and this wouldn't be needed.
     input_order: List<(Int, Option<SignedStrategyExecution>, Int)>,
+  }
+  /// Execute directly against the pool without processing any orders
+  /// This allows the pool to be composed with other transactions (e.g., DEX aggregators, arbitrage)
+  /// The scooper can swap against the pool as long as the constant product invariant is maintained
+  /// Note: This redeemer does NOT process any orders - order UTXOs cannot be spent with this redeemer
+  DirectScoop {
+    /// The index in the transaction extra_signatories that represents the "scooper" signature
+    signatory_index: Int,
+    /// The index in the list of authorized scoopers (-1 to check extra_scoopers on the pool)
+    scooper_index: Int,
   }
   /// Withdraw the earned protocol fees into the treasury, or update the pool
   /// fees

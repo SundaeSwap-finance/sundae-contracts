@@ -61,19 +61,22 @@ pub fn pool_input_to_state(
   let (lp_bid_fee, lp_ask_fee) = lp_fee_basis_points
   let (protocol_bid_fee, protocol_ask_fee) = protocol_fee_basis_points
   let (initial_fee_ada, initial_fee_a, initial_fee_b) = protocol_fees
-  // If asset_a is ADA, then we need to not consider the protocol fees as part of this
-  // We don't have to check asset_b, because assets are guaranteed to be in lexicographical order.
-  let min_utxo =
+  // Calculate tradable quantity for asset_a
+  // If asset_a is ADA, exclude all ADA-denominated fees (initial_fee_ada + initial_fee_a)
+  // If asset_a is not ADA, just exclude the asset_a fees (initial_fee_a)
+  // We don't have to check asset_b, because assets are guaranteed to be in lexicographical order
+  // (so asset_b is never ADA if asset_a isn't)
+  let quantity_a =
     if asset_a_policy_id == assets.ada_policy_id {
-      initial_fee_ada + initial_fee_a
+      assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - initial_fee_ada - initial_fee_a
     } else {
-      initial_fee_ada
+      assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - initial_fee_a
     }
   // Then construct the pool state. We include the assets here, instead of just the reserves, so we can check the values of each order
   continuation(
     asset_a_policy_id,
     asset_a_name,
-    assets.quantity_of(input.value, asset_a_policy_id, asset_a_name) - min_utxo - ( if asset_a_policy_id != assets.ada_policy_id { initial_fee_a } else { 0 } ),
+    quantity_a,
     asset_b_policy_id,
     asset_b_name,
     assets.quantity_of(input.value, asset_b_policy_id, asset_b_name) - initial_fee_b,
