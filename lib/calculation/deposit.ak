@@ -31,6 +31,9 @@ pub fn do_deposit(
   destination: Destination,
   actual_protocol_fee: Int,
   output: Output,
+  /// Pre-scaling coefficients for normalizing token quantities
+  prescale_a: Int,
+  prescale_b: Int,
   continuation: fn(Int, Int, Int) -> Bool,
 ) -> Bool {
   let (order_a, order_b) = assets
@@ -74,12 +77,13 @@ pub fn do_deposit(
 
   // Check the stableswap liquidity invariant; this ensures that either we provided a balanced amount of tokens,
   // or we paid liquidity provider fees on whatever portion was "swapped"
+  // Note: We apply prescale factors to normalize tokens with different decimals/units
   let new_pool_a = pool_quantity_a + deposited_a
   let new_pool_b = pool_quantity_b + deposited_b
   expect
     stableswap.liquidity_invariant(
-      new_pool_a * calc_precision,
-      new_pool_b * calc_precision,
+      new_pool_a * prescale_a * calc_precision,
+      new_pool_b * prescale_b * calc_precision,
       linear_amplification,
       next_sum_invariant,
     )
@@ -202,6 +206,8 @@ test deposit_test() {
       order.destination,
       2_500_000,
       output,
+      1,
+      1,
     )
   expect new_a == 1_010_000_000
   expect new_b == 1_010_000_000

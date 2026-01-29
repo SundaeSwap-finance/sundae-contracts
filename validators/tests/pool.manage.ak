@@ -433,9 +433,9 @@ fn scenario_pool_datum_baseline(
   let assets =
     fuzz.both(fuzz.either(ada_asset_class(), asset_class()), asset_class())
   let circulating_lp = fuzz.int_at_least(1000)
-  let lp_fee_basis_points =
+  let lp_fee =
     fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
-  let protocol_fee_basis_points =
+  let protocol_fee =
     fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
   let fee_manager = fuzz.option(multisig())
   let linear_amplification = fuzz.int_at_least(1)
@@ -464,15 +464,15 @@ fn scenario_pool_datum_baseline(
       fuzz.map6(
         assets,
         circulating_lp,
-        lp_fee_basis_points,
-        protocol_fee_basis_points,
+        lp_fee,
+        protocol_fee,
         fee_manager,
         linear_amplification,
         fn(
           assets,
           circulating_lp,
-          lp_fee_basis_points,
-          protocol_fee_basis_points,
+          lp_fee,
+          protocol_fee,
           fee_manager,
           linear_amplification,
         ) -> StablePoolDatum {
@@ -480,8 +480,9 @@ fn scenario_pool_datum_baseline(
             identifier: pool_identifier,
             assets,
             circulating_lp,
-            lp_fee_basis_points,
-            protocol_fee_basis_points,
+            lp_fee,
+            protocol_fee,
+            fee_denominator: 10_000,
             fee_manager,
             market_open: 0,
             // Default to 0 for testing
@@ -489,6 +490,7 @@ fn scenario_pool_datum_baseline(
             linear_amplification,
             sum_invariant: get_D(linear_amplification, reserve_a, reserve_b),
             linear_amplification_manager,
+            prescale: (1, 1),
           }
         },
       ),

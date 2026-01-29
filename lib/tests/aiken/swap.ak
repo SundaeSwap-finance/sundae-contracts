@@ -77,10 +77,13 @@ test swap_mintakes_too_high() fail {
       5,
       0,
       0,
+      10_000,
       2_500_000,
       swap_offer,
       swap_min_received,
       output,
+      1,
+      1,
     )
   expect new_a == 1_000_000_000 + 10_000_000
   expect new_b == 1_000_000_000 - 9_896_088
@@ -160,10 +163,13 @@ test swap_different_bid_ask() {
       100,
       0,
       0,
+      10_000,
       2_500_000,
       swap_offer,
       swap_min_received,
       output,
+      1,
+      1,
     )
   // If we charged 5%, from the bid fee, it would be `9_994_750`, but because we charged a higher fee, the user got less in return
   expect new_a == 1_000_000_000 - 9_899_752

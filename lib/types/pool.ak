@@ -15,12 +15,19 @@ pub type StablePoolDatum {
   /// - circulating_lp is always equal to the number of LP tokens that have been minted and are in circulation
   /// - A users LP tokens (or burned LP tokens), as a percentage of the circulating LP tokens, represent the percentage of assets they just deposited or withdrew.
   circulating_lp: Int,
-  /// The basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders
-  /// For example, a 1% fee would be represented as 100 (out of 10,000), and a 0.3% fee would be represented as 30
-  lp_fee_basis_points: (Int, Int),
-  // The percentage cut of the LP fees the protocol collects
-  protocol_fee_basis_points: (Int, Int),
-  // An optional multisig condition under which the protocol fees can be updated
+  /// The fee rate to charge on each trade for bid (A -> B) and ask (B -> A) orders
+  /// The actual fee percentage is lp_fee / fee_denominator
+  /// For example, with fee_denominator of 10,000: a 1% fee = 100, a 0.3% fee = 30
+  /// With fee_denominator of 1,000,000: a 0.01% fee = 100, a 0.003% fee = 30
+  lp_fee: (Int, Int),
+  /// The percentage cut of the LP fees the protocol collects
+  /// Also uses fee_denominator for precision
+  protocol_fee: (Int, Int),
+  /// The denominator used for all fee calculations
+  /// Traditional basis points use 10,000 (1% = 100)
+  /// For finer granularity, use larger values like 1,000,000 (1% = 10,000)
+  fee_denominator: Int,
+  /// An optional multisig condition under which the protocol fees can be updated
   fee_manager: Option<multisig.MultisigScript>,
   /// The UNIX millisecond timestamp at which trading against the pool should be allowed
   /// TODO: deposits and arguably withdrawals should be processed before the market open
@@ -43,8 +50,16 @@ pub type StablePoolDatum {
   /// Specifically, the scooper calculates it off-chain, and provides the new invariant,
   /// and the contract enforces that the invariant satisfies the correct formula.
   sum_invariant: Int,
-  // An optional multisig condition under which the linear amplification factor can be updated
+  /// An optional multisig condition under which the linear amplification factor can be updated
   linear_amplification_manager: Option<multisig.MultisigScript>,
+  /// Pre-scaling coefficients for each asset, to normalize tokens with different decimals
+  /// or different real-world units (e.g., gold in ounces vs grams).
+  /// Before entering the stableswap invariant calculation, each asset's quantity is multiplied
+  /// by its prescale factor. This allows the curve to target a 1:1 ratio in "normalized" units.
+  /// For example, if asset_a has 6 decimals (like USDC) and asset_b has 18 decimals (like DAI):
+  ///   prescale = (1_000_000_000_000, 1) would normalize them to the same scale.
+  /// A prescale of (1, 1) means no scaling (both assets treated equally).
+  prescale: (Int, Int),
 }
 
 /// A pool UTXO can be spent for two purposes:

@@ -30,8 +30,13 @@ pub type Rational =
 pub type SingletonValue =
   (PolicyId, AssetName, Int)
 
-// The precision used when working with basis points
-pub const bp_precision = 10000
+// The default precision used when working with fees (basis points = 10,000)
+// Note: Individual pools can override this via fee_denominator in the datum
+// for finer granularity (e.g., 1,000,000 for parts per million)
+pub const default_fee_denominator = 10_000
+
+// Legacy alias for backwards compatibility
+pub const bp_precision = default_fee_denominator
 
 // The precision used when calculating invariants, etc.
 pub const calc_precision = 1_000_000_000_000
@@ -313,10 +318,12 @@ pub fn oracle_sft_name() {
   "oracle"
 }
 
-pub fn fees_in_legal_range(fees: Int) {
+/// Check if a fee value is within legal range for a given denominator
+/// fees must be non-negative and at most equal to fee_denominator (i.e., <= 100%)
+pub fn fees_in_legal_range(fees: Int, fee_denominator: Int) {
   and {
     fees >= 0,
-    fees <= 10000,
+    fees <= fee_denominator,
   }
 }
 

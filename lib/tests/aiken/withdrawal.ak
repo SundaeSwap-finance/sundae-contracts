@@ -122,6 +122,8 @@ fn withdrawal_test(options: WithdrawalTestOptions) {
       order.destination,
       2_500_000,
       output,
+      1,
+      1,
     )
   expect new_a == 1_000_000_000
   expect new_b == 1_000_000_000

@@ -32,6 +32,9 @@ pub fn do_withdrawal(
   // The protocol fee to deduct
   output: Output,
   // The output to compare the order execution against, to ensure the right quantity was paid out
+  /// Pre-scaling coefficients for normalizing token quantities
+  prescale_a: Int,
+  prescale_b: Int,
   // A continuation; a method to call with the new pool state; more efficient than constructing a new object
   continuation: fn(Int, Int, Int) -> Bool,
 ) -> Bool {
@@ -88,14 +91,15 @@ pub fn do_withdrawal(
 
   // Now, we make sure that the provided next_sum_invariant is correct
   // This is because future orders within this batch might depend on the updated invariant
+  // Note: We apply prescale factors to normalize tokens with different decimals/units
   let new_pool_a = pool_quantity_a - withdrawn_a
   let new_pool_b = pool_quantity_b - withdrawn_b
 
   // TODO: do I need to check some relationship between withdrawn, and the delta between sum_invariant and next_sum_invariant?
   expect
     stableswap.liquidity_invariant(
-      new_pool_a * calc_precision,
-      new_pool_b * calc_precision,
+      new_pool_a * prescale_a * calc_precision,
+      new_pool_b * prescale_b * calc_precision,
       linear_amplification,
       next_sum_invariant,
     )

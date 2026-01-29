@@ -2,7 +2,7 @@ use aiken/math
 use calculation/stableswap
 use cardano/assets.{AssetName, PolicyId, ada_policy_id}
 use cardano/transaction.{Output}
-use shared.{SingletonValue, bp_precision, calc_precision}
+use shared.{SingletonValue, calc_precision}
 use types/order.{Destination, Fixed, Self}
 
 /// Calculate the new pool state after performing a swap, and validate that the output is correct according to the order
@@ -23,11 +23,13 @@ pub fn do_swap(
   /// Where the results of the swap need to be paid
   destination: Destination,
   /// The liquidity provider fee to charge for bid (A -> B) or ask (B -> A) orders
-  lp_bid_basis_points: Int,
-  lp_ask_basis_points: Int,
+  lp_bid_fee: Int,
+  lp_ask_fee: Int,
   /// The protocol fee to charge for bid (A -> B) or ask (B -> A) orders
-  protocol_bid_basis_points: Int,
-  protocol_ask_basis_points: Int,
+  protocol_bid_fee: Int,
+  protocol_ask_fee: Int,
+  /// The denominator for fee calculations (e.g., 10000 for basis points)
+  fee_denominator: Int,
   actual_protocol_fee: Int,
   /// The amount of value from the UTXO that is "on offer" for the trade
   offer: SingletonValue,
@@ -35,6 +37,9 @@ pub fn do_swap(
   min_received: SingletonValue,
   /// The output to compare against
   output: Output,
+  /// Pre-scaling coefficients for normalizing token quantities
+  prescale_a: Int,
+  prescale_b: Int,
   // A continuation to call with the updated pool state
   continuation: fn(Int, Int, Int, Int) -> Bool,
 ) -> Bool {
@@ -58,11 +63,11 @@ pub fn do_swap(
     if offer_policy_id == pool_policy_a && offer_asset_name == pool_asset_name_a {
       expect min_received_1st == pool_policy_b
       expect min_received_2nd == pool_asset_name_b
-      (True, lp_bid_basis_points, protocol_bid_basis_points)
+      (True, lp_bid_fee, protocol_bid_fee)
     } else if offer_policy_id == pool_policy_b && offer_asset_name == pool_asset_name_b {
       expect min_received_1st == pool_policy_a
       expect min_received_2nd == pool_asset_name_a
-      (False, lp_ask_basis_points, protocol_ask_basis_points)
+      (False, lp_ask_fee, protocol_ask_fee)
     } else {
       // If neither is true, then this is just the wrong pool! fail the script
       fail @"wrong pool"
@@ -135,11 +140,11 @@ pub fn do_swap(
   // The actual fees taken from the swap are the swap result minus the amount the user received
   let total_fees = swap_result - order_takes
 
-  // Note that we use basis points, so we divide by 10000 and to ensure that we round up
-  // we add precision - 1 to the numerator
+  // Verify the fees are calculated correctly using the pool's fee_denominator
+  // We round up by adding (fee_denominator - 1) to the numerator before dividing
   expect {
     let calculated_fees =
-      ( swap_result * total_fee_rate + bp_precision - 1 ) / bp_precision
+      ( swap_result * total_fee_rate + fee_denominator - 1 ) / fee_denominator
     (calculated_fees == total_fees)?
   }
 
@@ -159,15 +164,17 @@ pub fn do_swap(
   // this ensures that:
   //  - The order_takes was computed by the scooper correctly
   //  - The new sum invariant was computed by the scooper correctly
+  // Note: We apply prescale factors to normalize tokens with different decimals/units
+  // before passing to the invariant calculation
   if a_to_b {
     let new_pool_quantity_a = pool_quantity_a + order_give
     let new_pool_quantity_b = pool_quantity_b - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        new_pool_quantity_a * calc_precision,
-        new_pool_quantity_b * calc_precision,
-        pool_quantity_b * calc_precision,
-        raw_swap_result,
+        new_pool_quantity_a * prescale_a * calc_precision,
+        new_pool_quantity_b * prescale_b * calc_precision,
+        pool_quantity_b * prescale_b * calc_precision,
+        raw_swap_result * prescale_b,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,
@@ -178,10 +185,10 @@ pub fn do_swap(
     let new_pool_quantity_a = pool_quantity_a - swap_result + lp_fees
     expect
       stableswap.swap_invariant(
-        new_pool_quantity_b * calc_precision,
-        new_pool_quantity_a * calc_precision,
-        pool_quantity_a * calc_precision,
-        raw_swap_result,
+        new_pool_quantity_b * prescale_b * calc_precision,
+        new_pool_quantity_a * prescale_a * calc_precision,
+        pool_quantity_a * prescale_a * calc_precision,
+        raw_swap_result * prescale_a,
         linear_amplification,
         sum_invariant,
         next_sum_invariant,

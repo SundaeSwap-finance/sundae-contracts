@@ -99,11 +99,13 @@ validator pool(
             circulating_lp: actual_circulating_lp,
             protocol_fees: actual_protocol_fees,
             assets: actual_assets,
-            lp_fee_basis_points: actual_lp_fee_basis_points,
-            protocol_fee_basis_points: actual_protocol_fee_basis_points,
+            lp_fee: actual_lp_fee,
+            protocol_fee: actual_protocol_fee,
+            fee_denominator: actual_fee_denominator,
             market_open: actual_market_open,
             linear_amplification: actual_linear_amplification,
             sum_invariant: actual_sum_invariant,
+            prescale: actual_prescale,
             ..
           },
         ) = find_pool_output(outputs)
@@ -166,11 +168,14 @@ validator pool(
           lp_ask_fee,
           protocol_bid_fee,
           protocol_ask_fee,
+          fee_denominator,
           initial_fee_ada,
           initial_fee_a,
           initial_fee_b,
           linear_amplification,
           initial_sum_invariant,
+          prescale_a,
+          prescale_b,
         <- pool_input_to_state(pool_script_hash, datum, pool_input)
 
         // Process the orders in order, and decide the final pool state we should see
@@ -207,12 +212,14 @@ validator pool(
             pool_quantity_lp,
             // The input ordering specified by the scooper
             input_order,
-            // The liquidity provider fee to charge for bids (A -> B), in parts per 10,000 (basis points)
+            // The liquidity provider fee to charge for bids (A -> B)
             lp_bid_fee,
             // ... for Ask (swap B -> A)
             lp_ask_fee,
             protocol_bid_fee,
             protocol_ask_fee,
+            // The fee denominator for calculating fees (e.g., 10000 for basis points)
+            fee_denominator,
             // The base fee split by the number of orders, paid for each user
             amortized_base_fee,
             // The fee to charge for each "simple" order (swap, deposit, withdrawal, etc.)
@@ -223,6 +230,9 @@ validator pool(
             linear_amplification,
             // The "adjusted sum invariant"; represents what the sum of the two tokens would be, if the prices were at equilibrium
             initial_sum_invariant,
+            // Pre-scaling coefficients for normalizing token quantities
+            prescale_a,
+            prescale_b,
             // The previous index we processed, intitially 0; this lets us detect if we need to "restart" the input list
             0,
             // *All* inputs, so we can start over at the beginning of the list if we want
@@ -333,8 +343,10 @@ validator pool(
         and {
           datum.identifier == actual_identifier,
           datum.assets == actual_assets,
-          datum.lp_fee_basis_points == actual_lp_fee_basis_points,
-          datum.protocol_fee_basis_points == actual_protocol_fee_basis_points,
+          datum.lp_fee == actual_lp_fee,
+          datum.protocol_fee == actual_protocol_fee,
+          datum.fee_denominator == actual_fee_denominator,
+          datum.prescale == actual_prescale,
           datum.market_open == actual_market_open,
           // Finally, make sure we don't change the stake credential; this can only be done when withdrawing fees, by the treasury administrator
           pool_input.address.stake_credential == pool_output_address.stake_credential,
@@ -533,34 +545,46 @@ validator pool(
         // - the pool identifier is set correctly
         // - the assets is set correctly
         // - the initial circulating supply is set correctly
-        // - the initial and final fees per 10,000 are both non-negative (>= 0%)
-        // - the intitial and final fees per 10,000 are both less than or equal to 10000 (<= 100%)
+        // - the fee_denominator is positive (must be > 0)
+        // - the prescale values are positive (must be > 0)
+        // - all fee values are non-negative (>= 0%)
+        // - all fee values are less than or equal to fee_denominator (<= 100%)
+        let pool_fee_denominator = pool_output_datum.fee_denominator
         let pool_output_datum_correct = and {
             pool_output_datum.identifier == new_pool_id,
             pool_output_datum.assets == (asset_a, asset_b),
+            pool_fee_denominator > 0,
+            pool_output_datum.prescale.1st > 0,
+            pool_output_datum.prescale.2nd > 0,
             shared.fees_in_legal_range(
-              pool_output_datum.lp_fee_basis_points.1st,
+              pool_output_datum.lp_fee.1st,
+              pool_fee_denominator,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.lp_fee_basis_points.2nd,
+              pool_output_datum.lp_fee.2nd,
+              pool_fee_denominator,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.protocol_fee_basis_points.1st,
+              pool_output_datum.protocol_fee.1st,
+              pool_fee_denominator,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.protocol_fee_basis_points.2nd,
+              pool_output_datum.protocol_fee.2nd,
+              pool_fee_denominator,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.lp_fee_basis_points.1st + pool_output_datum.protocol_fee_basis_points.1st,
+              pool_output_datum.lp_fee.1st + pool_output_datum.protocol_fee.1st,
+              pool_fee_denominator,
             ),
             shared.fees_in_legal_range(
-              pool_output_datum.lp_fee_basis_points.2nd + pool_output_datum.protocol_fee_basis_points.2nd,
+              pool_output_datum.lp_fee.2nd + pool_output_datum.protocol_fee.2nd,
+              pool_fee_denominator,
             ),
-            protocol_fee_extension.protocol_fee_basis_points == pool_output_datum.protocol_fee_basis_points,
+            protocol_fee_extension.protocol_fee_basis_points == pool_output_datum.protocol_fee,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
-              reserve_a * calc_precision,
-              reserve_b * calc_precision,
+              reserve_a * pool_output_datum.prescale.1st * calc_precision,
+              reserve_b * pool_output_datum.prescale.2nd * calc_precision,
               pool_output_datum.linear_amplification,
               pool_output_datum.sum_invariant,
             ),
@@ -916,25 +940,30 @@ validator manage(settings_policy_id: PolicyId) {
           expect
             pool_output_address.payment_credential == Script(pool_script_hash)
 
+          let output_fee_denominator = output_datum.fee_denominator
           expect
             shared.fees_in_legal_range(
-              output_datum.protocol_fee_basis_points.1st,
+              output_datum.protocol_fee.1st,
+              output_fee_denominator,
             )
           expect
             shared.fees_in_legal_range(
-              output_datum.protocol_fee_basis_points.2nd,
+              output_datum.protocol_fee.2nd,
+              output_fee_denominator,
             )
           expect
             shared.fees_in_legal_range(
-              output_datum.lp_fee_basis_points.1st + output_datum.protocol_fee_basis_points.1st,
+              output_datum.lp_fee.1st + output_datum.protocol_fee.1st,
+              output_fee_denominator,
             )
           expect
             shared.fees_in_legal_range(
-              output_datum.lp_fee_basis_points.2nd + output_datum.protocol_fee_basis_points.2nd,
+              output_datum.lp_fee.2nd + output_datum.protocol_fee.2nd,
+              output_fee_denominator,
             )
 
           // As part of withdrawing, we should decrease the protocol fees by the amount we're withdrawing
-          // but, the treasury admin is also allowed to update the protocol fees basis points, but nothing else in the datum
+          // but, the treasury admin is also allowed to update the protocol fees, but nothing else in the datum
           // is allowed to be changed.
           let expected_datum =
             StablePoolDatum {
@@ -944,7 +973,7 @@ validator manage(settings_policy_id: PolicyId) {
                 initial_fee_a - amount.2nd,
                 initial_fee_b - amount.3rd,
               ),
-              protocol_fee_basis_points: output_datum.protocol_fee_basis_points,
+              protocol_fee: output_datum.protocol_fee,
             }
           expect output_datum == expected_datum
 
@@ -991,22 +1020,27 @@ validator manage(settings_policy_id: PolicyId) {
           pool_output_datum(pool_input, outputs)
 
         let StablePoolDatum {
-          lp_fee_basis_points,
+          lp_fee,
           fee_manager: output_fee_manager,
-          protocol_fee_basis_points,
+          protocol_fee,
+          fee_denominator: output_fee_denominator,
           ..
         } = pool_output_datum
 
         // Make sure we don't update the fees to negative or above 100%
-        expect shared.fees_in_legal_range(lp_fee_basis_points.1st)
-        expect shared.fees_in_legal_range(lp_fee_basis_points.2nd)
+        // The fee_denominator must not change from the input datum
+        expect output_fee_denominator == datum.fee_denominator
+        expect shared.fees_in_legal_range(lp_fee.1st, output_fee_denominator)
+        expect shared.fees_in_legal_range(lp_fee.2nd, output_fee_denominator)
         expect
           shared.fees_in_legal_range(
-            lp_fee_basis_points.1st + protocol_fee_basis_points.1st,
+            lp_fee.1st + protocol_fee.1st,
+            output_fee_denominator,
           )
         expect
           shared.fees_in_legal_range(
-            lp_fee_basis_points.2nd + protocol_fee_basis_points.2nd,
+            lp_fee.2nd + protocol_fee.2nd,
+            output_fee_denominator,
           )
 
         // Check that the *current* fee manager approves the update
@@ -1027,7 +1061,7 @@ validator manage(settings_policy_id: PolicyId) {
               datum.protocol_fees.2nd,
               datum.protocol_fees.3rd,
             ),
-            lp_fee_basis_points,
+            lp_fee,
             fee_manager: output_fee_manager,
           }
         pool_output_datum == expected_datum
@@ -1052,8 +1086,12 @@ validator manage(settings_policy_id: PolicyId) {
           linear_amplification,
           sum_invariant,
           linear_amplification_manager: output_linear_amplification_manager,
+          prescale,
           ..
         } = pool_output_datum
+
+        // Prescale must not change
+        expect prescale == datum.prescale
 
         let
           pool_quantity_a,
@@ -1062,8 +1100,8 @@ validator manage(settings_policy_id: PolicyId) {
 
         expect
           liquidity_invariant(
-            pool_quantity_a * calc_precision,
-            pool_quantity_b * calc_precision,
+            pool_quantity_a * prescale.1st * calc_precision,
+            pool_quantity_b * prescale.2nd * calc_precision,
             linear_amplification,
             sum_invariant,
           )

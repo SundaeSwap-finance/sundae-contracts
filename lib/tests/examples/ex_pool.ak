@@ -15,14 +15,16 @@ fn mk_pool_datum() -> StablePoolDatum {
       ),
     ),
     circulating_lp: 20229488080013,
-    lp_fee_basis_points: (2000, 2000),
-    protocol_fee_basis_points: (2000, 2000),
+    lp_fee: (2000, 2000),
+    protocol_fee: (2000, 2000),
+    fee_denominator: 10_000,
     fee_manager: None,
     market_open: 100,
     protocol_fees: (10000000, 0, 0),
     linear_amplification: 10,
     sum_invariant: 10,
     linear_amplification_manager: None,
+    prescale: (1, 1),
   }
 }
 

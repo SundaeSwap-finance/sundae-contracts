@@ -70,6 +70,9 @@ pub fn pool_input_to_state(
     Int,
     Int,
     Int,
+    Int,
+    Int,
+    Int,
   ) ->
     Bool,
 ) -> Bool {
@@ -84,24 +87,29 @@ pub fn pool_input_to_state(
   // LP token name
   // LP token reserves
   // Circulating LP tokens
-  // LP Bid Fee % in basis points
-  // LP Ask Fee % in basis points
-  // Protocol Bid Fee % in basis points
-  // Protocol Ask Fee % in basis points
+  // LP Bid Fee
+  // LP Ask Fee
+  // Protocol Bid Fee
+  // Protocol Ask Fee
+  // Fee denominator
   // Collected Fees ADA
   // Collected Fees in Asset A
   // Collected Fees in Asset B
   // Stableswap Linear Amplification
   // Stableswap Sum Invariant
+  // Prescale A
+  // Prescale B
   let StablePoolDatum {
     assets,
     protocol_fees,
     identifier,
     circulating_lp,
-    lp_fee_basis_points,
-    protocol_fee_basis_points,
+    lp_fee,
+    protocol_fee,
+    fee_denominator,
     linear_amplification,
     sum_invariant,
+    prescale,
     ..
   } = datum
   let (asset_a, asset_b) = assets
@@ -120,8 +128,9 @@ pub fn pool_input_to_state(
     } else {
       reserve_a
     }
-  let (lp_bid_bp, lp_ask_bp) = lp_fee_basis_points
-  let (protocol_bid_bp, protocol_ask_bp) = protocol_fee_basis_points
+  let (lp_bid, lp_ask) = lp_fee
+  let (protocol_bid, protocol_ask) = protocol_fee
+  let (prescale_a, prescale_b) = prescale
   continuation(
     asset_a_policy_id,
     asset_a_name,
@@ -132,15 +141,18 @@ pub fn pool_input_to_state(
     pool_token_policy,
     pool_lp_name(identifier),
     circulating_lp,
-    lp_bid_bp,
-    lp_ask_bp,
-    protocol_bid_bp,
-    protocol_ask_bp,
+    lp_bid,
+    lp_ask,
+    protocol_bid,
+    protocol_ask,
+    fee_denominator,
     fees_ada,
     fees_a,
     fees_b,
     linear_amplification,
     sum_invariant,
+    prescale_a,
+    prescale_b,
   )
 }
 
@@ -184,11 +196,13 @@ pub fn process_order(
   max_protocol_fee: Int,
   // The destination where the result of the order must be sent; useful for chaining transactions, as it lets you specify a datum for the output
   destination: Destination,
-  // The liquidity provider fee to charge for bid (A -> B) and ask (B -> A) orders, expressed as parts per 10,000. also called basis points
-  lp_bid_basis_points: Int,
-  lp_ask_basis_points: Int,
-  protocol_bid_basis_points: Int,
-  protocol_ask_basis_points: Int,
+  // The liquidity provider fee to charge for bid (A -> B) and ask (B -> A) orders
+  lp_bid_fee: Int,
+  lp_ask_fee: Int,
+  protocol_bid_fee: Int,
+  protocol_ask_fee: Int,
+  // The denominator for fee calculations (e.g., 10000 for basis points)
+  fee_denominator: Int,
   // The base fee, divided among all the participants in the scoop
   amortized_base_fee: Int,
   // The amount to charge for simple vs strategy orders, taken from the settings
@@ -199,6 +213,9 @@ pub fn process_order(
   sum_invariant: Int,
   next_sum_invariant: Int,
   swap_result: Int,
+  // Pre-scaling coefficients for normalizing token quantities
+  prescale_a: Int,
+  prescale_b: Int,
   // A list of outputs, so we can destructure the next output
   // TODO: we can probably avoid returning the outputs, and just return a boolean
   outputs: List<Output>,
@@ -238,10 +255,11 @@ pub fn process_order(
         details,
         max_protocol_fee,
         destination,
-        lp_bid_basis_points,
-        lp_ask_basis_points,
-        protocol_bid_basis_points,
-        protocol_ask_basis_points,
+        lp_bid_fee,
+        lp_ask_fee,
+        protocol_bid_fee,
+        protocol_ask_fee,
+        fee_denominator,
         amortized_base_fee,
         // We pass strategy_fee here, instead of simple_fee,
         // because even though we're using the same logic, we're charging a different fee for strategies
@@ -251,6 +269,8 @@ pub fn process_order(
         sum_invariant,
         next_sum_invariant,
         swap_result,
+        prescale_a,
+        prescale_b,
         outputs,
         continuation,
       )
@@ -280,14 +300,17 @@ pub fn process_order(
           swap_result,
           input,
           destination,
-          lp_bid_basis_points,
-          lp_ask_basis_points,
-          protocol_bid_basis_points,
-          protocol_ask_basis_points,
+          lp_bid_fee,
+          lp_ask_fee,
+          protocol_bid_fee,
+          protocol_ask_fee,
+          fee_denominator,
           fee,
           offer,
           min_received,
           output,
+          prescale_a,
+          prescale_b,
         )
       continuation(
         new_pool_a,
@@ -328,6 +351,8 @@ pub fn process_order(
           destination,
           fee,
           output,
+          prescale_a,
+          prescale_b,
         )
       continuation(new_a, new_b, new_lp, 0, 0, rest_outputs)
     }
@@ -361,6 +386,8 @@ pub fn process_order(
           destination,
           fee,
           output,
+          prescale_a,
+          prescale_b,
         )
       continuation(new_a, new_b, new_lp, 0, 0, rest_outputs)
     }
@@ -405,11 +432,13 @@ pub fn process_orders(
   pool_quantity_lp: Int,
   // The list of remaining indices into the inputs, specifying which orders to process
   input_order: List<(Int, Option<SignedStrategyExecution>, Int, Int)>,
-  // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders, expressed as parts per 10,000
-  lp_bid_basis_points: Int,
-  lp_ask_basis_points: Int,
-  protocol_bid_basis_points: Int,
-  protocol_ask_basis_points: Int,
+  // The liquidity provider fee, for bid (swapping asset A to asset B) and ask (asset B to asset A) orders
+  lp_bid_fee: Int,
+  lp_ask_fee: Int,
+  protocol_bid_fee: Int,
+  protocol_ask_fee: Int,
+  // The denominator for fee calculations (e.g., 10000 for basis points)
+  fee_denominator: Int,
   // The protocol base fee, split across each order
   amortized_base_fee: Int,
   // The simple and strategy fees from the settings datum
@@ -418,6 +447,9 @@ pub fn process_orders(
   // Stableswap Parameters
   linear_amplification: Int,
   sum_invariant: Int,
+  // Pre-scaling coefficients for normalizing token quantities
+  prescale_a: Int,
+  prescale_b: Int,
   // The previous order we processed, to check if we need to restart the loop; TODO: we actually pass +1 from this, and i'm not sure how to explain why we do this...
   prev_index: Int,
   // *all* inputs on the transaction, in case we need to start over from the beginning (i.e. wrap around)
@@ -525,10 +557,11 @@ pub fn process_orders(
           details,
           max_protocol_fee,
           destination,
-          lp_bid_basis_points,
-          lp_ask_basis_points,
-          protocol_bid_basis_points,
-          protocol_ask_basis_points,
+          lp_bid_fee,
+          lp_ask_fee,
+          protocol_bid_fee,
+          protocol_ask_fee,
+          fee_denominator,
           amortized_base_fee,
           simple_fee,
           strategy_fee,
@@ -536,6 +569,8 @@ pub fn process_orders(
           sum_invariant,
           new_sum_invariant,
           swap_result,
+          prescale_a,
+          prescale_b,
           outputs,
         )
 
@@ -556,16 +591,19 @@ pub fn process_orders(
         new_lp,
         rest,
         // This advances to the next element from input_order
-        lp_bid_basis_points,
-        lp_ask_basis_points,
-        protocol_bid_basis_points,
-        protocol_ask_basis_points,
+        lp_bid_fee,
+        lp_ask_fee,
+        protocol_bid_fee,
+        protocol_ask_fee,
+        fee_denominator,
         amortized_base_fee,
         simple_fee,
         strategy_fee,
         linear_amplification,
         // In the next swap, the current new_sum_invariant becomes the old_sum_invariant
         new_sum_invariant,
+        prescale_a,
+        prescale_b,
         idx + 1,
         // This is the "previous index" within the input list; TODO: I'm not actually sure why we add 1?
         all_inputs,
@@ -688,11 +726,14 @@ test process_orders_test() {
       5,
       0,
       0,
+      10_000,
       2_500_000,
       10,
       10,
       200,
       2000000000000000000000,
+      1,
+      1,
       0,
       inputs,
       inputs,
@@ -885,11 +926,14 @@ test process_30_shuffled_orders_test() {
       5,
       0,
       0,
+      10_000,
       2_500_000,
       10,
       10,
       200,
       2000000000000000000000,
+      1,
+      1,
       0,
       inputs,
       inputs,
