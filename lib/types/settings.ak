@@ -71,9 +71,10 @@ pub type SettingsDatum {
   extensions: Pairs<Int, Data>,
 }
 
-pub type ProtocolFeeBasisPointsExtension {
-  /// The default protocol fee basis points to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
-  protocol_fee_basis_points: (Int, Int),
+pub type ProtocolFeeExtension {
+  /// The default protocol fee to charge on each trade for bid (A -> B) and ask (B -> A) orders, for pools that don't override it
+  /// The fee is expressed relative to the pool's fee_denominator (e.g., 30 with fee_denominator=10000 means 0.3%)
+  protocol_fee: (Int, Int),
 }
 
 /// The settings redeemer can be spent for two different purposes
@@ -89,11 +90,11 @@ pub const settings_nft_name: AssetName = "settings"
 
 pub fn find_protocol_fee_extension(
   settings: SettingsDatum,
-) -> Option<ProtocolFeeBasisPointsExtension> {
+) -> Option<ProtocolFeeExtension> {
   let maybe_extension = pairs.get_first(settings.extensions, 0)
   when maybe_extension is {
     Some(extension_data) -> {
-      expect extension: ProtocolFeeBasisPointsExtension = extension_data
+      expect extension: ProtocolFeeExtension = extension_data
       Some(extension)
     }
     None -> None

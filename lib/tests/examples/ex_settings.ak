@@ -2,9 +2,10 @@ use cardano/address.{Address, Script, VerificationKey}
 use cardano/assets
 use cardano/transaction.{InlineDatum, Input, Output}
 use sundae/multisig
-use tests/examples/ex_shared.{mk_output_reference,
-  print_example, script_address}
-use types/settings.{ProtocolFeeBasisPointsExtension, SettingsDatum}
+use tests/examples/ex_shared.{
+  mk_output_reference, print_example, script_address,
+}
+use types/settings.{ProtocolFeeExtension, SettingsDatum}
 
 pub const example_settings_admin =
   #"6313a1d2c296eb3341e159b6c5c6991de11e81062b95108c9aa024ad"
@@ -32,12 +33,7 @@ pub fn mk_valid_settings_datum(scoopers: List<ByteArray>) -> SettingsDatum {
     strategy_fee: 5_000_000,
     pool_creation_fee: 0,
     extensions: [
-      Pair(
-        0,
-        as_data(
-          ProtocolFeeBasisPointsExtension { protocol_fee_basis_points: (0, 0) },
-        ),
-      ),
+      Pair(0, as_data(ProtocolFeeExtension { protocol_fee: (0, 0) })),
     ],
   }
 }
@@ -212,14 +208,7 @@ test example_mainnet_boot_settings_datum() {
       strategy_fee: 168_000,
       pool_creation_fee: 0,
       extensions: [
-        Pair(
-          0,
-          as_data(
-            ProtocolFeeBasisPointsExtension {
-              protocol_fee_basis_points: (0, 0),
-            },
-          ),
-        ),
+        Pair(0, as_data(ProtocolFeeExtension { protocol_fee: (0, 0) })),
       ],
     },
   )

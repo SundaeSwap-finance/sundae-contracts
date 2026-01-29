@@ -1,11 +1,10 @@
+use shared.{fees_in_legal_range}
+
 /// Tests for the configurable fee_denominator functionality in stableswap v2
 ///
 /// The fee_denominator allows for finer-grained fee precision than the traditional
 /// basis points (10,000). For example, using 1,000,000 allows fees as precise as
 /// 0.0001% instead of 0.01%.
-
-use shared.{fees_in_legal_range}
-
 /// Test that fees_in_legal_range works with traditional basis points (10,000)
 test fees_in_legal_range_basis_points() {
   let fee_denominator = 10_000

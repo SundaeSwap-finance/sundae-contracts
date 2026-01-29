@@ -61,7 +61,7 @@ type ScoopTestOptions {
   edit_sum_invariants: Option<(Int, Int)>,
   edit_initial_sum_invariant: Option<Int>,
   edit_raw_swap_result: Option<(Int, Int)>,
-  edit_protocol_fee_basis_points: Option<(Int, Int)>,
+  edit_protocol_fee: Option<(Int, Int)>,
   edit_accrued_protocol_fees: Option<(Int, Int, Int)>,
 }
 
@@ -89,7 +89,7 @@ fn default_scoop_test_options() -> ScoopTestOptions {
     edit_sum_invariants: None,
     edit_initial_sum_invariant: None,
     edit_raw_swap_result: None,
-    edit_protocol_fee_basis_points: None,
+    edit_protocol_fee: None,
     edit_accrued_protocol_fees: None,
   }
 }
@@ -103,7 +103,7 @@ test ok_scoop_swap_protocol_fees() {
   let options =
     ScoopTestOptions {
       ..default_scoop_test_options(),
-      edit_protocol_fee_basis_points: Some((10, 10)),
+      edit_protocol_fee: Some((10, 10)),
       edit_accrued_protocol_fees: Some((7_000_000 - 600_000, 0, 19_999)),
       // Subtract off tx_fee here
       edit_order_1_out_value: Some(
@@ -409,9 +409,7 @@ fn scoop(options: ScoopTestOptions) {
   let user_addr = wallet_address(constants.payment_key)
   let owner = multisig.Signature(constants.payment_key)
   let fees = option.or_else(options.edit_swap_fees, (5, 5))
-  let protocol_fee_basis_points =
-    option.or_else(options.edit_protocol_fee,
-      fee_denominator: 10_000, (0, 0))
+  let protocol_fee = option.or_else(options.edit_protocol_fee, (0, 0))
   let tx_fee = option.or_else(options.edit_fee, 600_000)
   let accrued_protocol_fees =
     option.or_else(
@@ -1396,13 +1394,14 @@ fn mint_test_modify(
           circulating_lp: initial_lp,
           lp_fee: (5, 5),
           protocol_fee: (0, 0),
-      fee_denominator: 10_000,
+          fee_denominator: 10_000,
           fee_manager: None,
           market_open: 0,
           protocol_fees: (2_000_000, 0, 0),
           linear_amplification,
           sum_invariant,
           linear_amplification_manager: None,
+          prescale: (1, 1),
         },
       ),
     )

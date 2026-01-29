@@ -50,7 +50,7 @@ fn scoop_order(withdrawals: Pairs<Credential, Int>) {
       ..transaction.placeholder,
       inputs: [order_input],
       fee: 1_000_000,
-      withdrawals: withdrawals,
+      withdrawals,
       validity_range: interval.between(1, 2),
       id: mk_tx_hash(1),
     }

@@ -261,9 +261,13 @@ function liquidity_invariant(
   
   /** Constants */
   let a_prec = 100n;
-  let fee_prec = 10_000_000_000n;
+  // Default fee precision (basis points * 1_000_000 for extra precision in intermediate calculations)
+  // Note: Individual pools can override this via fee_denominator in the datum
+  let default_fee_prec = 10_000_000_000n;
   let rates = 1_000_000_000_000_000_000_000_000_000_000n;
   let precision = 1_000_000_000_000_000_000n;
+  // On-chain calc_precision from shared.ak
+  let calc_precision = 1_000_000_000_000n;
   
   interface SwapX {
     dx: bigint;
@@ -286,6 +290,12 @@ function liquidity_invariant(
     y: bigint;
     fee_basis: bigint;
     protocol_fee_basis: bigint;
+    // Pre-scaling coefficients for normalizing tokens with different decimals
+    // e.g., for USDC (6 decimals) + DAI (18 decimals): prescale = [1_000_000_000_000n, 1n]
+    // Default is [1n, 1n] for equal decimals
+    prescale?: [bigint, bigint];
+    // Fee denominator for the pool (default: 10_000 for basis points)
+    fee_denominator?: bigint;
     scenarios: Swap[][];
   }
   interface Method {
@@ -307,7 +317,7 @@ function liquidity_invariant(
   /** Add more testcases here */
   const cases: TestCase[] = [
     {
-      label: "Example 1",
+      label: "Example 1 - Equal decimals",
       a: 400n,
       x: 1_000_000_000n,
       y: 1_000_000_000n,
@@ -315,16 +325,49 @@ function liquidity_invariant(
       protocol_fee_basis: 10n * 1_000_000n,
       scenarios: [[{ dx: 10_000_000n },{ dx: 10_000_000n }]],
     },
+    {
+      label: "Example 2 - USDC/DAI style (6 vs 18 decimals)",
+      a: 400n,
+      // USDC with 6 decimals: 1M USDC = 1_000_000_000_000 base units
+      x: 1_000_000_000_000n,
+      // DAI with 18 decimals: 1M DAI = 1_000_000_000_000_000_000_000_000 base units
+      y: 1_000_000_000_000_000_000_000_000n,
+      fee_basis: 5n * 1_000_000n,
+      protocol_fee_basis: 10n * 1_000_000n,
+      // Prescale normalizes: USDC * 10^12 = DAI * 1
+      prescale: [1_000_000_000_000n, 1n],
+      scenarios: [[{ dx: 1_000_000n }]],  // Swap 1 USDC
+    },
+    {
+      label: "Example 3 - Custom fee denominator (parts per million)",
+      a: 400n,
+      x: 1_000_000_000n,
+      y: 1_000_000_000n,
+      // 50 parts per million LP fee
+      fee_basis: 50n * 1_000_000n,
+      // 100 parts per million protocol fee
+      protocol_fee_basis: 100n * 1_000_000n,
+      // Use parts per million instead of basis points
+      fee_denominator: 1_000_000n,
+      scenarios: [[{ dx: 10_000_000n }]],
+    },
   ];
   
   function run(test_case: TestCase) {
     let { a: a_init, x: x_init, y: y_init, fee_basis, scenarios, protocol_fee_basis } = test_case;
+    // Extract prescale with default of [1, 1] (no scaling)
+    let [prescale_x, prescale_y] = test_case.prescale ?? [1n, 1n];
+    // Extract fee_denominator with default of 10_000 (basis points)
+    // We multiply by 1_000_000 to match the fee_prec scaling used internally
+    let fee_prec = (test_case.fee_denominator ?? 10_000n) * 1_000_000n;
     let a_curr = a_init * a_prec;
 
     let compact_test_data = "";
-  
+
     for (const { label: method, get_D, get_y, fee } of methods) {
       console.log(`=== ${test_case.label} (${method}) ===`);
+      console.log(`  Prescale: [${prescale_x}, ${prescale_y}]`);
+      console.log(`  Fee denominator: ${test_case.fee_denominator ?? 10_000n}`);
       for (const scenario of scenarios) {
         let x_curr = (x_init * rates) / precision;
         let y_curr = (y_init * rates) / precision;
@@ -336,10 +379,15 @@ function liquidity_invariant(
           );
           let x_virt = x_curr;
           let y_virt = y_curr;
+          // Apply prescale for D calculation (similar to on-chain: reserve * prescale * calc_precision)
+          let x_scaled = x_virt * prescale_x;
+          let y_scaled = y_virt * prescale_y;
           let dx_virt = 0n;
           let expected_dy_virt: bigint | undefined;
           let give = "";
           let take = "";
+          let prescale_give = prescale_x;
+          let prescale_take = prescale_y;
           if ("dx" in swap) {
             give = "X";
             take = "Y";
@@ -350,16 +398,25 @@ function liquidity_invariant(
             take = "X";
             x_virt = y_curr;
             y_virt = x_curr;
+            x_scaled = y_curr * prescale_y;
+            y_scaled = x_curr * prescale_x;
+            prescale_give = prescale_y;
+            prescale_take = prescale_x;
             dx_virt = swap.dy;
             expected_dy_virt = swap.expected_dx;
           }
           try {
-            let d = get_D(a_curr, x_virt, y_virt);
+            // Calculate D using prescaled values
+            let d = get_D(a_curr, x_scaled, y_scaled);
             console.log(`  D = ${d}`);
             let dx_precise = (dx_virt * rates) / precision;
             let new_x_precise = x_virt + dx_precise;
-            let new_y = get_y(new_x_precise, a_curr,d);
-            let dy_precise = y_virt- new_y;
+            // Apply prescale when computing new_y
+            let new_x_scaled = new_x_precise * prescale_give;
+            let new_y_scaled = get_y(new_x_scaled, a_curr, d);
+            // Convert back from prescaled to actual
+            let new_y = new_y_scaled / prescale_take;
+            let dy_precise = y_virt - new_y;
             let actual_lp_fee = fee(
               (x_virt + new_x_precise) / 2n,
               (y_virt + new_y) / 2n,
@@ -389,7 +446,8 @@ function liquidity_invariant(
               x_curr = y_virt - ((dy + protocol_fee) * rates) / precision;
               y_curr = new_x_precise;
             }
-            let final_d = get_D(a_curr, x_curr, y_curr);
+            // Calculate final D using prescaled values
+            let final_d = get_D(a_curr, x_curr * prescale_x, y_curr * prescale_y);
             compact_test_data = `${compact_test_data}\n(${final_d},${dy_precise},${dy}),`;
           } catch (e) {
             console.log(`${dx_virt} => ERROR`);
@@ -400,7 +458,8 @@ function liquidity_invariant(
           `Pool ${(x_curr * precision) / rates} / ${(y_curr * precision) / rates}`
         );
         console.log(`${x_curr} ${y_curr}`);
-        let final_d = get_D(a_curr, x_curr, y_curr);
+        // Calculate final D using prescaled values
+        let final_d = get_D(a_curr, x_curr * prescale_x, y_curr * prescale_y);
         console.log(`  D = ${final_d}`);
         console.log("----------------------------------");
         console.log(`Compact test data for ${test_case.label} (${method}):\n ${compact_test_data}`);

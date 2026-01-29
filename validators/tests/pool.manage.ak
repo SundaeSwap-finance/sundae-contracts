@@ -172,9 +172,9 @@ fn step(st: State) -> Fuzzer<Scenario<State>> {
           inputs: list.concat(dummy_inputs, [pool_input]),
           reference_inputs: [settings_input],
           outputs: [pool_output],
-          withdrawals: withdrawals,
-          redeemers: redeemers,
-          extra_signatories: extra_signatories,
+          withdrawals,
+          redeemers,
+          extra_signatories,
         },
       ),
     )
@@ -291,7 +291,7 @@ fn scenario_pool_output_baseline(
     StablePoolDatum {
       ..input_datum,
       linear_amplification: new_linear_amplification,
-      sum_invariant: sum_invariant,
+      sum_invariant,
     }
 
   let output =
@@ -433,10 +433,8 @@ fn scenario_pool_datum_baseline(
   let assets =
     fuzz.both(fuzz.either(ada_asset_class(), asset_class()), asset_class())
   let circulating_lp = fuzz.int_at_least(1000)
-  let lp_fee =
-    fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
-  let protocol_fee =
-    fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
+  let lp_fee = fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
+  let protocol_fee = fuzz.both(fuzz.int_at_least(0), fuzz.int_at_least(0))
   let fee_manager = fuzz.option(multisig())
   let linear_amplification = fuzz.int_at_least(1)
   let (st, linear_amplification_manager) <-

@@ -25,7 +25,7 @@ use types/pool.{
   UpdatePoolFees, WithdrawFees,
 } as types_pool
 use types/settings.{
-  ProtocolFeeBasisPointsExtension, SettingsDatum, find_protocol_fee_extension,
+  ProtocolFeeExtension, SettingsDatum, find_protocol_fee_extension,
   find_settings_datum,
 }
 
@@ -580,7 +580,7 @@ validator pool(
               pool_output_datum.lp_fee.2nd + pool_output_datum.protocol_fee.2nd,
               pool_fee_denominator,
             ),
-            protocol_fee_extension.protocol_fee_basis_points == pool_output_datum.protocol_fee,
+            protocol_fee_extension.protocol_fee == pool_output_datum.protocol_fee,
             pool_output_datum.linear_amplification > 0,
             liquidity_invariant(
               reserve_a * pool_output_datum.prescale.1st * calc_precision,

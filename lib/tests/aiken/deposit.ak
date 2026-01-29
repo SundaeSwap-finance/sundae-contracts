@@ -118,6 +118,8 @@ fn deposit_test_schema(
       order.destination,
       2_500_000,
       output,
+      1,
+      1,
     )
   // Test should pass as long as do_deposit didn't throw
   True
