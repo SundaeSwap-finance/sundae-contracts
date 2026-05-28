@@ -1,0 +1,362 @@
+// SundaeSwap v3 Tx3 draft
+//
+// This is a first MVP-oriented draft focused on user-facing order lifecycle txs.
+// It is intentionally narrow and should be treated as a starting point, not a final
+// production-ready protocol description.
+//
+// Current draft limitations / TODOs:
+// - emits pool_ident = None for all posted orders
+// - models owner as a simple Signature multisig case only
+// - models destination as Fixed + NoDatum only
+// - fixes extension to empty bytes
+// - uses AssetPair as a stand-in for Sundae's tuple-of-two-assets encoding
+// - does not yet model strategy, donation, record, scoop, pool, or admin flows
+//
+// Source of truth in this repo:
+// - lib/types/order.ak
+// - validators/order.ak
+// - lib/types/pool.ak
+// - validators/pool.ak
+// - lib/types/settings.ak
+// - validators/settings.ak
+
+// --- Environment ---
+
+env {
+    // Deployed Sundae order validator hash.
+    order_script_hash: Bytes,
+
+    // UTxO carrying the Sundae order reference script.
+    order_script_ref: UtxoRef,
+
+    // Collateral floor for script-spending txs such as cancel.
+    min_collateral_ada: Int,
+}
+
+// --- Parties ---
+
+party User;
+
+// --- Policies ---
+
+policy OrderScript {
+    hash: order_script_hash,
+    ref: order_script_ref,
+}
+
+// --- Types ---
+
+// Draft stand-in for Aiken's Option<ByteArray>.
+// In MVP txs below we only use None.
+type MaybeBytes {
+    Some {
+        value: Bytes,
+    },
+    None,
+}
+
+// Draft subset-compatible model of Sundae multisig.
+// MVP txs below only use Signature.
+type MultisigScript {
+    Signature {
+        key_hash: Bytes,
+    },
+    AllOf {
+        scripts: List<MultisigScript>,
+    },
+    AnyOf {
+        scripts: List<MultisigScript>,
+    },
+    AtLeast {
+        required: Int,
+        scripts: List<MultisigScript>,
+    },
+    Before {
+        time: Int,
+    },
+    After {
+        time: Int,
+    },
+    Script {
+        script_hash: Bytes,
+    },
+}
+
+// Draft subset-compatible model of cardano/transaction Datum.
+// MVP txs below only use NoDatum.
+type TxDatum {
+    NoDatum,
+    DatumHash {
+        hash: Bytes,
+    },
+    InlineDatum {
+        datum: Bytes,
+    },
+}
+
+// Draft subset of Sundae destination handling.
+type Destination {
+    Fixed {
+        address: Address,
+        datum: TxDatum,
+    },
+    Self,
+}
+
+// Stand-in for the pair used by Sundae deposit / donation orders.
+// TODO: replace with exact tuple encoding if/when tx3 supports it directly.
+type AssetPair {
+    asset_a: AnyAsset,
+    asset_b: AnyAsset,
+}
+
+// MVP subset of Sundae order variants.
+type Order {
+    Swap {
+        offer: AnyAsset,
+        min_received: AnyAsset,
+    },
+    Deposit {
+        assets: AssetPair,
+    },
+    Withdrawal {
+        amount: AnyAsset,
+    },
+}
+
+// MVP-compatible order datum.
+type OrderDatum {
+    pool_ident: MaybeBytes,
+    owner: MultisigScript,
+    max_protocol_fee: Int,
+    destination: Destination,
+    details: Order,
+    extension: Bytes,
+}
+
+type OrderRedeemer {
+    Scoop,
+    Cancel,
+}
+
+// --- Transactions ---
+
+/// Post a swap order to the Sundae order script.
+///
+/// Notes:
+/// - `order_ada` should cover the order's non-offer ADA, including min-UTxO needs
+///   and enough room for `max_protocol_fee`.
+/// - For ADA offers, pass empty policy/name and the amount in `offer_amount`.
+tx submit_swap(
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    offer_policy: Bytes,
+    offer_name: Bytes,
+    offer_amount: Int,
+    min_received_policy: Bytes,
+    min_received_name: Bytes,
+    min_received_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+
+        min_received_asset: AnyAsset(min_received_policy, min_received_name, min_received_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + offer_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + offer_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Swap {
+                offer: offer_asset,
+                min_received: min_received_asset,
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - offer_asset - fees,
+    }
+}
+
+/// Post a deposit order to the Sundae order script.
+///
+/// Notes:
+/// - `order_ada` should cover the order's non-deposit ADA, including min-UTxO needs
+///   and enough room for `max_protocol_fee`.
+/// - If one side of the deposit is ADA, pass empty policy/name for that side.
+tx submit_deposit(
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    asset_a_policy: Bytes,
+    asset_a_name: Bytes,
+    asset_a_amount: Int,
+    asset_b_policy: Bytes,
+    asset_b_name: Bytes,
+    asset_b_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + deposit_a + deposit_b,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Deposit {
+                assets: AssetPair {
+                    asset_a: deposit_a,
+                    asset_b: deposit_b,
+                },
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - deposit_a - deposit_b - fees,
+    }
+}
+
+/// Post a withdrawal order to the Sundae order script.
+///
+/// Notes:
+/// - `order_ada` should cover min-UTxO needs and enough room for `max_protocol_fee`.
+/// - `lp_policy` / `lp_name` identify the LP asset being withdrawn.
+tx submit_withdrawal(
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    lp_policy: Bytes,
+    lp_name: Bytes,
+    lp_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + lp_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + lp_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Withdrawal {
+                amount: lp_asset,
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - lp_asset - fees,
+    }
+}
+
+/// Cancel an existing order.
+///
+/// Notes:
+/// - This draft assumes the signer represented by `User` satisfies the order datum's
+///   owner condition.
+/// - The returned funds are paid back to `User`.
+tx cancel_order(
+    order_utxo: UtxoRef,
+) {
+    reference order_script_witness {
+        ref: order_script_ref,
+    }
+
+    input fee_source {
+        from: User,
+        min_amount: fees,
+    }
+
+    input order_input {
+        from: OrderScript,
+        ref: order_utxo,
+        redeemer: OrderRedeemer::Cancel { },
+    }
+
+    output {
+        to: User,
+        amount: fee_source + order_input - fees,
+    }
+
+    collateral {
+        from: User,
+        min_amount: Ada(min_collateral_ada),
+    }
+
+    signers {
+        User,
+    }
+}
+
+// TODO next:
+// - add update_order / replace_order flows
+// - add explicit pool-targeted submit variants (pool_ident = Some)
+// - add donation / strategy / record orders
+// - add scoop_batch
+// - add pool creation / pool fee withdrawal / settings admin flows
