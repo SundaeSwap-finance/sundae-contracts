@@ -11,10 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / "gen" / "python"))
 
 from sundae import (  # noqa: E402
+    CancelOrderParams,
     Client,
     Profile,
+    SubmitDepositForPoolParams,
+    SubmitDepositParams,
     SubmitSwapForPoolParams,
     SubmitSwapParams,
+    SubmitWithdrawalForPoolParams,
+    SubmitWithdrawalParams,
 )
 from tx3_sdk import Party  # noqa: E402
 from tx3_sdk.trp.client import ClientOptions  # noqa: E402
@@ -26,6 +31,8 @@ DEFAULT_OFFER = (
     "d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4.0014df105553444d"
 )
 DEFAULT_RECEIVE = "ada"
+DEFAULT_POOL_IDENT = "35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593"
+DEFAULT_ORDER_SCRIPT_REF = "92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e3887#0"
 
 
 def normalize_hex(value: str) -> str:
@@ -71,7 +78,7 @@ def payment_and_stake_key_hashes(address: str) -> tuple[str, str]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Resolve a Sundae submit_swap tx against preview TRP."
+        description="Resolve a Sundae preview tx against TRP."
     )
     parser.add_argument("--trp-url", default=os.getenv("TRP_URL", DEFAULT_TRP_URL))
     parser.add_argument(
@@ -81,6 +88,12 @@ async def main() -> int:
     )
     parser.add_argument("--user", default=DEFAULT_USER)
     parser.add_argument("--order-script", default=DEFAULT_ORDER_SCRIPT)
+    parser.add_argument(
+        "--tx-kind",
+        choices=["swap", "deposit", "withdrawal", "cancel"],
+        default="swap",
+        help="Which Sundae tx family to resolve.",
+    )
     parser.add_argument(
         "--owner-key-hash",
         default="",
@@ -100,17 +113,36 @@ async def main() -> int:
         "--variant",
         choices=["default", "for-pool"],
         default="default",
-        help="Resolve the untargeted or pool-targeted submit_swap tx.",
+        help="Resolve the untargeted or pool-targeted tx variant.",
     )
     parser.add_argument(
-        "--pool-ident", default="", help="Required for *-for-pool variants. Hex bytes."
+        "--pool-ident",
+        default=DEFAULT_POOL_IDENT,
+        help="Pool ident hex. Required for --variant for-pool.",
     )
     parser.add_argument("--offer", default=DEFAULT_OFFER)
     parser.add_argument("--offer-amount", type=int, default=1_000_000)
     parser.add_argument("--receive", default=DEFAULT_RECEIVE)
     parser.add_argument("--min-received", type=int, default=1_000_000)
+    parser.add_argument("--asset-a", default="ada")
+    parser.add_argument("--asset-a-amount", type=int, default=5_000_000)
+    parser.add_argument("--asset-b", default=DEFAULT_OFFER)
+    parser.add_argument("--asset-b-amount", type=int, default=1_000_000)
+    parser.add_argument("--lp-asset", default="ada")
+    parser.add_argument("--lp-amount", type=int, default=1_000_000)
+    parser.add_argument(
+        "--order-utxo",
+        default="",
+        help="Order UTxO ref to cancel, in <tx_hash>#<index> form.",
+    )
+    parser.add_argument(
+        "--order-script-ref",
+        default=DEFAULT_ORDER_SCRIPT_REF,
+        help="Reference script UTxO for cancel flow, in <tx_hash>#<index> form.",
+    )
     parser.add_argument("--order-ada", type=int, default=3_000_000)
     parser.add_argument("--max-protocol-fee", type=int, default=1_000_000)
+    parser.add_argument("--min-collateral-ada", type=int, default=5_000_000)
     parser.add_argument(
         "--out",
         default="",
@@ -124,6 +156,9 @@ async def main() -> int:
 
     offer_policy, offer_name = parse_asset(args.offer)
     receive_policy, receive_name = parse_asset(args.receive)
+    asset_a_policy, asset_a_name = parse_asset(args.asset_a)
+    asset_b_policy, asset_b_name = parse_asset(args.asset_b)
+    lp_policy, lp_name = parse_asset(args.lp_asset)
     user_payment_key_hash, user_stake_key_hash = payment_and_stake_key_hashes(args.user)
     owner_key_hash = normalize_hex(args.owner_key_hash) or user_stake_key_hash
     destination_payment_key_hash = normalize_hex(args.destination_payment_key_hash) or user_payment_key_hash
@@ -133,21 +168,37 @@ async def main() -> int:
     if args.variant == "for-pool" and not pool_ident:
         print("error: --pool-ident is required for --variant for-pool")
         return 2
+    if args.tx_kind == "cancel" and not args.order_utxo:
+        print("error: --order-utxo is required for cancel")
+        return 2
 
-    print("Resolving submit_swap with:")
+    print("Resolving Sundae tx with:")
     print(f"  TRP URL:           {args.trp_url}")
     print(f"  User:              {args.user}")
     print(f"  Owner key hash:    {owner_key_hash}")
     print(f"  Order script:      {args.order_script}")
+    print(f"  Tx kind:           {args.tx_kind}")
     print(f"  Variant:           {args.variant}")
     print(f"  Dest payment kh:   {destination_payment_key_hash}")
     print(f"  Dest stake kh:     {destination_stake_key_hash}")
     if pool_ident:
         print(f"  Pool ident:        {pool_ident}")
-    print(f"  Offer asset:       {args.offer}")
-    print(f"  Offer amount:      {args.offer_amount}")
-    print(f"  Receive asset:     {args.receive}")
-    print(f"  Min received:      {args.min_received}")
+    if args.tx_kind == "swap":
+        print(f"  Offer asset:       {args.offer}")
+        print(f"  Offer amount:      {args.offer_amount}")
+        print(f"  Receive asset:     {args.receive}")
+        print(f"  Min received:      {args.min_received}")
+    elif args.tx_kind == "deposit":
+        print(f"  Asset A:           {args.asset_a}")
+        print(f"  Asset A amount:    {args.asset_a_amount}")
+        print(f"  Asset B:           {args.asset_b}")
+        print(f"  Asset B amount:    {args.asset_b_amount}")
+    elif args.tx_kind == "withdrawal":
+        print(f"  LP asset:          {args.lp_asset}")
+        print(f"  LP amount:         {args.lp_amount}")
+    else:
+        print(f"  Order UTxO:        {args.order_utxo}")
+        print(f"  Script ref UTxO:   {args.order_script_ref}")
     print(f"  Order ADA:         {args.order_ada}")
     print(f"  Max protocol fee:  {args.max_protocol_fee}")
     print()
@@ -164,7 +215,7 @@ async def main() -> int:
         Party.address(args.order_script)
     )
 
-    common = dict(
+    swap_common = dict(
         owner_key_hash=owner_key_hash,
         destination_payment_key_hash=destination_payment_key_hash,
         destination_stake_key_hash=destination_stake_key_hash,
@@ -178,11 +229,62 @@ async def main() -> int:
         min_received_amount=args.min_received,
     )
 
-    if args.variant == "default":
-        builder = client.submit_swap(SubmitSwapParams(**common))
+    deposit_common = dict(
+        owner_key_hash=owner_key_hash,
+        destination_payment_key_hash=destination_payment_key_hash,
+        destination_stake_key_hash=destination_stake_key_hash,
+        order_ada=args.order_ada,
+        max_protocol_fee=args.max_protocol_fee,
+        asset_a_policy=asset_a_policy,
+        asset_a_name=asset_a_name,
+        asset_a_amount=args.asset_a_amount,
+        asset_b_policy=asset_b_policy,
+        asset_b_name=asset_b_name,
+        asset_b_amount=args.asset_b_amount,
+    )
+
+    withdrawal_common = dict(
+        owner_key_hash=owner_key_hash,
+        destination_payment_key_hash=destination_payment_key_hash,
+        destination_stake_key_hash=destination_stake_key_hash,
+        order_ada=args.order_ada,
+        max_protocol_fee=args.max_protocol_fee,
+        lp_policy=lp_policy,
+        lp_name=lp_name,
+        lp_amount=args.lp_amount,
+    )
+
+    if args.tx_kind == "swap":
+        if args.variant == "default":
+            builder = client.submit_swap(SubmitSwapParams(**swap_common))
+        else:
+            builder = client.submit_swap_for_pool(
+                SubmitSwapForPoolParams(pool_ident=pool_ident, **swap_common)
+            )
+    elif args.tx_kind == "deposit":
+        if args.variant == "default":
+            builder = client.submit_deposit(SubmitDepositParams(**deposit_common))
+        else:
+            builder = client.submit_deposit_for_pool(
+                SubmitDepositForPoolParams(pool_ident=pool_ident, **deposit_common)
+            )
+    elif args.tx_kind == "withdrawal":
+        if args.variant == "default":
+            builder = client.submit_withdrawal(
+                SubmitWithdrawalParams(**withdrawal_common)
+            )
+        else:
+            builder = client.submit_withdrawal_for_pool(
+                SubmitWithdrawalForPoolParams(
+                    pool_ident=pool_ident, **withdrawal_common
+                )
+            )
     else:
-        builder = client.submit_swap_for_pool(
-            SubmitSwapForPoolParams(pool_ident=pool_ident, **common)
+        builder = client.cancel_order(CancelOrderParams(order_utxo=args.order_utxo)).env(
+            {
+                "order_script_ref": args.order_script_ref,
+                "min_collateral_ada": args.min_collateral_ada,
+            }
         )
 
     try:

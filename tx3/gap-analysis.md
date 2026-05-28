@@ -1,10 +1,12 @@
 # SundaeSwap Tx3 Draft Gap Analysis
 
-Status: current after build / TIR investigation
+Status: current after preview integration testing
 
 ## Validation status
 
-The current draft in `tx3/main.tx3` now supports the basic local workflow:
+The current draft in `tx3/main.tx3` now supports both local inspection and real preview resolution.
+
+Local workflow:
 
 ```sh
 cd tx3
@@ -13,11 +15,18 @@ trix build -p local
 trix inspect tir --tx submit_swap --pretty -p local
 ```
 
+Preview workflow proven so far:
+
+- `submit_swap_for_pool` resolves on preview and has been submitted successfully
+- `submit_deposit_for_pool` resolves on preview and has been submitted successfully
+- `submit_withdrawal_for_pool` resolves on preview and has been submitted successfully
+
 So the file is:
 
 - syntactically and semantically valid Tx3
 - buildable as a local Tx3 project
 - inspectable at the TIR level
+- usable for real preview user-facing pool-targeted order submission flows
 
 ## What is already aligned well
 
@@ -98,18 +107,21 @@ Observed in TIR and local TRP resolution:
 
 **Current conclusion:** nested raw lists are a viable way to express Sundae's pair-of-singletons datum shape in current Tx3.
 
-### 3. `extension` is currently narrowed to `Bytes`
+### 3. `extension` is still modeled as `Bytes`, but now uses the Sundae-compatible empty marker
 
 On-chain, `extension` is generic Plutus `Data`.
 
-The current draft sets:
+The current draft still types this field as:
 
 - `extension: Bytes`
-- and fills it with `""`
 
-This is a pragmatic MVP choice because Tx3 does not appear to expose a generic `Data` type in the language docs the way the Aiken blueprint does.
+But user-facing order txs now fill it with the encoded Sundae empty marker:
 
-**Implication:** the draft is currently only suitable for simple order-posting flows that don't rely on extension data.
+- `0xd87980`
+
+rather than plain empty bytes.
+
+**Implication:** this is sufficient for the preview-tested user order flows, but the type is still not a full generic `Data` model.
 
 ### 4. `TxDatum::InlineDatum` is not exact
 
@@ -129,13 +141,14 @@ For the MVP this is acceptable because the draft only emits:
 
 - `TxDatum::NoDatum { }`
 
-### 5. `pool_ident` is always `None`
+### 5. app-friendly flows currently prefer `pool_ident = Some(...)`
 
-The current draft intentionally posts only untargeted orders:
+The draft supports both:
 
-- `pool_ident = None`
+- untargeted orders with `pool_ident = None`
+- pool-targeted orders with `pool_ident = Some(...)`
 
-This is valid Sundae behavior, but not full coverage of the datum space.
+On-chain, untargeted orders are valid Sundae behavior. But in real preview testing, the practical wallet-facing flows that have been proven end-to-end are the pool-targeted variants.
 
 ### 6. destination handling is intentionally narrow
 
@@ -177,8 +190,9 @@ So right now:
 - language validation works
 - local build works
 - local TIR inspection works
-- local TRP resolve works for the MVP order-posting flows when datum singleton values are written as raw lists
+- local and preview TRP resolve work for the MVP order-posting flows when datum singleton values are written as raw lists
 - user-facing submit txs now use `input*` so fragmented wallet UTxOs can satisfy the logical source input via multiple UTxOs
+- preview-tested pool-targeted swap, deposit, and withdrawal flows are working
 
 ## Best next implementation steps
 
@@ -195,6 +209,8 @@ Current targeted txs:
 These set:
 
 - `pool_ident = Some { value: pool_ident }`
+
+These are also the variants that have now been proven on preview for real user-facing order submission.
 
 ### Step 2 — `AnyAsset` encoding investigation
 
@@ -230,20 +246,19 @@ Current approach:
 
 This now appears to be exact enough for Sundae's pair-of-singletons representation in the current toolchain.
 
-### Step 4 — widen datum coverage carefully
+### Step 4 — move to order lifecycle completion
 
-After exactness on basic assets is confirmed:
+After proving the user-facing submit flows on preview, the next step is:
 
-- add `pool_ident = Some`
-- add richer destination datums if possible
-- then add `Donation`
-- then consider `Record` and `Strategy`
+- validate `cancel_order`
+- document any remaining TRP / SDK quirks around `UtxoRef` environment encoding
+- then consider broader surface area such as richer destination data, `Donation`, `Record`, and `Strategy`
 
 ## Recommendation
 
-The best next step is now to harden and extend the working approach:
+The best next step is now to complete the basic order lifecycle:
 
 1. keep using `AnyAsset(...)` for tx amount/value expressions
 2. keep using raw list literals for Sundae datum singleton values
-3. validate the remaining txs and pool-targeted variants with realistic assets / inputs
-4. document this constructor rule clearly so future edits do not regress back to `AnyAsset(...)` in datum positions
+3. keep using pool-targeted submit flows as the proven wallet-facing path
+4. move to `cancel_order` and confirm a posted preview order can be cancelled cleanly
