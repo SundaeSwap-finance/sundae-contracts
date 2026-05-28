@@ -152,8 +152,9 @@ tx submit_swap(
         },
 
         offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+        offer_datum: [offer_policy, offer_name, offer_amount],
 
-        min_received_asset: AnyAsset(min_received_policy, min_received_name, min_received_amount),
+        min_received_datum: [min_received_policy, min_received_name, min_received_amount],
     }
 
     input source {
@@ -170,8 +171,8 @@ tx submit_swap(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Swap {
-                offer: offer_asset,
-                min_received: min_received_asset,
+                offer: offer_datum,
+                min_received: min_received_datum,
             },
             extension: "",
         },
@@ -211,8 +212,9 @@ tx submit_swap_for_pool(
         },
 
         offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+        offer_datum: [offer_policy, offer_name, offer_amount],
 
-        min_received_asset: AnyAsset(min_received_policy, min_received_name, min_received_amount),
+        min_received_datum: [min_received_policy, min_received_name, min_received_amount],
     }
 
     input source {
@@ -231,8 +233,8 @@ tx submit_swap_for_pool(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Swap {
-                offer: offer_asset,
-                min_received: min_received_asset,
+                offer: offer_datum,
+                min_received: min_received_datum,
             },
             extension: "",
         },
@@ -273,7 +275,9 @@ tx submit_deposit(
         },
 
         deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_a_datum: [asset_a_policy, asset_a_name, asset_a_amount],
         deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+        deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
     }
 
     input source {
@@ -290,7 +294,7 @@ tx submit_deposit(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Deposit {
-                assets: [deposit_a, deposit_b],
+                assets: [deposit_a_datum, deposit_b_datum],
             },
             extension: "",
         },
@@ -327,7 +331,9 @@ tx submit_deposit_for_pool(
         },
 
         deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_a_datum: [asset_a_policy, asset_a_name, asset_a_amount],
         deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+        deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
     }
 
     input source {
@@ -346,7 +352,7 @@ tx submit_deposit_for_pool(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Deposit {
-                assets: [deposit_a, deposit_b],
+                assets: [deposit_a_datum, deposit_b_datum],
             },
             extension: "",
         },
@@ -383,6 +389,7 @@ tx submit_withdrawal(
         },
 
         lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+        lp_datum: [lp_policy, lp_name, lp_amount],
     }
 
     input source {
@@ -399,7 +406,7 @@ tx submit_withdrawal(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Withdrawal {
-                amount: lp_asset,
+                amount: lp_datum,
             },
             extension: "",
         },
@@ -433,6 +440,7 @@ tx submit_withdrawal_for_pool(
         },
 
         lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+        lp_datum: [lp_policy, lp_name, lp_amount],
     }
 
     input source {
@@ -451,7 +459,7 @@ tx submit_withdrawal_for_pool(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Withdrawal {
-                amount: lp_asset,
+                amount: lp_datum,
             },
             extension: "",
         },

@@ -47,7 +47,7 @@ These parts of the draft intentionally mirror the current Sundae blueprint / Aik
 
 These are the main places where the current draft is not yet an exact encoding of Sundae's on-chain interface.
 
-### 1. `AnyAsset` looks type-compatible, but currently fails at TRP resolve time for datum fields
+### 1. `AnyAsset(...)` is wrong for datum construction, but raw list literals work
 
 On-chain, Sundae uses tuple-like values of the shape:
 
@@ -57,25 +57,26 @@ Tx3's local type reference says:
 
 - `AnyAsset` wire type = `(Bytes, Bytes, Int)`
 
-So on paper, `AnyAsset` looks like a good fit for Sundae `SingletonValue`.
+That shape match is real, but the constructor behavior matters.
 
-However, end-to-end probing through the generated Python SDK and TRP currently fails for `submit_swap` with:
+Observed end-to-end:
+
+- `AnyAsset(policy, name, amount)` inside a datum lowers to `Assets(...)`
+- TRP then fails with:
 
 ```text
 TRP RPC error -32006: error coercing Assets([AssetExpr { ... }]) into DataExpr
 ```
 
-This happens when `AnyAsset` is used in a datum field such as:
+But this alternate form works:
 
-- `Swap.offer`
-- `Swap.min_received`
-- `Withdrawal.amount`
+- `[policy, name, amount]`
 
-So while `AnyAsset` is still good for tx amounts, it is **not currently usable end-to-end for Sundae datum fields in the current Tx3/TRP toolchain**.
+Raw heterogeneous list literals lower as plain datum `List` nodes and resolve successfully through TRP, even when assigned to fields typed as `AnyAsset`.
 
-**Current conclusion:** `AnyAsset` is not a viable production representation for Sundae `SingletonValue` in datums with current tooling.
+**Current conclusion:** for Sundae datum fields, use raw list literals like `[policy, name, amount]`, and reserve `AnyAsset(...)` for tx amount/value expressions.
 
-### 2. Deposit asset pairs are now modeled as `List<AnyAsset>`, but inherit the same resolve-time blocker
+### 2. Deposit asset pairs can be encoded as nested raw lists
 
 Sundae deposit and donation orders use a tuple of two singleton values on-chain.
 
@@ -84,23 +85,18 @@ The Sundae blueprint expects:
 - `Tuple$Tuple$ByteArray_ByteArray_Int_Tuple$ByteArray_ByteArray_Int`
 - i.e. `[[Bytes, Bytes, Int], [Bytes, Bytes, Int]]`
 
-The current draft models this as:
+The current draft now models this as:
 
 - `assets: List<AnyAsset>`
-- emitted as `[deposit_a, deposit_b]`
+- but populates it with nested raw lists:
+  - `[[asset_a_policy, asset_a_name, asset_a_amount], [asset_b_policy, asset_b_name, asset_b_amount]]`
 
-Observed in TIR:
+Observed in TIR and local TRP resolution:
 
-```sh
-cd tx3
-trix inspect tir --tx submit_deposit --pretty -p local
-```
+- nested tuple data lowers as `List` of `List`
+- local resolve succeeds
 
-This is structurally closer than the old record-based stand-in.
-
-But because `AnyAsset` currently fails when coerced into datum `DataExpr`, this representation should also be treated as blocked for full end-to-end resolution.
-
-**Current conclusion:** better shape, but still blocked by the same `AnyAsset`-in-datum tooling limitation.
+**Current conclusion:** nested raw lists are a viable way to express Sundae's pair-of-singletons datum shape in current Tx3.
 
 ### 3. `extension` is currently narrowed to `Bytes`
 
@@ -181,7 +177,7 @@ So right now:
 - language validation works
 - local build works
 - local TIR inspection works
-- exact datum compatibility is still the open problem
+- local TRP resolve works for the MVP order-posting flows when datum singleton values are written as raw lists
 
 ## Best next implementation steps
 
@@ -207,20 +203,20 @@ Result so far:
 
 - Tx3 reference docs say `AnyAsset` wire type is `(Bytes, Bytes, Int)`
 - Sundae `SingletonValue` expects the same logical shape
-- but TRP resolve fails when `AnyAsset` is used in datum positions
+- `AnyAsset(...)` is still the wrong constructor for datum positions
+- raw list literals like `[policy, name, amount]` work in datum positions
 
 Observed with:
 
 - generated Python SDK via `trix codegen`
 - local devnet / TRP endpoint
-- `submit_swap`
+- dedicated probe txs
+- real `submit_swap` resolve
 
 So the current practical rule is:
 
-- `AnyAsset` works for tx amounts
-- `AnyAsset` is blocked for datum fields that must coerce into `DataExpr`
-
-What remains is determining whether current Tx3 has an alternate way to express a heterogeneous datum tuple without going through `AnyAsset`.
+- `AnyAsset(...)` works for tx amounts
+- raw list literals should be used for Sundae datum singleton values
 
 ### Step 3 — pair/list representation
 
@@ -229,9 +225,9 @@ The record-based pair stand-in has been replaced.
 Current approach:
 
 - use `List<AnyAsset>`
-- emit exactly two elements for deposit orders
+- emit exactly two nested raw tuple-lists for deposit orders
 
-This is the best current approximation and may in fact be exact enough for Sundae's pair-of-singletons representation.
+This now appears to be exact enough for Sundae's pair-of-singletons representation in the current toolchain.
 
 ### Step 4 — widen datum coverage carefully
 
@@ -244,9 +240,9 @@ After exactness on basic assets is confirmed:
 
 ## Recommendation
 
-The best next step is now an implementation-strategy decision rather than more protocol surface area:
+The best next step is now to harden and extend the working approach:
 
-1. keep the current MVP txs and newly added targeted variants as design drafts
-2. treat current Tx3/TRP support for Sundae datum asset tuples as blocked
-3. investigate whether Tx3 can express Sundae datum tuples via another path that does not rely on `AnyAsset -> DataExpr` coercion
-4. if not, document the current limitation clearly and avoid claiming end-to-end support for these order-posting txs yet
+1. keep using `AnyAsset(...)` for tx amount/value expressions
+2. keep using raw list literals for Sundae datum singleton values
+3. validate the remaining txs and pool-targeted variants with realistic assets / inputs
+4. document this constructor rule clearly so future edits do not regress back to `AnyAsset(...)` in datum positions
