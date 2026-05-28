@@ -9,5 +9,15 @@ family = "cardano"
 [profile.local]
 env_file = ".env.local"
 
+[[profile.local.wallets]]
+name = "alice"
+random_key = true
+initial_balance = 100000000
+
+[[profile.local.wallets]]
+name = "bob"
+random_key = true
+initial_balance = 100000000
+
 [profile.dev]
 env_file = ".env.dev"
