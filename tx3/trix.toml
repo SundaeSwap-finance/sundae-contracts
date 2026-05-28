@@ -22,6 +22,16 @@ initial_balance = 100000000
 [profile.dev]
 env_file = ".env.dev"
 
+[profile.preview]
+env_file = ".env.preview"
+chain = "CardanoPreview"
+
+[profile.preview.network]
+type = "preview"
+
+[profile.preview.trp]
+url = "https://cardano-preview.trp-m1.demeter.run"
+
 [[codegen]]
 plugin = "python-client"
 output_dir = "./gen/python"

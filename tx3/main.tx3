@@ -6,9 +6,9 @@
 //
 // Current draft limitations / TODOs:
 // - models owner as a simple Signature multisig case only
-// - models destination as Fixed + NoDatum only
-// - fixes extension to empty bytes
-// - does not yet model strategy, donation, record, scoop, pool, or admin flows
+// - models destination as Fixed + NoDatum only, with explicit payment/stake key hashes
+// - fixes extension to the encoded Sundae `Void` marker bytes `0xd87980`
+// - does not yet model scoop, pool, or admin flows
 //
 // Source of truth in this repo:
 // - lib/types/order.ak
@@ -83,17 +83,67 @@ type TxDatum {
     },
 }
 
+// Draft subset-compatible model of Aiken's credential/address types used in
+// Sundae order destinations.
+type Credential {
+    VerificationKeyCredential {
+        bytes: Bytes,
+    },
+    ScriptCredential {
+        bytes: Bytes,
+    },
+}
+
+// Pointer addresses are included so constructor numbering matches Aiken, even
+// though MVP flows below only use Inline stake credentials.
+type ReferencedCredential {
+    Inline {
+        credential: Credential,
+    },
+    Pointer {
+        slot_number: Int,
+        transaction_index: Int,
+        certificate_index: Int,
+    },
+}
+
+type MaybeReferencedCredential {
+    Some {
+        value: ReferencedCredential,
+    },
+    None,
+}
+
+type DatumAddress {
+    payment_credential: Credential,
+    stake_credential: MaybeReferencedCredential,
+}
+
 // Draft subset of Sundae destination handling.
 type Destination {
     Fixed {
-        address: Address,
+        address: DatumAddress,
         datum: TxDatum,
     },
     Self,
 }
 
-// MVP subset of Sundae order variants.
+// Placeholder variants are kept so constructor numbering matches Sundae's Aiken
+// `Order` type exactly: Strategy=0, Swap=1, Deposit=2, Withdrawal=3,
+// Donation=4, Record=5.
+type StrategyAuthorization {
+    Signature {
+        signer: Bytes,
+    },
+    Script {
+        script: Bytes,
+    },
+}
+
 type Order {
+    Strategy {
+        auth: StrategyAuthorization,
+    },
     Swap {
         offer: AnyAsset,
         min_received: AnyAsset,
@@ -103,6 +153,12 @@ type Order {
     },
     Withdrawal {
         amount: AnyAsset,
+    },
+    Donation {
+        assets: List<AnyAsset>,
+    },
+    Record {
+        policy: List<Bytes>,
     },
 }
 
@@ -128,10 +184,12 @@ type OrderRedeemer {
 /// Notes:
 /// - `order_ada` should cover the order's non-offer ADA, including min-UTxO needs
 ///   and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - For ADA offers, pass empty policy/name and the amount in `offer_amount`.
 tx submit_swap(
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     offer_policy: Bytes,
@@ -147,7 +205,18 @@ tx submit_swap(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -157,7 +226,7 @@ tx submit_swap(
         min_received_datum: [min_received_policy, min_received_name, min_received_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + offer_asset + fees,
     }
@@ -174,7 +243,7 @@ tx submit_swap(
                 offer: offer_datum,
                 min_received: min_received_datum,
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -191,7 +260,8 @@ tx submit_swap(
 tx submit_swap_for_pool(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     offer_policy: Bytes,
@@ -207,7 +277,18 @@ tx submit_swap_for_pool(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -217,7 +298,7 @@ tx submit_swap_for_pool(
         min_received_datum: [min_received_policy, min_received_name, min_received_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + offer_asset + fees,
     }
@@ -236,7 +317,7 @@ tx submit_swap_for_pool(
                 offer: offer_datum,
                 min_received: min_received_datum,
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -251,10 +332,12 @@ tx submit_swap_for_pool(
 /// Notes:
 /// - `order_ada` should cover the order's non-deposit ADA, including min-UTxO needs
 ///   and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - If one side of the deposit is ADA, pass empty policy/name for that side.
 tx submit_deposit(
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     asset_a_policy: Bytes,
@@ -270,7 +353,18 @@ tx submit_deposit(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -280,7 +374,7 @@ tx submit_deposit(
         deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
     }
@@ -296,7 +390,7 @@ tx submit_deposit(
             details: Order::Deposit {
                 assets: [deposit_a_datum, deposit_b_datum],
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -310,7 +404,8 @@ tx submit_deposit(
 tx submit_deposit_for_pool(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     asset_a_policy: Bytes,
@@ -326,7 +421,18 @@ tx submit_deposit_for_pool(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -336,7 +442,7 @@ tx submit_deposit_for_pool(
         deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
     }
@@ -354,7 +460,7 @@ tx submit_deposit_for_pool(
             details: Order::Deposit {
                 assets: [deposit_a_datum, deposit_b_datum],
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -368,10 +474,12 @@ tx submit_deposit_for_pool(
 ///
 /// Notes:
 /// - `order_ada` should cover min-UTxO needs and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - `lp_policy` / `lp_name` identify the LP asset being withdrawn.
 tx submit_withdrawal(
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     lp_policy: Bytes,
@@ -384,7 +492,18 @@ tx submit_withdrawal(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -392,7 +511,7 @@ tx submit_withdrawal(
         lp_datum: [lp_policy, lp_name, lp_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + lp_asset + fees,
     }
@@ -408,7 +527,7 @@ tx submit_withdrawal(
             details: Order::Withdrawal {
                 amount: lp_datum,
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -422,7 +541,8 @@ tx submit_withdrawal(
 tx submit_withdrawal_for_pool(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
-    destination_address: Address,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
     order_ada: Int,
     max_protocol_fee: Int,
     lp_policy: Bytes,
@@ -435,7 +555,18 @@ tx submit_withdrawal_for_pool(
         },
 
         destination: Destination::Fixed {
-            address: destination_address,
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
             datum: TxDatum::NoDatum { },
         },
 
@@ -443,7 +574,7 @@ tx submit_withdrawal_for_pool(
         lp_datum: [lp_policy, lp_name, lp_amount],
     }
 
-    input source {
+    input* source {
         from: User,
         min_amount: Ada(order_ada) + lp_asset + fees,
     }
@@ -461,7 +592,7 @@ tx submit_withdrawal_for_pool(
             details: Order::Withdrawal {
                 amount: lp_datum,
             },
-            extension: "",
+            extension: 0xd87980,
         },
     }
 
@@ -512,7 +643,6 @@ tx cancel_order(
 
 // TODO next:
 // - add update_order / replace_order flows
-// - add explicit pool-targeted submit variants (pool_ident = Some)
 // - add donation / strategy / record orders
 // - add scoop_batch
 // - add pool creation / pool fee withdrawal / settings admin flows

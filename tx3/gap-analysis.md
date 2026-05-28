@@ -178,6 +178,7 @@ So right now:
 - local build works
 - local TIR inspection works
 - local TRP resolve works for the MVP order-posting flows when datum singleton values are written as raw lists
+- user-facing submit txs now use `input*` so fragmented wallet UTxOs can satisfy the logical source input via multiple UTxOs
 
 ## Best next implementation steps
 
