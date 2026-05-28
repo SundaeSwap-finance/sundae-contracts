@@ -1,17 +1,23 @@
 # SundaeSwap Tx3 Draft Gap Analysis
 
-Status: current after initial draft + `trix check`
+Status: current after build / TIR investigation
 
 ## Validation status
 
-The current draft in `tx3/main.tx3` passes:
+The current draft in `tx3/main.tx3` now supports the basic local workflow:
 
 ```sh
 cd tx3
 trix check
+trix build -p local
+trix inspect tir --tx submit_swap --pretty -p local
 ```
 
-So the file is syntactically and semantically valid Tx3.
+So the file is:
+
+- syntactically and semantically valid Tx3
+- buildable as a local Tx3 project
+- inspectable at the TIR level
 
 ## What is already aligned well
 
@@ -41,29 +47,61 @@ These parts of the draft intentionally mirror the current Sundae blueprint / Aik
 
 These are the main places where the current draft is not yet an exact encoding of Sundae's on-chain interface.
 
-### 1. `AnyAsset` may not be an exact replacement for Sundae `SingletonValue`
+### 1. `AnyAsset` is likely a good match for Sundae `SingletonValue`
 
 On-chain, Sundae uses tuple-like values of the shape:
 
 - `(policy_id, asset_name, amount)`
 
-In the draft, these are modeled using Tx3's built-in `AnyAsset` type.
+Tx3's local type reference says:
 
-This is convenient and probably the best first draft, but it still needs confirmation that the generated Plutus-data encoding matches the Sundae blueprint shape expected by the contracts.
+- `AnyAsset` wire type = `(Bytes, Bytes, Int)`
 
-**Risk:** if Tx3 serializes `AnyAsset` differently from the blueprint tuple shape, the draft will be conceptually right but binary-incompatible.
+So the current draft's use of `AnyAsset` for:
 
-### 2. `AssetPair` is only a stand-in
+- `Swap.offer`
+- `Swap.min_received`
+- `Withdrawal.amount`
+
+is now **likely compatible** with Sundae `SingletonValue`.
+
+TIR still shows these fields as `Assets` nodes:
+
+```sh
+cd tx3
+trix inspect tir --tx submit_swap --pretty -p local
+```
+
+but that appears to be an intermediate representation detail, not necessarily the final on-wire encoding.
+
+**Working conclusion:** `AnyAsset` is probably the right Tx3 representation for Sundae `SingletonValue`.
+
+### 2. Deposit asset pairs are now modeled as `List<AnyAsset>`
 
 Sundae deposit and donation orders use a tuple of two singleton values on-chain.
 
-The current draft uses:
+The Sundae blueprint expects:
 
-- `type AssetPair { asset_a: AnyAsset, asset_b: AnyAsset }`
+- `Tuple$Tuple$ByteArray_ByteArray_Int_Tuple$ByteArray_ByteArray_Int`
+- i.e. `[[Bytes, Bytes, Int], [Bytes, Bytes, Int]]`
 
-This is easy to read, but it is not guaranteed to encode the same as Sundae's tuple-of-two-values representation.
+The current draft now models this as:
 
-**This is the biggest known shape mismatch in the MVP draft.**
+- `assets: List<AnyAsset>`
+- emitted as `[deposit_a, deposit_b]`
+
+Observed in:
+
+```sh
+cd tx3
+trix inspect tir --tx submit_deposit --pretty -p local
+```
+
+The lowered deposit datum now contains a plain `List` with two `Assets` items.
+
+Given the Tx3 type reference for `AnyAsset`, this is a much better match than the earlier record-based stand-in.
+
+**Working conclusion:** deposit orders are now likely much closer to Sundae's exact on-chain encoding.
 
 ### 3. `extension` is currently narrowed to `Bytes`
 
@@ -133,12 +171,18 @@ Not yet implemented:
 
 ## Tooling note
 
-`trix check` succeeds, but `trix build` / `trix inspect tir` still need a bit more project/profile cleanup before they are useful in this repo-local draft setup.
+The local project workflow now works after a small project-shape adjustment:
+
+- `OrderScript` is modeled as a `party`, not a `policy`
+
+This is a tooling workaround for local `trix build` / `trix inspect tir` success in this draft project.
 
 So right now:
 
 - language validation works
-- deeper build/introspection workflow is not fully wired yet
+- local build works
+- local TIR inspection works
+- exact datum compatibility is still the open problem
 
 ## Best next implementation steps
 
@@ -156,19 +200,32 @@ These set:
 
 - `pool_ident = Some { value: pool_ident }`
 
-### Step 2 — confirm `AnyAsset` encoding
+### Step 2 — `AnyAsset` encoding investigation
 
-We should verify whether Tx3's `AnyAsset` lowers to the same Plutus-data shape as Sundae's tuple `(Bytes, Bytes, Int)`.
+This step is now in a much better place.
 
-If yes, the draft gets much closer to production-ready.
+Result so far:
 
-If not, we need an alternate representation strategy.
+- Tx3 reference docs say `AnyAsset` wire type is `(Bytes, Bytes, Int)`
+- Sundae `SingletonValue` expects the same logical shape
+- TIR uses an `Assets` node, but that does not by itself prove a wire mismatch
 
-### Step 3 — replace `AssetPair` stand-in with an exact representation
+Current working assumption:
 
-If Tx3 can express the exact tuple-of-two-singletons shape, we should switch to it.
+- `AnyAsset` is the correct representation for Sundae singleton asset values
 
-If not, this becomes a documented tooling limitation for the MVP.
+What remains is end-to-end confirmation against real produced transaction data.
+
+### Step 3 — pair/list representation
+
+The record-based pair stand-in has been replaced.
+
+Current approach:
+
+- use `List<AnyAsset>`
+- emit exactly two elements for deposit orders
+
+This is the best current approximation and may in fact be exact enough for Sundae's pair-of-singletons representation.
 
 ### Step 4 — widen datum coverage carefully
 
@@ -181,8 +238,12 @@ After exactness on basic assets is confirmed:
 
 ## Recommendation
 
-The best next code change is now:
+The best next step is now an end-to-end encoding check rather than more protocol surface area:
 
 1. keep the current MVP txs and newly added targeted variants
-2. confirm whether `AnyAsset` matches Sundae's singleton tuple encoding
-3. continue treating `AssetPair` / generic `Data` support as the main exactness blockers
+2. treat `AnyAsset` as likely correct for Sundae singleton values
+3. treat `List<AnyAsset>` as the best current representation for deposit pairs
+4. focus remaining research on:
+   - generic `Data` coverage
+   - end-to-end confirmation of produced datum encoding
+   - eventually `Donation`, `Record`, and `Strategy`

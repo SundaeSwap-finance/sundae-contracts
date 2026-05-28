@@ -5,11 +5,9 @@
 // production-ready protocol description.
 //
 // Current draft limitations / TODOs:
-// - emits pool_ident = None for all posted orders
 // - models owner as a simple Signature multisig case only
 // - models destination as Fixed + NoDatum only
 // - fixes extension to empty bytes
-// - uses AssetPair as a stand-in for Sundae's tuple-of-two-assets encoding
 // - does not yet model strategy, donation, record, scoop, pool, or admin flows
 //
 // Source of truth in this repo:
@@ -94,13 +92,6 @@ type Destination {
     Self,
 }
 
-// Stand-in for the pair used by Sundae deposit / donation orders.
-// TODO: replace with exact tuple encoding if/when tx3 supports it directly.
-type AssetPair {
-    asset_a: AnyAsset,
-    asset_b: AnyAsset,
-}
-
 // MVP subset of Sundae order variants.
 type Order {
     Swap {
@@ -108,7 +99,7 @@ type Order {
         min_received: AnyAsset,
     },
     Deposit {
-        assets: AssetPair,
+        assets: List<AnyAsset>,
     },
     Withdrawal {
         amount: AnyAsset,
@@ -299,10 +290,7 @@ tx submit_deposit(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Deposit {
-                assets: AssetPair {
-                    asset_a: deposit_a,
-                    asset_b: deposit_b,
-                },
+                assets: [deposit_a, deposit_b],
             },
             extension: "",
         },
@@ -358,10 +346,7 @@ tx submit_deposit_for_pool(
             max_protocol_fee: max_protocol_fee,
             destination: destination,
             details: Order::Deposit {
-                assets: AssetPair {
-                    asset_a: deposit_a,
-                    asset_b: deposit_b,
-                },
+                assets: [deposit_a, deposit_b],
             },
             extension: "",
         },
