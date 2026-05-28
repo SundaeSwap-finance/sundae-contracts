@@ -21,3 +21,7 @@ initial_balance = 100000000
 
 [profile.dev]
 env_file = ".env.dev"
+
+[[codegen]]
+plugin = "python-client"
+output_dir = "./gen/python"
