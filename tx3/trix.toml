@@ -1,0 +1,13 @@
+[protocol]
+name = "sundae"
+version = "0.1.0"
+main = "main.tx3"
+
+[ledger]
+family = "cardano"
+
+[profile.local]
+env_file = ".env.local"
+
+[profile.dev]
+env_file = ".env.dev"

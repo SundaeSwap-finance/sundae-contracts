@@ -23,9 +23,6 @@
 // --- Environment ---
 
 env {
-    // Deployed Sundae order validator hash.
-    order_script_hash: Bytes,
-
     // UTxO carrying the Sundae order reference script.
     order_script_ref: UtxoRef,
 
@@ -36,13 +33,7 @@ env {
 // --- Parties ---
 
 party User;
-
-// --- Policies ---
-
-policy OrderScript {
-    hash: order_script_hash,
-    ref: order_script_ref,
-}
+party OrderScript;
 
 // --- Types ---
 
@@ -201,6 +192,67 @@ tx submit_swap(
     }
 }
 
+/// Post a pool-targeted swap order to the Sundae order script.
+///
+/// This is the same as `submit_swap`, but constrains the order to a specific
+/// Sundae pool identifier.
+tx submit_swap_for_pool(
+    pool_ident: Bytes,
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    offer_policy: Bytes,
+    offer_name: Bytes,
+    offer_amount: Int,
+    min_received_policy: Bytes,
+    min_received_name: Bytes,
+    min_received_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+
+        min_received_asset: AnyAsset(min_received_policy, min_received_name, min_received_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + offer_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + offer_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Swap {
+                offer: offer_asset,
+                min_received: min_received_asset,
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - offer_asset - fees,
+    }
+}
+
 /// Post a deposit order to the Sundae order script.
 ///
 /// Notes:
@@ -262,6 +314,65 @@ tx submit_deposit(
     }
 }
 
+/// Post a pool-targeted deposit order to the Sundae order script.
+tx submit_deposit_for_pool(
+    pool_ident: Bytes,
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    asset_a_policy: Bytes,
+    asset_a_name: Bytes,
+    asset_a_amount: Int,
+    asset_b_policy: Bytes,
+    asset_b_name: Bytes,
+    asset_b_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + deposit_a + deposit_b,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Deposit {
+                assets: AssetPair {
+                    asset_a: deposit_a,
+                    asset_b: deposit_b,
+                },
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - deposit_a - deposit_b - fees,
+    }
+}
+
 /// Post a withdrawal order to the Sundae order script.
 ///
 /// Notes:
@@ -299,6 +410,58 @@ tx submit_withdrawal(
         amount: Ada(order_ada) + lp_asset,
         datum: OrderDatum {
             pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Withdrawal {
+                amount: lp_asset,
+            },
+            extension: "",
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - lp_asset - fees,
+    }
+}
+
+/// Post a pool-targeted withdrawal order to the Sundae order script.
+tx submit_withdrawal_for_pool(
+    pool_ident: Bytes,
+    owner_key_hash: Bytes,
+    destination_address: Address,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    lp_policy: Bytes,
+    lp_name: Bytes,
+    lp_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: destination_address,
+            datum: TxDatum::NoDatum { },
+        },
+
+        lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+    }
+
+    input source {
+        from: User,
+        min_amount: Ada(order_ada) + lp_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + lp_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
             owner: owner_script,
             max_protocol_fee: max_protocol_fee,
             destination: destination,
