@@ -17,9 +17,9 @@ trix inspect tir --tx submit_swap --pretty -p local
 
 Preview workflow proven so far:
 
-- `submit_swap_for_pool` resolves on preview and has been submitted successfully
-- `submit_deposit_for_pool` resolves on preview and has been submitted successfully
-- `submit_withdrawal_for_pool` resolves on preview and has been submitted successfully
+- `submit_swap` resolves on preview and has been submitted successfully
+- `submit_deposit` resolves on preview and has been submitted successfully
+- `submit_withdrawal` resolves on preview and has been submitted successfully
 
 So the file is:
 
@@ -141,14 +141,14 @@ For the MVP this is acceptable because the draft only emits:
 
 - `TxDatum::NoDatum { }`
 
-### 5. app-friendly flows currently prefer `pool_ident = Some(...)`
+### 5. app-friendly default flows currently use `pool_ident = Some(...)`
 
 The draft supports both:
 
 - untargeted orders with `pool_ident = None`
 - pool-targeted orders with `pool_ident = Some(...)`
 
-On-chain, untargeted orders are valid Sundae behavior. But in real preview testing, the practical wallet-facing flows that have been proven end-to-end are the pool-targeted variants.
+On-chain, untargeted orders are valid Sundae behavior. But in real preview testing, the practical wallet-facing flows that have been proven end-to-end are now exposed as the default submit txs, while untargeted behavior remains available through the explicit `*_any_pool` variants.
 
 ### 6. destination handling is intentionally narrow
 
@@ -192,19 +192,19 @@ So right now:
 - local TIR inspection works
 - local and preview TRP resolve work for the MVP order-posting flows when datum singleton values are written as raw lists
 - user-facing submit txs now use `input*` so fragmented wallet UTxOs can satisfy the logical source input via multiple UTxOs
-- preview-tested pool-targeted swap, deposit, and withdrawal flows are working
+- preview-tested default swap, deposit, and withdrawal flows are working
 
 ## Best next implementation steps
 
-### Step 1 — explicit pool-targeted variants
+### Step 1 — explicit pool-targeted submit flows
 
 This step is now done in `tx3/main.tx3`.
 
-Current targeted txs:
+Current default submit txs:
 
-- `submit_swap_for_pool`
-- `submit_deposit_for_pool`
-- `submit_withdrawal_for_pool`
+- `submit_swap`
+- `submit_deposit`
+- `submit_withdrawal`
 
 These set:
 

@@ -10,19 +10,19 @@ trix codegen -p preview >/dev/null
 
 for tx in \
   submit_swap \
-  submit_swap_for_pool \
+  submit_swap_any_pool \
   submit_deposit \
-  submit_deposit_for_pool \
+  submit_deposit_any_pool \
   submit_withdrawal \
-  submit_withdrawal_for_pool \
+  submit_withdrawal_any_pool \
   cancel_order
   do
   trix inspect tir --tx "$tx" -p preview >/dev/null
  done
 
-trix inspect tir --tx submit_swap_for_pool -p preview | grep -q '"many":true'
-trix inspect tir --tx submit_deposit_for_pool -p preview | grep -q '"many":true'
-trix inspect tir --tx submit_withdrawal_for_pool -p preview | grep -q '"many":true'
+trix inspect tir --tx submit_swap -p preview | grep -q '"many":true'
+trix inspect tir --tx submit_deposit -p preview | grep -q '"many":true'
+trix inspect tir --tx submit_withdrawal -p preview | grep -q '"many":true'
 trix inspect tir --tx cancel_order -p preview | grep -q 'owner_key_hash'
 
 python - <<'PY'
@@ -33,9 +33,12 @@ from sundae import (  # noqa: F401
     CancelOrderParams,
     Client,
     Profile,
-    SubmitDepositForPoolParams,
-    SubmitSwapForPoolParams,
-    SubmitWithdrawalForPoolParams,
+    SubmitDepositAnyPoolParams,
+    SubmitDepositParams,
+    SubmitSwapAnyPoolParams,
+    SubmitSwapParams,
+    SubmitWithdrawalAnyPoolParams,
+    SubmitWithdrawalParams,
 )
 print('ok: generated python SDK imports')
 PY

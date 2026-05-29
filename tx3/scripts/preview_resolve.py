@@ -14,11 +14,11 @@ from sundae import (  # noqa: E402
     CancelOrderParams,
     Client,
     Profile,
-    SubmitDepositForPoolParams,
+    SubmitDepositAnyPoolParams,
     SubmitDepositParams,
-    SubmitSwapForPoolParams,
+    SubmitSwapAnyPoolParams,
     SubmitSwapParams,
-    SubmitWithdrawalForPoolParams,
+    SubmitWithdrawalAnyPoolParams,
     SubmitWithdrawalParams,
 )
 from tx3_sdk import Party  # noqa: E402
@@ -111,14 +111,14 @@ async def main() -> int:
     )
     parser.add_argument(
         "--variant",
-        choices=["default", "for-pool"],
+        choices=["default", "any-pool"],
         default="default",
-        help="Resolve the untargeted or pool-targeted tx variant.",
+        help="Resolve the recommended pool-targeted tx or the advanced untargeted variant.",
     )
     parser.add_argument(
         "--pool-ident",
         default=DEFAULT_POOL_IDENT,
-        help="Pool ident hex. Required for --variant for-pool.",
+        help="Pool ident hex. Used by the default pool-targeted submit flows.",
     )
     parser.add_argument("--offer", default=DEFAULT_OFFER)
     parser.add_argument("--offer-amount", type=int, default=1_000_000)
@@ -165,8 +165,8 @@ async def main() -> int:
     destination_stake_key_hash = normalize_hex(args.destination_stake_key_hash) or user_stake_key_hash
     pool_ident = normalize_hex(args.pool_ident)
 
-    if args.variant == "for-pool" and not pool_ident:
-        print("error: --pool-ident is required for --variant for-pool")
+    if args.variant == "default" and args.tx_kind != "cancel" and not pool_ident:
+        print("error: --pool-ident is required for the default pool-targeted submit flows")
         return 2
     if args.tx_kind == "cancel" and not args.order_utxo:
         print("error: --order-utxo is required for cancel")
@@ -256,28 +256,28 @@ async def main() -> int:
 
     if args.tx_kind == "swap":
         if args.variant == "default":
-            builder = client.submit_swap(SubmitSwapParams(**swap_common))
-        else:
-            builder = client.submit_swap_for_pool(
-                SubmitSwapForPoolParams(pool_ident=pool_ident, **swap_common)
+            builder = client.submit_swap(
+                SubmitSwapParams(pool_ident=pool_ident, **swap_common)
             )
+        else:
+            builder = client.submit_swap_any_pool(SubmitSwapAnyPoolParams(**swap_common))
     elif args.tx_kind == "deposit":
         if args.variant == "default":
-            builder = client.submit_deposit(SubmitDepositParams(**deposit_common))
+            builder = client.submit_deposit(
+                SubmitDepositParams(pool_ident=pool_ident, **deposit_common)
+            )
         else:
-            builder = client.submit_deposit_for_pool(
-                SubmitDepositForPoolParams(pool_ident=pool_ident, **deposit_common)
+            builder = client.submit_deposit_any_pool(
+                SubmitDepositAnyPoolParams(**deposit_common)
             )
     elif args.tx_kind == "withdrawal":
         if args.variant == "default":
             builder = client.submit_withdrawal(
-                SubmitWithdrawalParams(**withdrawal_common)
+                SubmitWithdrawalParams(pool_ident=pool_ident, **withdrawal_common)
             )
         else:
-            builder = client.submit_withdrawal_for_pool(
-                SubmitWithdrawalForPoolParams(
-                    pool_ident=pool_ident, **withdrawal_common
-                )
+            builder = client.submit_withdrawal_any_pool(
+                SubmitWithdrawalAnyPoolParams(**withdrawal_common)
             )
     else:
         builder = client.cancel_order(

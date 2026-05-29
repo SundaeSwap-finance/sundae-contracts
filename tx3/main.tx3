@@ -4,6 +4,14 @@
 // It is intentionally narrow and should be treated as a starting point, not a final
 // production-ready protocol description.
 //
+// Recommended public MVP surface:
+// - submit_swap
+// - submit_deposit
+// - submit_withdrawal
+// - cancel_order
+//
+// Untargeted submit_*_any_pool txs remain available as secondary / advanced flows.
+//
 // Current draft limitations / TODOs:
 // - models owner as a simple Signature multisig case only
 // - models destination as Fixed + NoDatum only, with explicit payment/stake key hashes
@@ -179,14 +187,16 @@ type OrderRedeemer {
 
 // --- Transactions ---
 
-/// Post a swap order to the Sundae order script.
+/// Post an untargeted swap order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_swap`.
 ///
 /// Notes:
 /// - `order_ada` should cover the order's non-offer ADA, including min-UTxO needs
 ///   and enough room for `max_protocol_fee`.
 /// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - For ADA offers, pass empty policy/name and the amount in `offer_amount`.
-tx submit_swap(
+tx submit_swap_any_pool(
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,
     destination_stake_key_hash: Bytes,
@@ -255,9 +265,8 @@ tx submit_swap(
 
 /// Post a pool-targeted swap order to the Sundae order script.
 ///
-/// This is the same as `submit_swap`, but constrains the order to a specific
-/// Sundae pool identifier.
-tx submit_swap_for_pool(
+/// This is the recommended wallet-facing swap flow.
+tx submit_swap(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,
@@ -327,14 +336,16 @@ tx submit_swap_for_pool(
     }
 }
 
-/// Post a deposit order to the Sundae order script.
+/// Post an untargeted deposit order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_deposit`.
 ///
 /// Notes:
 /// - `order_ada` should cover the order's non-deposit ADA, including min-UTxO needs
 ///   and enough room for `max_protocol_fee`.
 /// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - If one side of the deposit is ADA, pass empty policy/name for that side.
-tx submit_deposit(
+tx submit_deposit_any_pool(
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,
     destination_stake_key_hash: Bytes,
@@ -401,7 +412,9 @@ tx submit_deposit(
 }
 
 /// Post a pool-targeted deposit order to the Sundae order script.
-tx submit_deposit_for_pool(
+///
+/// This is the recommended wallet-facing deposit flow.
+tx submit_deposit(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,
@@ -470,13 +483,15 @@ tx submit_deposit_for_pool(
     }
 }
 
-/// Post a withdrawal order to the Sundae order script.
+/// Post an untargeted withdrawal order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_withdrawal`.
 ///
 /// Notes:
 /// - `order_ada` should cover min-UTxO needs and enough room for `max_protocol_fee`.
 /// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
 /// - `lp_policy` / `lp_name` identify the LP asset being withdrawn.
-tx submit_withdrawal(
+tx submit_withdrawal_any_pool(
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,
     destination_stake_key_hash: Bytes,
@@ -538,7 +553,9 @@ tx submit_withdrawal(
 }
 
 /// Post a pool-targeted withdrawal order to the Sundae order script.
-tx submit_withdrawal_for_pool(
+///
+/// This is the recommended wallet-facing withdrawal flow.
+tx submit_withdrawal(
     pool_ident: Bytes,
     owner_key_hash: Bytes,
     destination_payment_key_hash: Bytes,

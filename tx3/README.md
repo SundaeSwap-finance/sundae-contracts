@@ -4,17 +4,32 @@ This directory contains the in-repo Tx3 draft for Sundae's user-facing order flo
 
 ## Status
 
-Preview-tested user flows:
+Official MVP user-facing flows:
 
-- `submit_swap_for_pool`
-- `submit_deposit_for_pool`
-- `submit_withdrawal_for_pool`
-- `cancel_order` (Tx3 wiring prepared; end-to-end behavior depends on current Tx3/script-ref handling)
+- `submit_swap`
+- `submit_deposit`
+- `submit_withdrawal`
+- `cancel_order`
 
-Current wallet-facing recommendation:
+These are the flows that have been validated as the practical preview-network path for wallet users.
 
-- prefer the pool-targeted variants
+## Recommended integration path
+
+For wallet-facing integrations:
+
+- use the default submit flows, which are pool-targeted
+- use the owner's stake key hash for `owner_key_hash`
+- use destination payment + stake key hashes in the order datum
+- source `order_script_ref` from the profile env
 - use the generated Python SDK or `scripts/preview_resolve.py` for preview probing
+
+Secondary / advanced flows still exist in `main.tx3`:
+
+- `submit_swap_any_pool`
+- `submit_deposit_any_pool`
+- `submit_withdrawal_any_pool`
+
+These untargeted variants are useful for experimentation, but the default submit flows are the recommended public surface.
 
 ## Local regression workflow
 
@@ -53,15 +68,16 @@ Supported tx kinds:
 - `withdrawal`
 - `cancel`
 
+For submit flows, the default variant is the recommended pool-targeted path. Use `--variant any-pool` only for advanced untargeted probing.
+
 ## Known-good preview examples
 
-### Pool-targeted swap
+### Default swap
 
 ```sh
 python scripts/preview_resolve.py \
   --api-key "$DEMETER_TRP_API_KEY" \
   --tx-kind swap \
-  --variant for-pool \
   --pool-ident 35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593 \
   --offer d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4.0014df105553444d \
   --offer-amount 1000000 \
@@ -71,13 +87,12 @@ python scripts/preview_resolve.py \
   --max-protocol-fee 600000
 ```
 
-### Pool-targeted deposit
+### Default deposit
 
 ```sh
 python scripts/preview_resolve.py \
   --api-key "$DEMETER_TRP_API_KEY" \
   --tx-kind deposit \
-  --variant for-pool \
   --pool-ident 35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593 \
   --asset-a ada \
   --asset-a-amount 5000000 \
@@ -87,13 +102,12 @@ python scripts/preview_resolve.py \
   --max-protocol-fee 600000
 ```
 
-### Pool-targeted withdrawal
+### Default withdrawal
 
 ```sh
 python scripts/preview_resolve.py \
   --api-key "$DEMETER_TRP_API_KEY" \
   --tx-kind withdrawal \
-  --variant for-pool \
   --pool-ident 35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593 \
   --lp-asset 44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a110414.0014df1035a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593 \
   --lp-amount 1000 \
@@ -116,7 +130,9 @@ python scripts/preview_resolve.py \
 See:
 
 - `args-submit-swap.json`
-- `args-submit-swap-for-pool.json`
-- `args-submit-deposit-for-pool.json`
-- `args-submit-withdrawal-for-pool.json`
+- `args-submit-deposit.json`
+- `args-submit-withdrawal.json`
 - `args-cancel-order.json`
+- `args-submit-swap-any-pool.json`
+- `args-submit-deposit-any-pool.json`
+- `args-submit-withdrawal-any-pool.json`
