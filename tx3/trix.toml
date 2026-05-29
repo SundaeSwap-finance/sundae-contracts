@@ -32,6 +32,13 @@ type = "preview"
 [profile.preview.trp]
 url = "https://cardano-preview.trp-m1.demeter.run"
 
+[profile.mainnet]
+env_file = ".env.mainnet"
+chain = "CardanoMainnet"
+
+[profile.mainnet.network]
+type = "mainnet"
+
 [[codegen]]
 plugin = "python-client"
 output_dir = "./gen/python"

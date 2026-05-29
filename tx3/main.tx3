@@ -1,30 +1,14 @@
-// SundaeSwap v3 Tx3 draft
+// SundaeSwap v3 Tx3 MVP
 //
-// This is a first MVP-oriented draft focused on user-facing order lifecycle txs.
+// This is a first MVP focused on user-facing order lifecycle txs.
 // It is intentionally narrow and should be treated as a starting point, not a final
 // production-ready protocol description.
 //
-// Recommended public MVP surface:
-// - submit_swap
-// - submit_deposit
-// - submit_withdrawal
-// - cancel_order
-//
-// Untargeted submit_*_any_pool txs remain available as secondary / advanced flows.
-//
-// Current draft limitations / TODOs:
+// Current MVP limitations / TODOs:
 // - models owner as a simple Signature multisig case only
 // - models destination as Fixed + NoDatum only, with explicit payment/stake key hashes
 // - fixes extension to the encoded Sundae `Void` marker bytes `0xd87980`
 // - does not yet model scoop, pool, or admin flows
-//
-// Source of truth in this repo:
-// - lib/types/order.ak
-// - validators/order.ak
-// - lib/types/pool.ak
-// - validators/pool.ak
-// - lib/types/settings.ak
-// - validators/settings.ak
 
 // --- Environment ---
 

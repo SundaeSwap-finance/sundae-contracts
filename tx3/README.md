@@ -21,6 +21,7 @@ For wallet-facing integrations:
 - use the owner's stake key hash for `owner_key_hash`
 - use destination payment + stake key hashes in the order datum
 - source `order_script_ref` from the profile env
+- bind the `OrderScript` party to the deployed order script address for the selected network
 - use the generated Python SDK or `scripts/preview_resolve.py` for preview probing
 
 Secondary / advanced flows still exist in `main.tx3`:
@@ -124,6 +125,10 @@ python scripts/preview_resolve.py \
   --order-utxo <tx_hash>#<index> \
   --order-script-ref 92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e3887#0
 ```
+
+See also:
+
+- `deployments.md` for preview/mainnet script hashes, addresses, and reference UTxOs
 
 ## Example arg files
 
