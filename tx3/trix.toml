@@ -1,12 +1,12 @@
 [protocol]
-name = "sundae V3"
-version = "0.1.0"
-main = "main.tx3"
-repository = "https://github.com/SundaeSwap-finance/sundae-contracts"
+name = "SundaeV3"
 scope = "SundaeSwap-finance"
-logo = "logo.png"
-readme = "README.md"
+version = "0.1.0"
 description = "Protocol for the user-facing actions of Sundae V3"
+main = "main.tx3"
+readme = "README.md"
+logo = "logo.png"
+repository = "https://github.com/SundaeSwap-finance/sundae-contracts"
 
 [ledger]
 family = "cardano"
