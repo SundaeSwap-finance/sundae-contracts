@@ -1,5 +1,5 @@
 [protocol]
-name = "SundaeV3"
+name = "sundae-v3"
 scope = "SundaeSwap-finance"
 version = "0.1.0"
 description = "Protocol for the user-facing actions of Sundae V3"
