@@ -1,0 +1,6 @@
+{
+  "user": "@alice",
+  "orderscript": "@bob",
+  "order_utxo": "<tx_hash>#<index>",
+  "owner_key_hash": "11111111111111111111111111111111111111111111111111111111"
+}
