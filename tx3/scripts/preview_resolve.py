@@ -280,7 +280,12 @@ async def main() -> int:
                 )
             )
     else:
-        builder = client.cancel_order(CancelOrderParams(order_utxo=args.order_utxo)).env(
+        builder = client.cancel_order(
+            CancelOrderParams(
+                order_utxo=args.order_utxo,
+                owner_key_hash=owner_key_hash,
+            )
+        ).env(
             {
                 "order_script_ref": args.order_script_ref,
                 "min_collateral_ada": args.min_collateral_ada,

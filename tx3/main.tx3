@@ -605,11 +605,12 @@ tx submit_withdrawal_for_pool(
 /// Cancel an existing order.
 ///
 /// Notes:
-/// - This draft assumes the signer represented by `User` satisfies the order datum's
-///   owner condition.
+/// - `owner_key_hash` should match the order datum owner key hash for simple
+///   signature-owned wallet orders.
 /// - The returned funds are paid back to `User`.
 tx cancel_order(
     order_utxo: UtxoRef,
+    owner_key_hash: Bytes,
 ) {
     reference order_script_witness {
         ref: order_script_ref,
@@ -638,6 +639,7 @@ tx cancel_order(
 
     signers {
         User,
+        owner_key_hash,
     }
 }
 
