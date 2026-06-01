@@ -1,0 +1,16 @@
+{
+  "user": "@alice",
+  "orderscript": "@bob",
+  "pool_ident": "35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
+  "owner_key_hash": "11111111111111111111111111111111111111111111111111111111",
+  "destination_payment_key_hash": "11111111111111111111111111111111111111111111111111111111",
+  "destination_stake_key_hash": "33333333333333333333333333333333333333333333333333333333",
+  "order_ada": 3000000,
+  "max_protocol_fee": 1000000,
+  "asset_a_policy": "",
+  "asset_a_name": "",
+  "asset_a_amount": 5000000,
+  "asset_b_policy": "",
+  "asset_b_name": "",
+  "asset_b_amount": 7000000
+}

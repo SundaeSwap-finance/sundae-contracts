@@ -1,0 +1,688 @@
+// SundaeSwap v3 Tx3 MVP
+//
+// This is a first MVP focused on user-facing order lifecycle txs.
+// It is intentionally narrow and should be treated as a starting point, not a final
+// production-ready protocol description.
+//
+// Current MVP limitations / TODOs:
+// - models owner as a simple Signature multisig case only
+// - models destination as Fixed + NoDatum only, with explicit payment/stake key hashes
+// - fixes extension to the encoded Sundae `Void` marker bytes `0xd87980`
+// - does not yet model scoop, pool, or admin flows
+
+// --- Environment ---
+
+env {
+    /// UTxO carrying the Sundae order reference script.
+    order_script_ref: UtxoRef,
+
+    /// Collateral floor for script-spending txs such as `cancel_order`.
+    min_collateral_ada: Int,
+}
+
+// --- Parties ---
+
+/// The wallet building, funding, and signing the transaction.
+party User;
+/// The deployed Sundae order script address for the selected network.
+party OrderScript;
+
+// --- Types ---
+
+// Draft stand-in for Aiken's Option<ByteArray>.
+// In MVP txs below we only use None.
+type MaybeBytes {
+    Some {
+        value: Bytes,
+    },
+    None,
+}
+
+// Draft subset-compatible model of Sundae multisig.
+// MVP txs below only use Signature.
+type MultisigScript {
+    Signature {
+        key_hash: Bytes,
+    },
+    AllOf {
+        scripts: List<MultisigScript>,
+    },
+    AnyOf {
+        scripts: List<MultisigScript>,
+    },
+    AtLeast {
+        required: Int,
+        scripts: List<MultisigScript>,
+    },
+    Before {
+        time: Int,
+    },
+    After {
+        time: Int,
+    },
+    Script {
+        script_hash: Bytes,
+    },
+}
+
+// Draft subset-compatible model of cardano/transaction Datum.
+// MVP txs below only use NoDatum.
+type TxDatum {
+    NoDatum,
+    DatumHash {
+        hash: Bytes,
+    },
+    InlineDatum {
+        datum: Bytes,
+    },
+}
+
+// Draft subset-compatible model of Aiken's credential/address types used in
+// Sundae order destinations.
+type Credential {
+    VerificationKeyCredential {
+        bytes: Bytes,
+    },
+    ScriptCredential {
+        bytes: Bytes,
+    },
+}
+
+// Pointer addresses are included so constructor numbering matches Aiken, even
+// though MVP flows below only use Inline stake credentials.
+type ReferencedCredential {
+    Inline {
+        credential: Credential,
+    },
+    Pointer {
+        slot_number: Int,
+        transaction_index: Int,
+        certificate_index: Int,
+    },
+}
+
+type MaybeReferencedCredential {
+    Some {
+        value: ReferencedCredential,
+    },
+    None,
+}
+
+type DatumAddress {
+    payment_credential: Credential,
+    stake_credential: MaybeReferencedCredential,
+}
+
+// Where the executed order result should be paid.
+//
+// The current public submit flows use a wallet-style `Fixed + NoDatum` destination.
+type Destination {
+    Fixed {
+        address: DatumAddress,
+        datum: TxDatum,
+    },
+    Self,
+}
+
+// Placeholder variants are kept so constructor numbering matches Sundae's Aiken
+// `Order` type exactly: Strategy=0, Swap=1, Deposit=2, Withdrawal=3,
+// Donation=4, Record=5.
+type StrategyAuthorization {
+    Signature {
+        signer: Bytes,
+    },
+    Script {
+        script: Bytes,
+    },
+}
+
+type Order {
+    Strategy {
+        auth: StrategyAuthorization,
+    },
+    Swap {
+        offer: AnyAsset,
+        min_received: AnyAsset,
+    },
+    Deposit {
+        assets: List<AnyAsset>,
+    },
+    Withdrawal {
+        amount: AnyAsset,
+    },
+    Donation {
+        assets: List<AnyAsset>,
+    },
+    Record {
+        policy: List<Bytes>,
+    },
+}
+
+// Sundae order datum written to the posted order UTxO.
+type OrderDatum {
+    pool_ident: MaybeBytes,
+    owner: MultisigScript,
+    max_protocol_fee: Int,
+    destination: Destination,
+    details: Order,
+    extension: Bytes,
+}
+
+type OrderRedeemer {
+    Scoop,
+    Cancel,
+}
+
+// --- Transactions ---
+
+/// Post an untargeted swap order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_swap`.
+///
+/// Notes:
+/// - `order_ada` should cover the order's non-offer ADA, including min-UTxO needs
+///   and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
+/// - For ADA offers, pass empty policy/name and the amount in `offer_amount`.
+tx submit_swap_any_pool(
+    owner_key_hash: Bytes,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    offer_policy: Bytes,
+    offer_name: Bytes,
+    offer_amount: Int,
+    min_received_policy: Bytes,
+    min_received_name: Bytes,
+    min_received_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+        offer_datum: [offer_policy, offer_name, offer_amount],
+
+        min_received_datum: [min_received_policy, min_received_name, min_received_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + offer_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + offer_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Swap {
+                offer: offer_datum,
+                min_received: min_received_datum,
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - offer_asset - fees,
+    }
+}
+
+/// Post a pool-targeted swap order.
+///
+/// Recommended wallet-facing flow.
+tx submit_swap(
+    /// Target Sundae pool identifier.
+    pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
+    owner_key_hash: Bytes,
+    /// Payment key hash for the execution destination.
+    destination_payment_key_hash: Bytes,
+    /// Stake key hash for the execution destination.
+    destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
+    order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
+    max_protocol_fee: Int,
+    /// Offered asset policy id, or empty bytes for ADA.
+    offer_policy: Bytes,
+    /// Offered asset name, or empty bytes for ADA.
+    offer_name: Bytes,
+    /// Offered asset quantity in on-chain units.
+    offer_amount: Int,
+    /// Requested asset policy id, or empty bytes for ADA.
+    min_received_policy: Bytes,
+    /// Requested asset name, or empty bytes for ADA.
+    min_received_name: Bytes,
+    /// Minimum quantity acceptable from execution.
+    min_received_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        offer_asset: AnyAsset(offer_policy, offer_name, offer_amount),
+        offer_datum: [offer_policy, offer_name, offer_amount],
+
+        min_received_datum: [min_received_policy, min_received_name, min_received_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + offer_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + offer_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Swap {
+                offer: offer_datum,
+                min_received: min_received_datum,
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - offer_asset - fees,
+    }
+}
+
+/// Post an untargeted deposit order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_deposit`.
+///
+/// Notes:
+/// - `order_ada` should cover the order's non-deposit ADA, including min-UTxO needs
+///   and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
+/// - If one side of the deposit is ADA, pass empty policy/name for that side.
+tx submit_deposit_any_pool(
+    owner_key_hash: Bytes,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    asset_a_policy: Bytes,
+    asset_a_name: Bytes,
+    asset_a_amount: Int,
+    asset_b_policy: Bytes,
+    asset_b_name: Bytes,
+    asset_b_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_a_datum: [asset_a_policy, asset_a_name, asset_a_amount],
+        deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+        deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + deposit_a + deposit_b,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Deposit {
+                assets: [deposit_a_datum, deposit_b_datum],
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - deposit_a - deposit_b - fees,
+    }
+}
+
+/// Post a pool-targeted deposit order.
+///
+/// Recommended wallet-facing flow.
+tx submit_deposit(
+    /// Target Sundae pool identifier.
+    pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
+    owner_key_hash: Bytes,
+    /// Payment key hash for the LP destination.
+    destination_payment_key_hash: Bytes,
+    /// Stake key hash for the LP destination.
+    destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
+    order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
+    max_protocol_fee: Int,
+    /// First deposit asset policy id, or empty bytes for ADA.
+    asset_a_policy: Bytes,
+    /// First deposit asset name, or empty bytes for ADA.
+    asset_a_name: Bytes,
+    /// First deposit asset quantity in on-chain units.
+    asset_a_amount: Int,
+    /// Second deposit asset policy id, or empty bytes for ADA.
+    asset_b_policy: Bytes,
+    /// Second deposit asset name, or empty bytes for ADA.
+    asset_b_name: Bytes,
+    /// Second deposit asset quantity in on-chain units.
+    asset_b_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        deposit_a: AnyAsset(asset_a_policy, asset_a_name, asset_a_amount),
+        deposit_a_datum: [asset_a_policy, asset_a_name, asset_a_amount],
+        deposit_b: AnyAsset(asset_b_policy, asset_b_name, asset_b_amount),
+        deposit_b_datum: [asset_b_policy, asset_b_name, asset_b_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + deposit_a + deposit_b + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + deposit_a + deposit_b,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Deposit {
+                assets: [deposit_a_datum, deposit_b_datum],
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - deposit_a - deposit_b - fees,
+    }
+}
+
+/// Post an untargeted withdrawal order to the Sundae order script.
+///
+/// For wallet-facing integrations, prefer `submit_withdrawal`.
+///
+/// Notes:
+/// - `order_ada` should cover min-UTxO needs and enough room for `max_protocol_fee`.
+/// - `owner_key_hash` should be the owner's stake credential hash for wallet orders.
+/// - `lp_policy` / `lp_name` identify the LP asset being withdrawn.
+tx submit_withdrawal_any_pool(
+    owner_key_hash: Bytes,
+    destination_payment_key_hash: Bytes,
+    destination_stake_key_hash: Bytes,
+    order_ada: Int,
+    max_protocol_fee: Int,
+    lp_policy: Bytes,
+    lp_name: Bytes,
+    lp_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+        lp_datum: [lp_policy, lp_name, lp_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + lp_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + lp_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::None { },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Withdrawal {
+                amount: lp_datum,
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - lp_asset - fees,
+    }
+}
+
+/// Post a pool-targeted withdrawal order.
+///
+/// Recommended wallet-facing flow.
+tx submit_withdrawal(
+    /// Target Sundae pool identifier.
+    pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
+    owner_key_hash: Bytes,
+    /// Payment key hash for the withdrawal destination.
+    destination_payment_key_hash: Bytes,
+    /// Stake key hash for the withdrawal destination.
+    destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
+    order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
+    max_protocol_fee: Int,
+    /// LP token policy id.
+    lp_policy: Bytes,
+    /// LP token asset name.
+    lp_name: Bytes,
+    /// LP token quantity in on-chain units.
+    lp_amount: Int,
+) {
+    locals {
+        owner_script: MultisigScript::Signature {
+            key_hash: owner_key_hash,
+        },
+
+        destination: Destination::Fixed {
+            address: DatumAddress {
+                payment_credential: Credential::VerificationKeyCredential {
+                    bytes: destination_payment_key_hash,
+                },
+                stake_credential: MaybeReferencedCredential::Some {
+                    value: ReferencedCredential::Inline {
+                        credential: Credential::VerificationKeyCredential {
+                            bytes: destination_stake_key_hash,
+                        },
+                    },
+                },
+            },
+            datum: TxDatum::NoDatum { },
+        },
+
+        lp_asset: AnyAsset(lp_policy, lp_name, lp_amount),
+        lp_datum: [lp_policy, lp_name, lp_amount],
+    }
+
+    input* source {
+        from: User,
+        min_amount: Ada(order_ada) + lp_asset + fees,
+    }
+
+    output order_utxo {
+        to: OrderScript,
+        amount: Ada(order_ada) + lp_asset,
+        datum: OrderDatum {
+            pool_ident: MaybeBytes::Some {
+                value: pool_ident,
+            },
+            owner: owner_script,
+            max_protocol_fee: max_protocol_fee,
+            destination: destination,
+            details: Order::Withdrawal {
+                amount: lp_datum,
+            },
+            extension: 0xd87980,
+        },
+    }
+
+    output? {
+        to: User,
+        amount: source - Ada(order_ada) - lp_asset - fees,
+    }
+}
+
+/// Cancel an existing order and return its funds to `User`.
+///
+/// `owner_key_hash` should match the order datum owner key hash for simple
+/// signature-owned wallet orders.
+tx cancel_order(
+    /// Order UTxO to spend with the `Cancel` redeemer.
+    order_utxo: UtxoRef,
+    /// Stake key hash matching the order owner for simple wallet-owned orders.
+    owner_key_hash: Bytes,
+) {
+    reference order_script_witness {
+        ref: order_script_ref,
+    }
+
+    input fee_source {
+        from: User,
+        min_amount: fees,
+    }
+
+    input order_input {
+        from: OrderScript,
+        ref: order_utxo,
+        redeemer: OrderRedeemer::Cancel { },
+    }
+
+    output {
+        to: User,
+        amount: fee_source + order_input - fees,
+    }
+
+    collateral {
+        from: User,
+        min_amount: Ada(min_collateral_ada),
+    }
+
+    signers {
+        User,
+        owner_key_hash,
+    }
+}
+
+// TODO next:
+// - add update_order / replace_order flows
+// - add donation / strategy / record orders
+// - add scoop_batch
+// - add pool creation / pool fee withdrawal / settings admin flows

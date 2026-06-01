@@ -1,0 +1,15 @@
+{
+  "user": "@alice",
+  "orderscript": "@bob",
+  "owner_key_hash": "11111111111111111111111111111111111111111111111111111111",
+  "destination_payment_key_hash": "11111111111111111111111111111111111111111111111111111111",
+  "destination_stake_key_hash": "33333333333333333333333333333333333333333333333333333333",
+  "order_ada": 3000000,
+  "max_protocol_fee": 1000000,
+  "offer_policy": "",
+  "offer_name": "",
+  "offer_amount": 5000000,
+  "min_received_policy": "22222222222222222222222222222222222222222222222222222222",
+  "min_received_name": "TOKEN",
+  "min_received_amount": 12345
+}

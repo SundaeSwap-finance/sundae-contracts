@@ -1,0 +1,53 @@
+[protocol]
+name = "sundae-v3"
+scope = "SundaeSwap-finance"
+version = "0.1.0"
+description = "Protocol for the user-facing actions of Sundae V3"
+main = "main.tx3"
+readme = "README.md"
+logo = "logo.png"
+repository = "https://github.com/SundaeSwap-finance/sundae-contracts"
+
+[ledger]
+family = "cardano"
+
+[profile.local]
+env_file = ".env.local"
+
+[[profile.local.wallets]]
+name = "alice"
+random_key = true
+initial_balance = 100000000
+
+[[profile.local.wallets]]
+name = "bob"
+random_key = true
+initial_balance = 100000000
+
+[profile.dev]
+env_file = ".env.dev"
+
+[profile.preview]
+env_file = ".env.preview"
+chain = "CardanoPreview"
+
+[profile.preview.network]
+type = "preview"
+
+[profile.preview.trp]
+url = "https://cardano-preview.trp-m1.demeter.run"
+
+[profile.mainnet]
+env_file = ".env.mainnet"
+chain = "CardanoMainnet"
+
+[profile.mainnet.network]
+type = "mainnet"
+
+[[codegen]]
+plugin = "python-client"
+output_dir = "./gen/python"
+
+[[codegen]]
+plugin = "ts-client"
+output_dir = "./gen/typescript"
