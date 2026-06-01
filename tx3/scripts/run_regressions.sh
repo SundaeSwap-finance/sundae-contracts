@@ -44,5 +44,11 @@ print('ok: generated python SDK imports')
 PY
 
 python scripts/preview_resolve.py --help >/dev/null
+python examples/python/submit_swap.py --help >/dev/null
+python examples/python/submit_deposit.py --help >/dev/null
+python examples/python/submit_withdrawal.py --help >/dev/null
+python examples/python/cancel_order.py --help >/dev/null
+python -m py_compile examples/python/*.py
+rm -rf examples/python/__pycache__
 
 echo "ok: Sundae Tx3 regressions passed"

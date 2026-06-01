@@ -71,167 +71,110 @@ trix codegen -p preview
 pip install -r gen/python/sundae/requirements.txt
 ```
 
-A client needs two runtime party bindings:
+The generated SDK expects two runtime party bindings:
 
-- `User` = the wallet address building/signing the transaction
+- `User` = the wallet building the transaction
 - `OrderScript` = the deployed Sundae order script address for that network
 
-Minimal setup:
+Minimal setup looks like:
 
 ```python
-import asyncio
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path("tx3/gen/python").resolve()))
-
 from sundae import Client, Profile
 from tx3_sdk import Party
 from tx3_sdk.trp.client import ClientOptions
 
-API_KEY = "<demeter-trp-api-key>"
-USER_ADDRESS = "<wallet address>"
-ORDER_SCRIPT_ADDRESS = "<network-specific order script address>"
-
 client = Client(
     ClientOptions(
         endpoint="https://cardano-preview.trp-m1.demeter.run",
-        headers={"dmtr-api-key": API_KEY},
+        headers={"dmtr-api-key": "<demeter-trp-api-key>"},
     ),
     Profile.PREVIEW,
 )
 
-client.with_user(Party.address(USER_ADDRESS)).with_orderscript(
-    Party.address(ORDER_SCRIPT_ADDRESS)
+client.with_user(Party.address("<wallet address>")).with_orderscript(
+    Party.address("<network-specific order script address>")
 )
 ```
 
-## Submit a swap
+For actual submission, `User` must be a signer-backed party rather than address-only.
+The runnable example scripts below support both modes:
 
-Small end-to-end example using the generated Python SDK:
+- default = resolve only
+- `--submit` = resolve, sign, and submit
 
-```python
-import asyncio
-import sys
-from pathlib import Path
+## Runnable Python examples
 
-sys.path.append(str(Path("tx3/gen/python").resolve()))
+Scripts live under `tx3/examples/python`:
 
-from sundae import Client, Profile, SubmitSwapParams
-from tx3_sdk import Party
-from tx3_sdk.trp.client import ClientOptions
+- `submit_swap.py`
+- `submit_deposit.py`
+- `submit_withdrawal.py`
+- `cancel_order.py`
 
-API_KEY = "<demeter-trp-api-key>"
-USER_ADDRESS = "<wallet address>"
-ORDER_SCRIPT_ADDRESS = "<network-specific order script address>"
+Set common environment variables first:
 
-async def main() -> None:
-    client = Client(
-        ClientOptions(
-            endpoint="https://cardano-preview.trp-m1.demeter.run",
-            headers={"dmtr-api-key": API_KEY},
-        ),
-        Profile.PREVIEW,
-    )
-
-    client.with_user(Party.address(USER_ADDRESS)).with_orderscript(
-        Party.address(ORDER_SCRIPT_ADDRESS)
-    )
-
-    builder = client.submit_swap(
-        SubmitSwapParams(
-            pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
-            owner_key_hash="<stake key hash>",
-            destination_payment_key_hash="<payment key hash>",
-            destination_stake_key_hash="<stake key hash>",
-            order_ada=3_000_000,
-            max_protocol_fee=600_000,
-            offer_policy="d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4",
-            offer_name="0014df105553444d",
-            offer_amount=1_000_000,
-            min_received_policy="",
-            min_received_name="",
-            min_received_amount=1,
-        )
-    )
-
-    resolved = await builder.resolve()
-    print("resolved tx hash:", resolved.hash)
-
-    signed = await resolved.sign()
-    submitted = await signed.submit()
-    print("submitted tx hash:", submitted.hash)
-
-asyncio.run(main())
+```sh
+export DEMETER_TRP_API_KEY="<demeter-trp-api-key>"
+export SUNDAE_USER_ADDRESS="<wallet address>"
 ```
 
-Notes:
+Optional, only for `--submit`:
 
-- use empty policy/name for ADA
-- `resolved.sign()` uses the configured wallet/signer integration
-- for deployment-specific addresses, see `deployments.md`
-
-## Submit a deposit
-
-The pattern is the same:
-
-```python
-from sundae import SubmitDepositParams
-
-builder = client.submit_deposit(
-    SubmitDepositParams(
-        pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
-        owner_key_hash="<stake key hash>",
-        destination_payment_key_hash="<payment key hash>",
-        destination_stake_key_hash="<stake key hash>",
-        order_ada=3_000_000,
-        max_protocol_fee=600_000,
-        asset_a_policy="",
-        asset_a_name="",
-        asset_a_amount=5_000_000,
-        asset_b_policy="d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4",
-        asset_b_name="0014df105553444d",
-        asset_b_amount=1_000_000,
-    )
-)
+```sh
+export SUNDAE_USER_MNEMONIC="word1 word2 ..."
 ```
 
-## Submit a withdrawal
+These examples were smoke-tested on preview at the `resolve()` layer for:
 
-```python
-from sundae import SubmitWithdrawalParams
+- swap
+- deposit
 
-builder = client.submit_withdrawal(
-    SubmitWithdrawalParams(
-        pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
-        owner_key_hash="<stake key hash>",
-        destination_payment_key_hash="<payment key hash>",
-        destination_stake_key_hash="<stake key hash>",
-        order_ada=3_000_000,
-        max_protocol_fee=600_000,
-        lp_policy="<lp policy id>",
-        lp_name="<lp asset name hex>",
-        lp_amount=1_000,
-    )
-)
+The withdrawal and cancel examples require live wallet-specific inputs:
+
+- withdrawal: an LP asset and amount actually present in the wallet
+- cancel: a live order UTxO to cancel
+
+### Resolve a swap
+
+```sh
+cd tx3
+python examples/python/submit_swap.py
 ```
 
-## Cancel an order
+### Resolve a deposit
 
-```python
-from sundae import CancelOrderParams
-
-builder = client.cancel_order(
-    CancelOrderParams(
-        order_utxo="<tx_hash>#<index>",
-        owner_key_hash="<stake key hash>",
-    )
-)
-
-resolved = await builder.resolve()
+```sh
+cd tx3
+python examples/python/submit_deposit.py
 ```
 
-`cancel_order` depends on `order_script_ref` from the active profile env.
+### Resolve a withdrawal
+
+```sh
+cd tx3
+python examples/python/submit_withdrawal.py \
+  --lp-asset <lp_policy>.<lp_asset_name_hex> \
+  --lp-amount <lp_amount>
+```
+
+### Resolve a cancel
+
+```sh
+cd tx3
+python examples/python/cancel_order.py \
+  --order-utxo <tx_hash>#<index>
+```
+
+### Submit instead of resolve
+
+If you have configured `SUNDAE_USER_MNEMONIC`, add `--submit`:
+
+```sh
+cd tx3
+python examples/python/submit_swap.py --submit
+```
+
+For deployment-specific addresses and reference UTxOs, see `deployments.md`.
 
 ## Current destination model
 
@@ -331,11 +274,13 @@ This verifies:
 - `trix inspect tir` for the current tx surface
 - generated Python SDK imports
 - helper script loading
+- example script CLI/help sanity
 
 ## Files you will likely use
 
 - `main.tx3` — protocol definition
 - `deployments.md` — preview/mainnet script addresses and refs
+- `examples/python/` — runnable Python SDK examples
 - `scripts/preview_resolve.py` — quick preview resolver helper
 - `args-submit-swap.json`
 - `args-submit-deposit.json`
