@@ -37,7 +37,7 @@ Network-specific values live in profile/env config, not in protocol logic.
 Important pieces:
 
 - `order_script_ref` comes from `.env.<profile>`
-- `OrderScript` must be bound by the caller at runtime
+- `OrderScript` can also be supplied by the profile via the lowercase `orderscript` key
 
 See:
 
@@ -91,10 +91,11 @@ client = Client(
     Profile.PREVIEW,
 )
 
-client.with_user(Party.address("<wallet address>")).with_orderscript(
-    Party.address("<network-specific order script address>")
-)
+client.with_user(Party.address("<wallet address>"))
 ```
+
+The preview/mainnet profiles already carry the deployed `orderscript` party value.
+Call `with_orderscript(...)` only if you want to override it.
 
 For actual submission, `User` must be a signer-backed party rather than address-only.
 The runnable example scripts below support both modes:
@@ -116,6 +117,12 @@ Set common environment variables first:
 ```sh
 export DEMETER_TRP_API_KEY="<demeter-trp-api-key>"
 export SUNDAE_USER_ADDRESS="<wallet address>"
+```
+
+Optional, only if you want to override the profile-supplied order script address:
+
+```sh
+export SUNDAE_ORDER_SCRIPT_ADDRESS="<override order script address>"
 ```
 
 Optional, only for `--submit`:

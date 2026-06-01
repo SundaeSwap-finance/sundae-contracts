@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -8,17 +9,12 @@ from pathlib import Path
 from pycardano import Address
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT / "gen" / "python"))
 
-from sundae import Client, Profile  # noqa: E402
 from tx3_sdk import Party  # noqa: E402
 from tx3_sdk.signer import CardanoSigner  # noqa: E402
 from tx3_sdk.trp.client import ClientOptions  # noqa: E402
 
 DEFAULT_PREVIEW_TRP_URL = "https://cardano-preview.trp-m1.demeter.run"
-DEFAULT_PREVIEW_ORDER_SCRIPT = (
-    "addr_test1wr866xg5kkvarzll69xjh0tfvqvu9zvuhht2qve9ehmgp0qfgf3wc"
-)
 DEFAULT_PREVIEW_ORDER_SCRIPT_REF = (
     "92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e3887#0"
 )
@@ -30,6 +26,34 @@ DEFAULT_LP = (
     "44a1eb2d9f58add4eb1932bd0048e6a1947e85e3fe4f32956a110414."
     "0014df1035a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593"
 )
+
+
+def load_generated_sdk():
+    gen_root = ROOT / "gen" / "python"
+    candidates = [gen_root / "sundae-v3" / "__init__.py", gen_root / "sundae" / "__init__.py"]
+
+    target = next((path for path in candidates if path.exists()), None)
+    if target is None:
+        raise RuntimeError("could not locate generated sundae SDK under tx3/gen/python")
+
+    module_name = "sundae_generated"
+    spec = importlib.util.spec_from_file_location(module_name, target)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load generated SDK module from {target}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+sdk = load_generated_sdk()
+Client = sdk.Client
+Profile = sdk.Profile
+CancelOrderParams = sdk.CancelOrderParams
+SubmitSwapParams = sdk.SubmitSwapParams
+SubmitDepositParams = sdk.SubmitDepositParams
+SubmitWithdrawalParams = sdk.SubmitWithdrawalParams
 
 
 def normalize_hex(value: str) -> str:
@@ -91,8 +115,8 @@ def add_common_preview_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--order-script",
-        default=os.getenv("SUNDAE_ORDER_SCRIPT_ADDRESS", DEFAULT_PREVIEW_ORDER_SCRIPT),
-        help="Bound OrderScript party address.",
+        default=os.getenv("SUNDAE_ORDER_SCRIPT_ADDRESS", ""),
+        help="Optional OrderScript override. Defaults to the selected profile party value.",
     )
     parser.add_argument(
         "--mnemonic",
@@ -136,7 +160,9 @@ def make_preview_client(args: argparse.Namespace) -> tuple[Client, bool]:
         else Party.address(args.user)
     )
 
-    client.with_user(user_party).with_orderscript(Party.address(args.order_script))
+    client.with_user(user_party)
+    if args.order_script:
+        client.with_orderscript(Party.address(args.order_script))
     return client, user_party.is_signer
 
 

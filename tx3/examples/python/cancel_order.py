@@ -5,6 +5,7 @@ import argparse
 import asyncio
 
 from common import (  # noqa: E402
+    CancelOrderParams,
     DEFAULT_PREVIEW_ORDER_SCRIPT_REF,
     add_common_preview_args,
     make_preview_client,
@@ -12,7 +13,6 @@ from common import (  # noqa: E402
     require_api_key_and_user,
     resolve_or_submit,
 )
-from sundae import CancelOrderParams  # noqa: E402
 
 
 async def main() -> int:

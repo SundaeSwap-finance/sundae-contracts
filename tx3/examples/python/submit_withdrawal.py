@@ -6,6 +6,7 @@ import asyncio
 
 from common import (  # noqa: E402
     DEFAULT_POOL_IDENT,
+    SubmitWithdrawalParams,
     add_common_preview_args,
     make_preview_client,
     parse_asset,
@@ -13,7 +14,6 @@ from common import (  # noqa: E402
     require_api_key_and_user,
     resolve_or_submit,
 )
-from sundae import SubmitWithdrawalParams  # noqa: E402
 
 
 async def main() -> int:

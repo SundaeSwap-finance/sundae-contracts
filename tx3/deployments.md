@@ -20,25 +20,27 @@ This file records the known Sundae deployment constants that integrators need wh
 
 ## Usage note
 
-The published Tx3 profiles currently provide environment values such as `order_script_ref`, but the `OrderScript` party address is still expected to be bound by the client.
+The committed preview/mainnet profile env files now provide both:
 
-For example, SDK users should bind the order script party explicitly:
+- `order_script_ref`
+- `orderscript`
+
+where `orderscript` is the lowercase profile variable corresponding to the `OrderScript` party.
+
+That means SDK users can usually rely on the selected profile without manually binding the order script party:
 
 ```python
 from sundae import Client, Profile
 from tx3_sdk import Party
 
 client = Client(..., Profile.MAINNET)
-client.with_orderscript(
-    Party.address("addr1w8ax5k9mutg07p2ngscu3chsauktmstq92z9de938j8nqacprc9mw")
-)
+client.with_user(Party.address("<wallet address>"))
 ```
 
-Likewise for preview:
+Manual binding is still available as an override when needed:
 
 ```python
-client = Client(..., Profile.PREVIEW)
 client.with_orderscript(
-    Party.address("addr_test1wr866xg5kkvarzll69xjh0tfvqvu9zvuhht2qve9ehmgp0qfgf3wc")
+    Party.address("addr1w8ax5k9mutg07p2ngscu3chsauktmstq92z9de938j8nqacprc9mw")
 )
 ```
