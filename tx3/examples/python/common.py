@@ -128,6 +128,11 @@ def add_common_preview_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Resolve, sign, and submit instead of resolve-only.",
     )
+    parser.add_argument(
+        "--out",
+        default="",
+        help="Optional path to write the resolved tx CBOR hex.",
+    )
 
 
 def require_api_key_and_user(args: argparse.Namespace) -> None:
@@ -166,11 +171,16 @@ def make_preview_client(args: argparse.Namespace) -> tuple[Client, bool]:
     return client, user_party.is_signer
 
 
-async def resolve_or_submit(builder, do_submit: bool, can_sign: bool) -> None:
+async def resolve_or_submit(builder, do_submit: bool, can_sign: bool, out: str = "") -> None:
     resolved = await builder.resolve()
     print("resolve ok")
     print(f"  tx hash:    {resolved.hash}")
     print(f"  tx hex len: {len(resolved.tx_hex)}")
+    print(f"  tx hex:     {resolved.tx_hex}")
+
+    if out:
+        Path(out).write_text(resolved.tx_hex)
+        print(f"  wrote tx hex: {out}")
 
     if not do_submit:
         return

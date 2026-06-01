@@ -50,5 +50,7 @@ python examples/python/submit_withdrawal.py --help >/dev/null
 python examples/python/cancel_order.py --help >/dev/null
 python -m py_compile examples/python/*.py
 rm -rf examples/python/__pycache__
+test -f gen/typescript/sundae-v3/protocol.ts
+test -f examples/typescript/submit_swap.ts
 
 echo "ok: Sundae Tx3 regressions passed"

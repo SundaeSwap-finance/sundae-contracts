@@ -51,7 +51,7 @@ async def main() -> int:
         }
     )
 
-    await resolve_or_submit(builder, args.submit, can_sign)
+    await resolve_or_submit(builder, args.submit, can_sign, args.out)
     return 0
 
 

@@ -102,6 +102,8 @@ The runnable example scripts below support both modes:
 
 - default = resolve only
 - `--submit` = resolve, sign, and submit
+- all scripts print the resolved tx CBOR hex
+- `--out <path>` writes the resolved tx CBOR hex to a file
 
 ## Runnable Python examples
 
@@ -182,6 +184,39 @@ python examples/python/submit_swap.py --submit
 ```
 
 For deployment-specific addresses and reference UTxOs, see `deployments.md`.
+
+## TypeScript showcase
+
+This repo also generates a TypeScript client to demonstrate Tx3 codegen beyond Python.
+
+Generate the bindings:
+
+```sh
+cd tx3
+trix codegen -p preview
+```
+
+Install the minimal runtime dependencies in your own JS/TS project:
+
+```sh
+npm install tx3-sdk
+npm install -D tsx typescript
+```
+
+Then try the showcase example:
+
+```sh
+cd tx3
+DEMETER_TRP_API_KEY="<demeter-trp-api-key>" \
+SUNDAE_USER_ADDRESS="<wallet address>" \
+npx tsx examples/typescript/submit_swap.ts
+```
+
+That example imports the generated client from:
+
+- `gen/typescript/sundae-v3/protocol.ts`
+
+and showcases the same pool-targeted `submit_swap` flow used in the Python examples.
 
 ## Current destination model
 
@@ -288,6 +323,7 @@ This verifies:
 - `main.tx3` — protocol definition
 - `deployments.md` — preview/mainnet script addresses and refs
 - `examples/python/` — runnable Python SDK examples
+- `examples/typescript/submit_swap.ts` — minimal TypeScript codegen showcase
 - `scripts/preview_resolve.py` — quick preview resolver helper
 - `args-submit-swap.json`
 - `args-submit-deposit.json`
