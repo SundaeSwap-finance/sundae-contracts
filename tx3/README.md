@@ -1,79 +1,267 @@
-# Sundae Tx3 MVP
+# Sundae Tx3 v3
 
-This directory contains the in-repo Tx3 draft for Sundae's user-facing order flows.
+This directory contains the Tx3 protocol package for Sundae v3 order submission on Cardano.
 
-## Status
+It is aimed at integrators who want to:
 
-Official MVP user-facing flows:
+- post swap orders
+- post deposit orders
+- post withdrawal orders
+- cancel posted orders
+
+against the deployed Sundae order script.
+
+## What is supported
+
+Recommended public flows:
 
 - `submit_swap`
 - `submit_deposit`
 - `submit_withdrawal`
 - `cancel_order`
 
-These are the flows that have been validated as the practical preview-network path for wallet users.
+These are the pool-targeted, wallet-facing flows that were validated on preview.
 
-## Recommended integration path
-
-For wallet-facing integrations:
-
-- use the default submit flows, which are pool-targeted
-- use the owner's stake key hash for `owner_key_hash`
-- use destination payment + stake key hashes in the order datum
-- source `order_script_ref` from the profile env
-- bind the `OrderScript` party to the deployed order script address for the selected network
-- use the generated Python SDK or `scripts/preview_resolve.py` for preview probing
-
-Secondary / advanced flows still exist in `main.tx3`:
+Additional non-default flows also exist:
 
 - `submit_swap_any_pool`
 - `submit_deposit_any_pool`
 - `submit_withdrawal_any_pool`
 
-These untargeted variants are useful for experimentation, but the default submit flows are the recommended public surface.
+Use the `*_any_pool` variants only if you intentionally want `pool_ident = None`.
 
-## Local regression workflow
+## Network configuration
 
-Run the local regression checks:
+Network-specific values live in profile/env config, not in protocol logic.
+
+Important pieces:
+
+- `order_script_ref` comes from `.env.<profile>`
+- `OrderScript` must be bound by the caller at runtime
+
+See:
+
+- `deployments.md` for preview/mainnet script addresses and reference UTxOs
+- `trix.toml` for available profiles
+- `.env.preview` / `.env.mainnet` for committed env defaults
+
+## Conventions
+
+A few conventions matter when building orders:
+
+- `owner_key_hash` should usually be the wallet's **stake key hash**
+- the default submit flows write a wallet-style destination:
+  - payment credential from `destination_payment_key_hash`
+  - inline stake credential from `destination_stake_key_hash`
+  - `TxDatum::NoDatum`
+- asset amounts are raw on-chain units:
+  - ADA in lovelace
+  - tokens in base units
+- for CLI helper asset strings:
+  - `ada`
+  - or `<policy_id>.<asset_name_hex>`
+
+## Python quickstart
+
+Generate the SDK and install its dependencies:
 
 ```sh
 cd tx3
-./scripts/run_regressions.sh
+trix codegen -p preview
+pip install -r gen/python/sundae/requirements.txt
 ```
 
-This runs:
+A client needs two runtime party bindings:
 
-- `trix check`
-- `trix build -p local`
-- `trix build -p preview`
-- `trix codegen -p preview`
-- `trix inspect tir` checks for every MVP tx
-- generated Python SDK import checks
-- `preview_resolve.py --help`
+- `User` = the wallet address building/signing the transaction
+- `OrderScript` = the deployed Sundae order script address for that network
 
-These are deterministic compile/codegen/TIR regressions. The real end-to-end behavior is documented in the preview examples below.
+Minimal setup:
 
-## Preview resolve helper
+```python
+import asyncio
+import sys
+from pathlib import Path
 
-Use the preview helper with a Demeter TRP key:
+sys.path.append(str(Path("tx3/gen/python").resolve()))
+
+from sundae import Client, Profile
+from tx3_sdk import Party
+from tx3_sdk.trp.client import ClientOptions
+
+API_KEY = "<demeter-trp-api-key>"
+USER_ADDRESS = "<wallet address>"
+ORDER_SCRIPT_ADDRESS = "<network-specific order script address>"
+
+client = Client(
+    ClientOptions(
+        endpoint="https://cardano-preview.trp-m1.demeter.run",
+        headers={"dmtr-api-key": API_KEY},
+    ),
+    Profile.PREVIEW,
+)
+
+client.with_user(Party.address(USER_ADDRESS)).with_orderscript(
+    Party.address(ORDER_SCRIPT_ADDRESS)
+)
+```
+
+## Submit a swap
+
+Small end-to-end example using the generated Python SDK:
+
+```python
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path("tx3/gen/python").resolve()))
+
+from sundae import Client, Profile, SubmitSwapParams
+from tx3_sdk import Party
+from tx3_sdk.trp.client import ClientOptions
+
+API_KEY = "<demeter-trp-api-key>"
+USER_ADDRESS = "<wallet address>"
+ORDER_SCRIPT_ADDRESS = "<network-specific order script address>"
+
+async def main() -> None:
+    client = Client(
+        ClientOptions(
+            endpoint="https://cardano-preview.trp-m1.demeter.run",
+            headers={"dmtr-api-key": API_KEY},
+        ),
+        Profile.PREVIEW,
+    )
+
+    client.with_user(Party.address(USER_ADDRESS)).with_orderscript(
+        Party.address(ORDER_SCRIPT_ADDRESS)
+    )
+
+    builder = client.submit_swap(
+        SubmitSwapParams(
+            pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
+            owner_key_hash="<stake key hash>",
+            destination_payment_key_hash="<payment key hash>",
+            destination_stake_key_hash="<stake key hash>",
+            order_ada=3_000_000,
+            max_protocol_fee=600_000,
+            offer_policy="d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4",
+            offer_name="0014df105553444d",
+            offer_amount=1_000_000,
+            min_received_policy="",
+            min_received_name="",
+            min_received_amount=1,
+        )
+    )
+
+    resolved = await builder.resolve()
+    print("resolved tx hash:", resolved.hash)
+
+    signed = await resolved.sign()
+    submitted = await signed.submit()
+    print("submitted tx hash:", submitted.hash)
+
+asyncio.run(main())
+```
+
+Notes:
+
+- use empty policy/name for ADA
+- `resolved.sign()` uses the configured wallet/signer integration
+- for deployment-specific addresses, see `deployments.md`
+
+## Submit a deposit
+
+The pattern is the same:
+
+```python
+from sundae import SubmitDepositParams
+
+builder = client.submit_deposit(
+    SubmitDepositParams(
+        pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
+        owner_key_hash="<stake key hash>",
+        destination_payment_key_hash="<payment key hash>",
+        destination_stake_key_hash="<stake key hash>",
+        order_ada=3_000_000,
+        max_protocol_fee=600_000,
+        asset_a_policy="",
+        asset_a_name="",
+        asset_a_amount=5_000_000,
+        asset_b_policy="d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4",
+        asset_b_name="0014df105553444d",
+        asset_b_amount=1_000_000,
+    )
+)
+```
+
+## Submit a withdrawal
+
+```python
+from sundae import SubmitWithdrawalParams
+
+builder = client.submit_withdrawal(
+    SubmitWithdrawalParams(
+        pool_ident="35a34996f515c5a28c8df9eada81f03f4f2756d92e7f73cde1f4e593",
+        owner_key_hash="<stake key hash>",
+        destination_payment_key_hash="<payment key hash>",
+        destination_stake_key_hash="<stake key hash>",
+        order_ada=3_000_000,
+        max_protocol_fee=600_000,
+        lp_policy="<lp policy id>",
+        lp_name="<lp asset name hex>",
+        lp_amount=1_000,
+    )
+)
+```
+
+## Cancel an order
+
+```python
+from sundae import CancelOrderParams
+
+builder = client.cancel_order(
+    CancelOrderParams(
+        order_utxo="<tx_hash>#<index>",
+        owner_key_hash="<stake key hash>",
+    )
+)
+
+resolved = await builder.resolve()
+```
+
+`cancel_order` depends on `order_script_ref` from the active profile env.
+
+## Current destination model
+
+The default submit flows are meant for standard wallet returns.
+
+Today they write a wallet-style Sundae destination using:
+
+- `destination_payment_key_hash`
+- `destination_stake_key_hash`
+- `TxDatum::NoDatum`
+
+So this package is currently best suited for standard wallet destinations.
+
+Important caveat:
+
+- richer destination forms like `Destination::Self` or script destinations are not yet exposed as public submit flows here
+- `TxDatum::InlineDatum` is still modeled only as raw `Bytes`
+
+## Preview helper script
+
+For quick probing without writing your own client code:
 
 ```sh
 cd tx3
 python scripts/preview_resolve.py --help
 ```
 
-Supported tx kinds:
+Examples:
 
-- `swap`
-- `deposit`
-- `withdrawal`
-- `cancel`
-
-For submit flows, the default variant is the recommended pool-targeted path. Use `--variant any-pool` only for advanced untargeted probing.
-
-## Known-good preview examples
-
-### Default swap
+### Resolve a swap
 
 ```sh
 python scripts/preview_resolve.py \
@@ -88,7 +276,7 @@ python scripts/preview_resolve.py \
   --max-protocol-fee 600000
 ```
 
-### Default deposit
+### Resolve a deposit
 
 ```sh
 python scripts/preview_resolve.py \
@@ -103,7 +291,7 @@ python scripts/preview_resolve.py \
   --max-protocol-fee 600000
 ```
 
-### Default withdrawal
+### Resolve a withdrawal
 
 ```sh
 python scripts/preview_resolve.py \
@@ -116,7 +304,7 @@ python scripts/preview_resolve.py \
   --max-protocol-fee 600000
 ```
 
-### Cancel order
+### Resolve a cancel
 
 ```sh
 python scripts/preview_resolve.py \
@@ -126,18 +314,30 @@ python scripts/preview_resolve.py \
   --order-script-ref 92ec2274938de291d3837b7facf9eddfaed57cd6ff97e26af57cb7a9978e3887#0
 ```
 
-See also:
+## Regression checks
 
-- `deployments.md` for preview/mainnet script hashes, addresses, and reference UTxOs
+Run:
 
-## Example arg files
+```sh
+cd tx3
+./scripts/run_regressions.sh
+```
 
-See:
+This verifies:
 
+- `trix check`
+- local/preview builds
+- preview codegen
+- `trix inspect tir` for the current tx surface
+- generated Python SDK imports
+- helper script loading
+
+## Files you will likely use
+
+- `main.tx3` — protocol definition
+- `deployments.md` — preview/mainnet script addresses and refs
+- `scripts/preview_resolve.py` — quick preview resolver helper
 - `args-submit-swap.json`
 - `args-submit-deposit.json`
 - `args-submit-withdrawal.json`
 - `args-cancel-order.json`
-- `args-submit-swap-any-pool.json`
-- `args-submit-deposit-any-pool.json`
-- `args-submit-withdrawal-any-pool.json`

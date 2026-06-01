@@ -13,16 +13,18 @@
 // --- Environment ---
 
 env {
-    // UTxO carrying the Sundae order reference script.
+    /// UTxO carrying the Sundae order reference script.
     order_script_ref: UtxoRef,
 
-    // Collateral floor for script-spending txs such as cancel.
+    /// Collateral floor for script-spending txs such as `cancel_order`.
     min_collateral_ada: Int,
 }
 
 // --- Parties ---
 
+/// The wallet building, funding, and signing the transaction.
 party User;
+/// The deployed Sundae order script address for the selected network.
 party OrderScript;
 
 // --- Types ---
@@ -111,7 +113,9 @@ type DatumAddress {
     stake_credential: MaybeReferencedCredential,
 }
 
-// Draft subset of Sundae destination handling.
+// Where the executed order result should be paid.
+//
+// The current public submit flows use a wallet-style `Fixed + NoDatum` destination.
 type Destination {
     Fixed {
         address: DatumAddress,
@@ -154,7 +158,7 @@ type Order {
     },
 }
 
-// MVP-compatible order datum.
+// Sundae order datum written to the posted order UTxO.
 type OrderDatum {
     pool_ident: MaybeBytes,
     owner: MultisigScript,
@@ -247,21 +251,33 @@ tx submit_swap_any_pool(
     }
 }
 
-/// Post a pool-targeted swap order to the Sundae order script.
+/// Post a pool-targeted swap order.
 ///
-/// This is the recommended wallet-facing swap flow.
+/// Recommended wallet-facing flow.
 tx submit_swap(
+    /// Target Sundae pool identifier.
     pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
     owner_key_hash: Bytes,
+    /// Payment key hash for the execution destination.
     destination_payment_key_hash: Bytes,
+    /// Stake key hash for the execution destination.
     destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
     order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
     max_protocol_fee: Int,
+    /// Offered asset policy id, or empty bytes for ADA.
     offer_policy: Bytes,
+    /// Offered asset name, or empty bytes for ADA.
     offer_name: Bytes,
+    /// Offered asset quantity in on-chain units.
     offer_amount: Int,
+    /// Requested asset policy id, or empty bytes for ADA.
     min_received_policy: Bytes,
+    /// Requested asset name, or empty bytes for ADA.
     min_received_name: Bytes,
+    /// Minimum quantity acceptable from execution.
     min_received_amount: Int,
 ) {
     locals {
@@ -395,21 +411,33 @@ tx submit_deposit_any_pool(
     }
 }
 
-/// Post a pool-targeted deposit order to the Sundae order script.
+/// Post a pool-targeted deposit order.
 ///
-/// This is the recommended wallet-facing deposit flow.
+/// Recommended wallet-facing flow.
 tx submit_deposit(
+    /// Target Sundae pool identifier.
     pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
     owner_key_hash: Bytes,
+    /// Payment key hash for the LP destination.
     destination_payment_key_hash: Bytes,
+    /// Stake key hash for the LP destination.
     destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
     order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
     max_protocol_fee: Int,
+    /// First deposit asset policy id, or empty bytes for ADA.
     asset_a_policy: Bytes,
+    /// First deposit asset name, or empty bytes for ADA.
     asset_a_name: Bytes,
+    /// First deposit asset quantity in on-chain units.
     asset_a_amount: Int,
+    /// Second deposit asset policy id, or empty bytes for ADA.
     asset_b_policy: Bytes,
+    /// Second deposit asset name, or empty bytes for ADA.
     asset_b_name: Bytes,
+    /// Second deposit asset quantity in on-chain units.
     asset_b_amount: Int,
 ) {
     locals {
@@ -536,18 +564,27 @@ tx submit_withdrawal_any_pool(
     }
 }
 
-/// Post a pool-targeted withdrawal order to the Sundae order script.
+/// Post a pool-targeted withdrawal order.
 ///
-/// This is the recommended wallet-facing withdrawal flow.
+/// Recommended wallet-facing flow.
 tx submit_withdrawal(
+    /// Target Sundae pool identifier.
     pool_ident: Bytes,
+    /// Stake key hash used as the order owner.
     owner_key_hash: Bytes,
+    /// Payment key hash for the withdrawal destination.
     destination_payment_key_hash: Bytes,
+    /// Stake key hash for the withdrawal destination.
     destination_stake_key_hash: Bytes,
+    /// Lovelace locked on the order UTxO.
     order_ada: Int,
+    /// Maximum ADA protocol fee allowed by the order.
     max_protocol_fee: Int,
+    /// LP token policy id.
     lp_policy: Bytes,
+    /// LP token asset name.
     lp_name: Bytes,
+    /// LP token quantity in on-chain units.
     lp_amount: Int,
 ) {
     locals {
@@ -603,14 +640,14 @@ tx submit_withdrawal(
     }
 }
 
-/// Cancel an existing order.
+/// Cancel an existing order and return its funds to `User`.
 ///
-/// Notes:
-/// - `owner_key_hash` should match the order datum owner key hash for simple
-///   signature-owned wallet orders.
-/// - The returned funds are paid back to `User`.
+/// `owner_key_hash` should match the order datum owner key hash for simple
+/// signature-owned wallet orders.
 tx cancel_order(
+    /// Order UTxO to spend with the `Cancel` redeemer.
     order_utxo: UtxoRef,
+    /// Stake key hash matching the order owner for simple wallet-owned orders.
     owner_key_hash: Bytes,
 ) {
     reference order_script_witness {
